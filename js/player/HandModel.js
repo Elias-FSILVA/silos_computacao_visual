@@ -8,29 +8,35 @@
 // Quem usa só escolhe: setPose(), setBase(), squeeze, slack, tremor, kick(), tint(); e chama update(dt).
 // root deve ser adicionado à cena por quem cria a mão.
 // Itens seguram-se pelo `socket` (filho de base), então acompanham a mão em qualquer movimento.
+// Visual: low-poly facetado (sombreamento plano), pele pálida com rachaduras, veias e hematomas (textura procedural).
 // ============================================================================
 class HandModel{
   constructor(side){
-    this.side=side; const s=side, G=HandModel.geo();
-    this.mat=new THREE.MeshStandardMaterial({color:0x2b2520,roughness:.9});
+    this.side=side; const s=side, A=HandModel.assets();
+    this.mat=new THREE.MeshStandardMaterial({map:A.skin,roughness:.55,metalness:0,flatShading:true});
     this.root=new THREE.Group(); this.wrist=new THREE.Group(); this.base=new THREE.Group(); this.socket=new THREE.Group();
     this.root.add(this.wrist); this.wrist.add(this.base); this.base.add(this.socket);
-    const box=(parent,w,h,d,mat,x,y,z)=>{ const m=new THREE.Mesh(G.box,mat); m.scale.set(w,h,d); m.position.set(x,y,z); parent.add(m); return m; };
-    box(this.base,.085,.028,.09,this.mat,0,0,-.05);                       // palma (o pulso fica em z=0)
-    box(this.base,.07,.012,.016,this.mat,0,.012,-.088);                     // nós dos dedos
-    // dedos: índice 0 = indicador (lado do polegar)
+    const add=(parent,geo,x,y,z,sx=1,sy=1,sz=1)=>{ const m=new THREE.Mesh(geo,this.mat); m.position.set(x,y,z); m.scale.set(sx,sy,sz); parent.add(m); return m; };
+    add(this.base,A.palm,0,0,0,s);                                          // palma (o pulso fica em z=0; dedos para -z)
+    add(this.base,A.wristStub,0,.001,0);                                    // toco do pulso
+    add(this.base,A.lump,-.026*s,-.009,-.03,1.1,.75,1.7);                    // base carnuda do polegar
+    // dedos: índice 0 = indicador (lado do polegar); prismas de 6 lados que afinam até a ponta, com nós salientes
     this.fingers=HandModel.FINGERS.map(f=>{
       const r=new THREE.Group(); r.position.set(f.x*s,0,f.z); this.base.add(r);
+      add(this.base,A.lump,f.x*s,.011,f.z+.004,f.w*72,f.w*55,f.w*72);         // nó do dedo na palma
       const joints=[]; let parent=r;
       f.len.forEach((len,j)=>{ const jt=new THREE.Group(); if(j) jt.position.z=-f.len[j-1]; parent.add(jt);
-        box(jt,f.w,f.w*1.05,len-.003,this.mat,0,0,-len/2); joints.push(jt); parent=jt; });
+        const r0=f.w*.5*(1-j*.1), r1=r0*(j===2?.62:.86);
+        add(jt,A.seg(r0,r1,len),0,0,0,1,.86);
+        if(j) add(jt,A.lump,0,.0015,0,r0*112,r0*92,r0*112);                    // articulação
+        joints.push(jt); parent=jt; });
       return {root:r,joints};
     });
     // polegar: base na lateral da palma, voltada para dentro
     const tb=new THREE.Group(); tb.position.set(-.036*s,-.007,-.03); tb.rotation.order='YXZ'; this.base.add(tb);
-    box(tb,.022,.02,.032,this.mat,0,0,-.016);
-    const t1=new THREE.Group(); t1.position.z=-.032; tb.add(t1); box(t1,.019,.018,.024,this.mat,0,0,-.012);
-    const t2=new THREE.Group(); t2.position.z=-.024; t1.add(t2); box(t2,.017,.016,.02,this.mat,0,0,-.01);
+    add(tb,A.seg(.0125,.0108,.032),0,0,0,1.15,.9);
+    const t1=new THREE.Group(); t1.position.z=-.032; tb.add(t1); add(t1,A.seg(.0104,.0094,.024),0,0,0,1,.88); add(t1,A.lump,0,0,0,1.05,.9,1.05);
+    const t2=new THREE.Group(); t2.position.z=-.024; t1.add(t2); add(t2,A.seg(.0092,.0058,.02),0,0,0,1,.85);
     this.thumb={base:tb,joints:[t1,t2]};
     // estado das molas: 4 dedos × [abertura, falange 1, 2, 3] + polegar [giro, descida, rolagem, falange 1, 2]
     this.x=new Float32Array(21); this.v=new Float32Array(21); this.tgt=new Float32Array(21); this.f=new Float32Array(21);
@@ -72,17 +78,68 @@ class HandModel{
     tb.rotation.set(-(x[17]+n),x[16]*s,x[18]*s);
     this.thumb.joints.forEach((jt,j)=>{ const c=x[19+j]; jt.rotation.set(-c*.45,-c*s*.85,0); });
   }
-  static geo(){
-    if(!HandModel._geo) HandModel._geo={box:new THREE.BoxGeometry(1,1,1)};
-    return HandModel._geo;
+  // geometrias e textura compartilhadas pelas duas mãos (criadas uma vez)
+  static assets(){
+    if(HandModel._assets) return HandModel._assets;
+    const R=mulberry(4242), jit=a=>(R()-.5)*a;
+    // UV proporcional ao tamanho real, para a textura ter a mesma densidade em peças grandes e pequenas
+    const scaleUV=(geo,su,sv)=>{ const uv=geo.attributes.uv; for(let i=0;i<uv.count;i++) uv.setXY(i,uv.getX(i)*su,uv.getY(i)*sv); return geo; };
+    const segs=new Map();
+    const A={
+      skin:HandModel._skinTexture(),
+      // falange: prisma de 6 lados do pulso para a ponta (de z=0 até z=-len), afinando de r0 para r1
+      seg(r0,r1,len){
+        const k=r0+'|'+r1+'|'+len; if(segs.has(k)) return segs.get(k);
+        const g=new THREE.CylinderGeometry(r1,r0,len,6,1).rotateX(-Math.PI/2).translate(0,0,-len/2).rotateZ(Math.PI/6);
+        scaleUV(g,r0*6/.12,len/.12); segs.set(k,g); return g;
+      },
+      lump:new THREE.IcosahedronGeometry(.01,0),
+      wristStub:scaleUV(new THREE.CylinderGeometry(.027,.026,.04,7,1).rotateX(Math.PI/2).translate(0,0,.016).scale(1.15,.82,1),1.6,.35)
+    };
+    // palma: caixa deformada — mais larga nos nós que no pulso, dorso abaulado, concha na palma, linha dos nós curva
+    const palm=new THREE.BoxGeometry(1,1,1,4,2,4), p=palm.attributes.position, seen=new Map();
+    for(let i=0;i<p.count;i++){
+      const u=p.getX(i), v=p.getY(i), w=p.getZ(i), key=u+'|'+v+'|'+w;
+      if(!seen.has(key)){
+        const t=.5-w, half=.027+t*.017, thick=.027-t*.005, c=1-(2*u)**2, edge=Math.abs(2*u)*Math.abs(2*v);
+        let X=u*2*half*(1-edge*.12), Y=v*thick*(1-Math.abs(2*u)**3*.35), Z=-.0475+w*.095+(2*u)**2*.007*t;
+        if(v>0) Y+=c*.007*(.6+t*.4); else Y+=c*(1-(2*w)**2)*.005;
+        seen.set(key,[X+jit(.0016),Y+jit(.0014),Z+jit(.0016)]);
+      }
+      p.setXYZ(i,...seen.get(key));
+    }
+    palm.computeVertexNormals(); A.palm=scaleUV(palm,.75,.8);
+    return (HandModel._assets=A);
+  }
+  // pele pálida com variação de tom, hematomas, veias e rachaduras escuras
+  static _skinTexture(){
+    const S=512, c=document.createElement('canvas'); c.width=c.height=S; const g=c.getContext('2d'), R=mulberry(1313);
+    g.fillStyle='#b39a82'; g.fillRect(0,0,S,S);
+    const blob=(x,y,r,rgb,a)=>{ const gr=g.createRadialGradient(x,y,0,x,y,r); gr.addColorStop(0,`rgba(${rgb},${a})`); gr.addColorStop(1,`rgba(${rgb},0)`);
+      g.fillStyle=gr; g.beginPath(); g.arc(x,y,r,0,Math.PI*2); g.fill(); };
+    for(let i=0;i<260;i++) blob(R()*S,R()*S,6+R()*42,R()<.5?'218,200,176':'138,110,88',.1+R()*.18);
+    for(let i=0;i<16;i++) blob(R()*S,R()*S,12+R()*36,'156,42,36',.3+R()*.25);       // vermelhidão
+    for(let i=0;i<9;i++) blob(R()*S,R()*S,10+R()*26,'92,38,58',.25+R()*.2);         // hematomas
+    const walk=(x,y,steps,len,style,width,branch)=>{
+      let a=R()*Math.PI*2; g.strokeStyle=style; g.lineWidth=width; g.beginPath(); g.moveTo(x,y);
+      for(let k=0;k<steps;k++){ a+=(R()-.5)*1.1; x+=Math.cos(a)*len*(.6+R()*.8); y+=Math.sin(a)*len*(.6+R()*.8); g.lineTo(x,y);
+        if(branch&&R()<.25){ g.stroke(); walk(x,y,3+R()*4|0,len*.7,style,width*.6,false); g.strokeStyle=style; g.lineWidth=width; g.beginPath(); g.moveTo(x,y); } }
+      g.stroke();
+    };
+    for(let i=0;i<30;i++) walk(R()*S,R()*S,10,9,`rgba(132,46,40,${.2+R()*.25})`,.8+R(),false);  // veias
+    for(let i=0;i<55;i++) walk(R()*S,R()*S,6+R()*7|0,11,`rgba(38,24,16,${.55+R()*.4})`,.9+R()*1.6,true); // rachaduras
+    const img=g.getImageData(0,0,S,S), d=img.data;
+    for(let i=0;i<d.length;i+=4){ const n=(R()-.5)*16; d[i]+=n; d[i+1]+=n; d[i+2]+=n; }
+    g.putImageData(img,0,0);
+    const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; return t;
   }
 }
-// x/z da raiz de cada dedo (mão direita), largura e comprimento das 3 falanges
+// x/z da raiz de cada dedo (mão direita), largura e comprimento das 3 falanges (dedos longos e ossudos)
 HandModel.FINGERS=[
-  {x:-.0295,z:-.094,w:.016,len:[.034,.022,.018]},
-  {x:-.0095,z:-.096,w:.017,len:[.037,.024,.019]},
-  {x:.0105,z:-.094,w:.016,len:[.034,.022,.018]},
-  {x:.0295,z:-.089,w:.014,len:[.027,.017,.015]}
+  {x:-.0295,z:-.094,w:.015,len:[.036,.024,.019]},
+  {x:-.0095,z:-.096,w:.016,len:[.04,.026,.02]},
+  {x:.0105,z:-.094,w:.015,len:[.037,.024,.019]},
+  {x:.0295,z:-.089,w:.013,len:[.029,.019,.016]}
 ];
 // rigidez relativa: o indicador fecha primeiro, o mindinho por último
 HandModel.STIFF=Float32Array.from([1.2,1.2,1.2,1.2, 1,1,1,1, .88,.88,.88,.88, .76,.76,.76,.76, 1,1,1,1,1]);

@@ -14,6 +14,8 @@ const IMAT={
   hidden:new THREE.MeshBasicMaterial({visible:false})
 };
 function part(geo,mat,x=0,y=0,z=0,rx=0,ry=0,rz=0){ const m=new THREE.Mesh(geo,mat); m.position.set(x,y,z); m.rotation.set(rx,ry,rz); return m; }
+// modelo 3D do catálogo (js/core/modelDefs.js) quando carregado; senão, o feito por código
+const fromModel=(id,fallback)=>()=>Models.get(id)||fallback();
 function makeHammer(){
   const g=new THREE.Group();
   g.add(part(new THREE.CylinderGeometry(.016,.02,.34,8),IMAT.wood,0,.1,0));
@@ -49,7 +51,7 @@ const ICONS={
 // item: transformação do item dentro da mão (espaço de base do HandModel; a palma fica em z≈-.05, dedos para -z);
 //       s = escala só da cópia na mão (o prego da parede é maior de propósito, para dar para agarrar)
 const ITEM_DEFS={
-  hammer:{name:'Martelo',stack:false,make:makeHammer,pickup:makeHammer,held:[.24,-.24,-.4],grip:'fist',base:[-.5,0,-Math.PI/2],item:{p:[-.025,-.03,-.078],r:[0,0,Math.PI/2]}},
+  hammer:{name:'Martelo',stack:false,make:fromModel('hammer',makeHammer),pickup:fromModel('hammer',makeHammer),held:[.24,-.24,-.4],grip:'fist',base:[-.5,0,-Math.PI/2],item:{p:[-.025,-.03,-.078],r:[0,0,Math.PI/2]}},
   nails:{name:'Pregos',stack:true,make:makeNail,pickup:makeNailBundle,held:[.2,-.2,-.33],grip:'pinch',base:[0,0,-.55],item:{p:[-.028,-.055,-.13],r:[Math.PI/2,0,0],s:.5}},
   pills:{name:'Pílulas',stack:true,make:makePills,pickup:makePills,held:[.2,-.22,-.33],grip:'bottle',base:[0,0,-Math.PI/2],item:{p:[.004,-.034,-.072],r:[0,0,Math.PI/2],s:.75}},
   card:{name:'Cartão de acesso',stack:false,make:makeCard,pickup:makeCard,held:[.2,-.2,-.33],grip:'pinch',base:[0,0,-.55],item:{p:[-.028,-.058,-.13],r:[-Math.PI/2,0,0]}}
