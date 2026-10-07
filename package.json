@@ -1,0 +1,16 @@
+{
+  "name": "silos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Silos — jogo de escalada em primeira pessoa com Three.js",
+  "scripts": {
+    "dev": "http-server . -c-1 -o",
+    "start": "npm run dev"
+  },
+  "dependencies": {
+    "three": "0.128.0"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
