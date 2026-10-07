@@ -117,9 +117,12 @@
 
 <div id="cine" hidden><div id="cineFade"></div><div id="cineText"></div><div id="cineSkip">Espaço para pular</div></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- bibliotecas instaladas pelo npm (rode "npm install" uma vez; "npm run dev" abre o jogo) -->
+<script src="node_modules/three/build/three.min.js"></script>
+<script src="node_modules/three/examples/js/loaders/GLTFLoader.js"></script>
 <!-- scripts da aplicação: a ordem importa (dependências de nível superior vêm antes) -->
 <script src="js/core/utils.js"></script>
+<script src="js/core/models.js"></script>
 <script src="js/core/settings.js"></script>
 <script src="js/core/ranking.js"></script>
 <script src="js/atmosphere/AudioManager.js"></script>
