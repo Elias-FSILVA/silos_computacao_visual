@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Silos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil+Display:wght@600;800&family=Barlow+Condensed:wght@400;500;600&family=Special+Elite&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/screens.css">
+<link rel="stylesheet" href="css/hud.css">
+<link rel="stylesheet" href="css/cinematic.css">
+</head>
+<body>
+<div id="view"></div>
+
+<div id="hud" hidden>
+  <div id="vig"></div>
+  <div id="alt"><span class="n" id="altN">0</span><span class="u">m</span><div id="massN">silêncio abaixo</div></div>
+  <div id="run"><div id="timeN">00:00.00</div><div id="scoreN">0 pts</div><div id="cpN"></div></div>
+  <div id="reticle"><div class="hand" id="handL"></div><div id="ring"></div><div class="hand" id="handR"></div></div>
+  <div id="prompt"></div>
+  <div id="inv"><div id="slotName"></div><div id="slots"></div></div>
+  <div id="toast"><div class="a" id="toastA"></div><div class="b" id="toastB"></div></div>
+</div>
+<div id="msg"></div>
+<div id="note" hidden></div>
+
+<section class="screen" id="menu" aria-label="Menu principal">
+  <div class="col">
+    <h1 class="title">Silos</h1>
+    <p class="tag">Inspirado em White Knuckle. Mouse e teclado.</p>
+    <div class="list">
+      <button class="mbtn primary" id="btnStart">Começar</button>
+      <div class="field">
+        <label for="nameIn">Nome do jogador</label>
+        <input id="nameIn" type="text" maxlength="16" autocomplete="off" spellcheck="false" aria-describedby="nameErr">
+        <p class="err" id="nameErr" role="alert"></p>
+      </div>
+      <button class="mbtn" id="btnSettings">Configurações</button>
+      <button class="mbtn" id="btnRanking">Ranking</button>
+      <button class="mbtn" id="btnQuit">Sair</button>
+    </div>
+    <p class="note-small">Botões esquerdo e direito do mouse seguram com cada mão. 1 a 4 colocam um item na mão direita, que passa a usar o botão direito. X guarda o item, F interage, Espaço pula ou sobe numa borda, Q toma uma pílula.</p>
+  </div>
+</section>
+
+<section class="screen" id="settings" hidden aria-label="Configurações">
+  <div class="col">
+    <h2>Configurações</h2>
+    <fieldset class="set"><legend>Áudio</legend>
+      <label class="row">Volume geral <input type="range" min="0" max="1" step="0.05" data-key="master"><output></output></label>
+      <label class="row">Música <input type="range" min="0" max="1" step="0.05" data-key="music"><output></output></label>
+      <label class="row">Efeitos <input type="range" min="0" max="1" step="0.05" data-key="sfx"><output></output></label>
+    </fieldset>
+    <fieldset class="set"><legend>Vídeo</legend>
+      <label class="row">Brilho <input type="range" min="0.6" max="1.6" step="0.05" data-key="brightness"><output></output></label>
+      <label class="row">Campo de visão <input type="range" min="60" max="100" step="1" data-key="fov"><output></output></label>
+      <label class="row">Qualidade <select data-key="quality"><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select><span></span></label>
+    </fieldset>
+    <fieldset class="set"><legend>Jogo</legend>
+      <label class="row">Sensibilidade <input type="range" min="0.3" max="2.5" step="0.05" data-key="sensitivity"><output></output></label>
+      <label class="row">Inverter eixo Y <input type="checkbox" data-key="invertY"><span></span></label>
+    </fieldset>
+    <div class="list"><button class="mbtn" id="btnSetBack">Voltar</button></div>
+  </div>
+</section>
+
+<section class="screen" id="ranking" hidden aria-label="Ranking">
+  <div class="col">
+    <h2>Ranking</h2>
+    <div id="rankBody"></div>
+    <div class="list"><button class="mbtn" id="btnRankBack">Voltar</button></div>
+  </div>
+</section>
+
+<section class="screen" id="quit" hidden aria-label="Sair">
+  <div class="col">
+    <h2>Até a próxima subida.</h2>
+    <p class="tag">O navegador não deixa uma página fechar a própria aba. Você pode fechá-la agora.</p>
+    <div class="list"><button class="mbtn" id="btnQuitBack">Voltar ao menu</button></div>
+  </div>
+</section>
+
+<section class="screen" id="pause" hidden aria-label="Pausa">
+  <div class="col">
+    <h2>Pausado</h2>
+    <p class="tag">O tempo e a massa estão parados.</p>
+    <div class="list">
+      <button class="mbtn primary" id="btnResume">Continuar</button>
+      <button class="mbtn" id="btnPauseSettings">Configurações</button>
+      <button class="mbtn" id="btnPauseMenu">Abandonar e voltar ao menu</button>
+    </div>
+  </div>
+</section>
+
+<section class="screen" id="result" hidden aria-label="Resultado">
+  <div class="col">
+    <h2 id="resT"></h2>
+    <dl class="stats">
+      <dt>Jogador</dt><dd id="resName"></dd>
+      <dt>Tempo</dt><dd id="resTime"></dd>
+      <dt>Altura</dt><dd id="resH"></dd>
+      <dt>Pontuação</dt><dd id="resScore"></dd>
+    </dl>
+    <dl class="break" id="resBreak"></dl>
+    <p class="saved" id="resSaved"></p>
+    <div class="list">
+      <button class="mbtn primary" id="btnSave">Salvar pontuação</button>
+      <button class="mbtn" id="btnResRanking">Ver ranking</button>
+      <button class="mbtn" id="btnRetry">Tentar de novo</button>
+      <button class="mbtn" id="btnMenu">Menu</button>
+    </div>
+  </div>
+</section>
+
+<div id="cine" hidden><div id="cineFade"></div><div id="cineText"></div><div id="cineSkip">Espaço para pular</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- scripts da aplicação: a ordem importa (dependências de nível superior vêm antes) -->
+<script src="js/core/utils.js"></script>
+<script src="js/core/settings.js"></script>
+<script src="js/core/ranking.js"></script>
+<script src="js/atmosphere/AudioManager.js"></script>
+<script src="js/world/assets.js"></script>
+<script src="js/world/levelData.js"></script>
+<script src="js/world/World.js"></script>
+<script src="js/items/itemDefs.js"></script>
+<script src="js/items/Inventory.js"></script>
+<script src="js/fx/FxSystem.js"></script>
+<script src="js/interaction/Interactables.js"></script>
+<script src="js/interaction/InteractionSystem.js"></script>
+<script src="js/items/ItemSystem.js"></script>
+<script src="js/player/Player.js"></script>
+<script src="js/systems/MassSystem.js"></script>
+<script src="js/systems/progress.js"></script>
+<script src="js/systems/PuzzleSystem.js"></script>
+<script src="js/atmosphere/AtmosphereManager.js"></script>
+<script src="js/ui/UIManager.js"></script>
+<script src="js/ui/IntroCinematic.js"></script>
+<script src="js/Game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

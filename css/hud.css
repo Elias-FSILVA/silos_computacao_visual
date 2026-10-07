@@ -1,0 +1,53 @@
+/* ---------- HUD ---------- */
+#hud{ position:fixed; inset:0; z-index:3; pointer-events:none; }
+#alt{ position:absolute; left:22px; top:calc(env(safe-area-inset-top,0px) + 14px); line-height:1; }
+#alt .n{ font-family:"Big Shoulders Stencil Display",Impact,sans-serif; font-weight:800; font-size:58px; color:var(--sodium); }
+#alt .u{ font-size:20px; color:var(--dust); margin-left:3px; }
+#massN{ font-size:19px; color:var(--dust); margin-top:4px; }
+#massN.hot{ color:var(--flesh); }
+#run{ position:absolute; right:22px; top:calc(env(safe-area-inset-top,0px) + 18px); text-align:right; line-height:1.15; }
+#timeN{ font-size:30px; font-weight:600; font-variant-numeric:tabular-nums; }
+#scoreN{ font-size:20px; color:var(--dust); font-variant-numeric:tabular-nums; }
+#cpN{ font-size:17px; color:var(--dust); margin-top:4px; }
+#reticle{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:flex; align-items:center; gap:26px; }
+#ring{ width:24px; height:24px; }
+#ring svg{ display:block; }
+.hand{ width:36px; height:43px; opacity:.8; transition:transform .12s,opacity .12s; }
+.hand svg{ display:block; width:100%; height:100%; overflow:visible; }
+.hand.contact{ opacity:1; transform:scale(1.14); }
+.hand.critical{ animation:pulse .45s infinite alternate; }
+@keyframes pulse{ to{ opacity:.4; transform:scale(1.22); } }
+.hand .ol *{ fill:none; stroke:currentColor; stroke-width:1.7; opacity:.65; }
+.hand .fl *{ fill:currentColor; }
+.hand .closed{ display:none; }
+.hand.closed .closed{ display:inline; }
+.hand.closed .open{ display:none; }
+#prompt{ position:absolute; top:calc(50% + 46px); left:50%; transform:translateX(-50%); font-size:20px; text-shadow:0 1px 3px #000; white-space:nowrap; }
+#prompt kbd{ font:600 16px "Barlow Condensed",sans-serif; border:1px solid var(--dust); padding:0 6px; margin-right:6px; color:var(--bone); }
+#inv{ position:absolute; left:50%; transform:translateX(-50%); bottom:calc(env(safe-area-inset-bottom,0px) + 20px); text-align:center; }
+#slotName{ font-size:17px; color:var(--dust); min-height:1.3em; margin-bottom:6px; }
+#slots{ display:flex; gap:6px; }
+.slot{ position:relative; width:48px; height:48px; border:1px solid rgba(221,214,200,.22); background:rgba(0,0,0,.45); color:var(--bone); }
+.slot.empty{ border-style:dashed; border-color:rgba(221,214,200,.1); background:rgba(0,0,0,.2); }
+.slot.sel{ border-color:var(--sodium); color:var(--sodium); box-shadow:inset 0 0 0 1px var(--sodium); }
+.slot svg{ position:absolute; inset:7px; width:34px; height:34px; }
+.slot .k{ position:absolute; left:3px; top:1px; font-size:12px; color:var(--dust); }
+.slot .c{ position:absolute; right:3px; bottom:0; font-size:15px; font-weight:600; font-variant-numeric:tabular-nums; }
+.slot .c.zero{ color:var(--flesh); }
+.slot.pulse{ animation:slotpulse .5s ease-out; }
+@keyframes slotpulse{ from{ background:rgba(227,179,65,.45); } }
+.hand.busy{ opacity:.45; }
+#vig{ position:absolute; inset:0; opacity:0; background:radial-gradient(ellipse at center, transparent 42%, rgba(110,8,8,.88) 100%); }
+#toast{ position:absolute; top:14%; left:50%; transform:translateX(-50%); text-align:center; opacity:0; transition:opacity .5s; }
+#toast .a{ font-size:18px; color:var(--dust); }
+#toast .b{ font-family:"Big Shoulders Stencil Display",Impact,sans-serif; font-weight:800; font-size:44px; color:var(--sodium); line-height:1; }
+#msg{ position:fixed; z-index:4; top:33%; left:50%; transform:translateX(-50%); font-size:24px; text-align:center; max-width:90vw;
+  text-shadow:0 2px 6px #000; opacity:0; transition:opacity .4s; pointer-events:none; }
+#note{ position:fixed; z-index:6; left:50%; top:50%; transform:translate(-50%,-50%) rotate(-1.2deg); width:min(440px,86vw);
+  background:#cfc6b0; color:#2a241c; padding:30px 34px; font-family:"Special Elite","Courier New",monospace; font-size:17px;
+  line-height:1.6; white-space:pre-wrap; box-shadow:0 20px 60px rgba(0,0,0,.8); pointer-events:none; }
+#note.term{ background:#061006; color:#7fe08a; transform:translate(-50%,-50%); font-family:"Courier New",monospace; border:1px solid #1d3a1f; }
+#note small{ display:block; margin-top:18px; opacity:.6; font-size:14px; }
+
+
+@media (prefers-reduced-motion: reduce){ .hand.critical{ animation:none; } #toast,#msg{ transition:none; } }
