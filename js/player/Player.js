@@ -21,7 +21,7 @@ class Player{
     this.hands=[this.leftHand,this.rightHand];
     this.position=new V3(); this.velocity=new V3(); this._prev=new V3();
     this.ray=new THREE.Raycaster(); this.listeners={};
-    this._vm=this.hands.map(h=>this._makeHandMesh(h.side));
+    this.handModels=this.hands.map(h=>new HandModel(h.side)); this.handModels.forEach(hm=>scene.add(hm.root));
     this.reset();
   }
   on(t,f){ (this.listeners[t]=this.listeners[t]||[]).push(f); }
@@ -208,6 +208,7 @@ class Player{
     // as paredes do poço agora são sólidos AABB em world.platforms; isto é só uma rede de segurança
     p.x=clamp(p.x,-40,40); p.z=clamp(p.z,-40,40);
     this.grounded=landed;
+    if(landed&&landVy<-3) this.landDip=Math.min(.05,-landVy*.004);
     if(landed&&landVy<-7) this.emit('land',landVy);
     if(lethal&&landed&&landVy<-FALL_KILL) this.die('fall');
   }
@@ -219,30 +220,38 @@ class Player{
     if(s>0){ c.position.x+=(Math.random()-.5)*s; c.position.y+=(Math.random()-.5)*s; c.position.z+=(Math.random()-.5)*s; }
     c.rotation.set(this.pitch,this.yaw,0); c.updateMatrixWorld();
   }
-  _makeHandMesh(side){
-    const g=new THREE.Group(), mat=new THREE.MeshStandardMaterial({color:0x2b2520,roughness:.9});
-    g.add(new THREE.Mesh(new THREE.BoxGeometry(.09,.03,.1),mat));
-    const fingers=new THREE.Group(); fingers.position.set(0,0,-.05);
-    for(let i=0;i<4;i++){ const f=new THREE.Mesh(new THREE.BoxGeometry(.018,.022,.07),mat); f.position.set(-.032+i*.021,0,-.035); fingers.add(f); }
-    g.add(fingers);
-    const th=new THREE.Mesh(new THREE.BoxGeometry(.02,.02,.05),mat); th.position.set(-.055*side,0,-.02); th.rotation.y=.6*side; g.add(th);
-    g.userData={fingers,mat}; this.scene.add(g); return g;
-  }
+  // A mão direita com item segue `itemPose` (preenchida pelo ItemSystem); sem item, a pose vem da escalada:
+  // relaxada → aberta ao tentar agarrar → gancho ao segurar (abre e treme quando a estamina acaba).
   updateViewmodel(){
+    // relógio próprio: o Game chama sem dt; o tempo real mantém a animação igual em qualquer taxa de quadros
+    const now=performance.now(), dt=this._vmT?Math.min(.05,(now-this._vmT)/1000):1/60; this._vmT=now;
+    // balanço ao andar e afundada ao aterrissar (espaço da câmera)
+    const sp=this.grounded&&!this.isClimbing?Math.hypot(this.velocity.x,this.velocity.z):0, w=Math.min(1,sp/3.4);
+    this._bob=(this._bob||0)+dt*(1.5+sp*2.4); this.landDip=(this.landDip||0)*Math.exp(-7*dt);
+    const bobX=Math.sin(this._bob)*.01*w, bobY=-Math.abs(Math.cos(this._bob))*.012*w+Math.sin(this._bob*.7)*.002-this.landDip;
     this.hands.forEach((h,i)=>{
-      const m=this._vm[i]; m.visible=this.viewmodelVisible&&!this.dead;
+      const hm=this.handModels[i], m=hm.root; m.visible=this.viewmodelVisible&&!this.dead;
       const pose=(h.occupied&&this.itemPose)?this.itemPose:null;
       if(pose){
-        m.position.copy(this.camera.localToWorld(_p.copy(pose.pos)));
+        m.position.copy(this.camera.localToWorld(_p.copy(pose.pos).add(_q.set(bobX*.6,bobY*.6,0))));
         m.quaternion.copy(this.camera.quaternion); m.rotateX(.25); m.rotateZ(pose.roll||0);
+        hm.wrist.rotation.set(pose.wrist.x,pose.wrist.y,pose.wrist.z); hm.setBase(pose.base);
+        hm.setPose(pose.grip,pose.grip2,pose.blend); hm.squeeze=pose.squeeze; hm.slack=0; hm.tremor=pose.tremor;
       } else {
-        const tgt=h.inContact?_p.copy(h.point).addScaledVector(_q.subVectors(this.camera.position,h.point).normalize(),.07)
-          :this.camera.localToWorld(_p.set(h.side*.22,-.22+(h.isGrabbing?.08:0),-.42));
-        m.position.lerp(tgt,h.inContact?.5:.35);
+        const tgt=h.inContact?_p.copy(h.point).addScaledVector(_q.subVectors(this.camera.position,h.point).normalize(),.11)
+          :this.camera.localToWorld(_p.set(h.side*.22+bobX,-.22+(h.isGrabbing?.08:0)+bobY,-.36));
+        m.position.lerp(tgt,1-Math.exp(-(h.inContact?42:26)*dt));
         m.quaternion.copy(this.camera.quaternion); m.rotateX(h.inContact?-.4:.3);
+        hm.wrist.rotation.set(0,0,0); hm.setBase(HandModel.BASE_FLAT); hm.squeeze=0;
+        if(h.inContact){
+          const s=h.stamina/this.maxStamina;
+          hm.setPose('hook'); hm.slack=clamp((.3-s)/.3,0,1)*.55; hm.tremor=clamp((.35-s)/.35,0,1)*.14;
+        } else { hm.setPose(h.isGrabbing&&!h.exhausted?'open':'relaxed'); hm.slack=0; hm.tremor=0; }
       }
-      const f=m.userData.fingers, curl=(h.isGrabbing||(pose&&pose.visible))?-1.4:-.15; f.rotation.x+=(curl-f.rotation.x)*.4;
-      const low=1-h.stamina/this.maxStamina; m.userData.mat.emissive.setRGB(low*low*.3,0,0);
+      if(h.inContact&&!hm.wasContact) hm.kick(4);   // tranco ao agarrar
+      hm.wasContact=h.inContact;
+      const low=1-h.stamina/this.maxStamina; hm.tint(low*low*.3);
+      hm.update(dt);
     });
   }
 }

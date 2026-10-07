@@ -44,11 +44,14 @@ const ICONS={
   pills:'<g transform="rotate(-35 16 16)"><rect x="5" y="11.5" width="22" height="9" rx="4.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="5" y="11.5" width="11" height="9" rx="4.5"/></g>',
   card:'<rect x="5" y="8" width="22" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="5" y="12" width="22" height="3"/><rect x="8" y="18" width="8" height="2"/>'
 };
-// held: pose da mão direita (espaço da câmera) com o item em uso; item: transformação local dentro da mão
+// held: posição do pulso direito (espaço da câmera) com o item em uso
+// grip: pose da mão (HandModel.POSES); base: orientação da mão [x,y,z] — z=-π/2 é "aperto de mão", polegar para cima
+// item: transformação do item dentro da mão (espaço de base do HandModel; a palma fica em z≈-.05, dedos para -z);
+//       s = escala só da cópia na mão (o prego da parede é maior de propósito, para dar para agarrar)
 const ITEM_DEFS={
-  hammer:{name:'Martelo',stack:false,make:makeHammer,pickup:makeHammer,held:[.25,-.27,-.47],item:{p:[0,-.02,-.03],r:[-.35,0,-.12]}},
-  nails:{name:'Pregos',stack:true,make:makeNail,pickup:makeNailBundle,held:[.2,-.22,-.42],item:{p:[-.02,.0,-.07],r:[Math.PI/2,0,0]}},
-  pills:{name:'Pílulas',stack:true,make:makePills,pickup:makePills,held:[.2,-.24,-.42],item:{p:[0,.03,-.05],r:[0,0,0]}},
-  card:{name:'Cartão de acesso',stack:false,make:makeCard,pickup:makeCard,held:[.2,-.21,-.42],item:{p:[0,.03,-.07],r:[-.6,0,0]}}
+  hammer:{name:'Martelo',stack:false,make:makeHammer,pickup:makeHammer,held:[.24,-.24,-.4],grip:'fist',base:[-.5,0,-Math.PI/2],item:{p:[-.025,-.03,-.078],r:[0,0,Math.PI/2]}},
+  nails:{name:'Pregos',stack:true,make:makeNail,pickup:makeNailBundle,held:[.2,-.2,-.33],grip:'pinch',base:[0,0,-.55],item:{p:[-.028,-.055,-.13],r:[Math.PI/2,0,0],s:.5}},
+  pills:{name:'Pílulas',stack:true,make:makePills,pickup:makePills,held:[.2,-.22,-.33],grip:'bottle',base:[0,0,-Math.PI/2],item:{p:[.004,-.034,-.072],r:[0,0,Math.PI/2],s:.75}},
+  card:{name:'Cartão de acesso',stack:false,make:makeCard,pickup:makeCard,held:[.2,-.2,-.33],grip:'pinch',base:[0,0,-.55],item:{p:[-.028,-.058,-.13],r:[-Math.PI/2,0,0]}}
 };
 function itemLabel(id,count){ const d=ITEM_DEFS[id]; if(id==='nails') return count===1?'1 prego':`${count} pregos`; if(id==='pills') return count===1?'1 pílula':`${count} pílulas`; return d.name.toLowerCase(); }
