@@ -3,6 +3,7 @@
 // js/core/models.js — carregamento de modelos 3D (.glb/.gltf) da pasta assets/models/, com cache
 // Fluxo do jogo: main.js chama Models.preload(MODEL_DEFS) antes de criar o Game;
 //                depois, Models.get('hammer') devolve uma cópia pronta (ou null se não carregou).
+//                Models.clips('handR') devolve as animações do arquivo (ex.: poses prontas).
 // Uso avulso:    Models.load('items/martelo.glb').then(gltf=>{ scene.add(gltf.scene); });
 //                gltf.animations traz as animações (tocar com new THREE.AnimationMixer(gltf.scene)).
 // Precisa do jogo rodando por servidor ("npm run dev"): aberto com duplo clique (file://) o navegador bloqueia.
@@ -28,16 +29,19 @@ const Models={
       return Promise.resolve();
     }
     return Promise.all(Object.entries(defs).map(([id,def])=>this.load(def.file)
-      .then(gltf=>{ this.ready.set(id,{scene:gltf.scene,def}); })
+      .then(gltf=>{ this.ready.set(id,{scene:gltf.scene,animations:gltf.animations||[],def}); })
       .catch(err=>console.warn(`Models: falha ao carregar "${def.file}" (${id}); usando o modelo padrão.`,err))));
   },
   // cópia independente do modelo, já com escala/rotação/deslocamento do catálogo; null se não carregou
   get(id){
     const r=this.ready.get(id); if(!r) return null;
-    const d=r.def, m=r.scene.clone(true), g=new THREE.Group();
+    // com esqueleto (skinned: true), o clone precisa religar a malha aos ossos copiados
+    const d=r.def, m=d.skinned&&THREE.SkeletonUtils?THREE.SkeletonUtils.clone(r.scene):r.scene.clone(true), g=new THREE.Group();
     m.scale.setScalar(d.scale||1);
     if(d.rotation) m.rotation.set(...d.rotation);
     if(d.offset) m.position.set(...d.offset);
     g.add(m); return g;
-  }
+  },
+  // animações do arquivo (compartilhadas, só leitura); [] se não carregou
+  clips(id){ const r=this.ready.get(id); return r?r.animations:[]; }
 };

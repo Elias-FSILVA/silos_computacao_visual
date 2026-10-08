@@ -178,6 +178,9 @@ class Game{
     p.on('exhausted',h=>{ ui.msg(`Sua mão ${handName(h)} cedeu.`,1.8); a.noise(.1,900,.2); });
     p.on('crumble',()=>ui.msg('A saliência se desfez.',1.8));
     p.on('weak',()=>ui.msg('Sem força para se impulsionar.',1.5));
+    p.on('needPull',()=>ui.msg('Segure e arraste o mouse para baixo para puxar o corpo.',2));
+    p.on('armsFailing',()=>{ ui.msg('Seus braços estão cedendo.',1.8); a.heartbeat(); });
+    p.on('gripSlip',()=>a.noise(.06,1200,.1));
     p.on('walljump',()=>a.noise(.08,900,.18));
     p.on('mantle',()=>a.noise(.15,500,.28));
     p.on('land',v=>a.land(v));

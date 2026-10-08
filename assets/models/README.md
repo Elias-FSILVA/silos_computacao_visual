@@ -43,5 +43,12 @@ Models.load('items/martelo.glb').then(gltf => {
 | Arquivo | Autor | Fonte | Licença |
 |---|---|---|---|
 | `items/martelo.glb` | Quaternius | Poly Pizza | CC0 (confirmar na página do modelo) |
-| `player/mao_direita.glb` | Quaternius | Poly Pizza | CC0 (confirmar) · **não usado**: sem esqueleto |
-| `player/mao_esquerda.glb` | ? | Poly Pizza | confirmar · **não usado**: sem esqueleto, outro estilo |
+| `player/hand_lowpoly_rigged.glb` | ? | gerado ("procedural hand builder") | confirmar |
+| `player/hand_lowpoly_rigged_left.glb` | ? | gerado ("procedural hand builder") | confirmar |
+
+## Mãos (`handR` / `handL`)
+
+O `HandModel` move os ossos pelo nome, então um modelo novo de mão precisa seguir o mesmo esqueleto:
+pulso na origem, dedos para +y, palma para +z, ossos `Index|Middle|Ring|Pinky` + `_Proximal|_Intermediate|_Distal`
+e `Thumb_Metacarpal|Thumb_Proximal|Thumb_Distal`. As poses `Pose_Open` e `Pose_Fist` do arquivo definem o curso do polegar.
+Se faltar algum osso, o jogo avisa no console e usa a mão procedural.

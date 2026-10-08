@@ -8,7 +8,8 @@
 // Quem usa só escolhe: setPose(), setBase(), squeeze, slack, tremor, kick(), tint(); e chama update(dt).
 // root deve ser adicionado à cena por quem cria a mão.
 // Itens seguram-se pelo `socket` (filho de base), então acompanham a mão em qualquer movimento.
-// Visual: low-poly facetado (sombreamento plano), pele pálida com rachaduras, veias e hematomas (textura procedural).
+// Visual: modelo com esqueleto de assets/models/player (MODEL_DEFS handR/handL), com os ossos seguindo as molas;
+// sem ele, low-poly facetado (sombreamento plano), pele pálida com rachaduras, veias e hematomas (textura procedural).
 // ============================================================================
 class HandModel{
   constructor(side){
@@ -16,7 +17,8 @@ class HandModel{
     this.mat=new THREE.MeshStandardMaterial({map:A.skin,roughness:.55,metalness:0,flatShading:true});
     this.root=new THREE.Group(); this.wrist=new THREE.Group(); this.base=new THREE.Group(); this.socket=new THREE.Group();
     this.root.add(this.wrist); this.wrist.add(this.base); this.base.add(this.socket);
-    const add=(parent,geo,x,y,z,sx=1,sy=1,sz=1)=>{ const m=new THREE.Mesh(geo,this.mat); m.position.set(x,y,z); m.scale.set(sx,sy,sz); parent.add(m); return m; };
+    this.procMeshes=[];
+    const add=(parent,geo,x,y,z,sx=1,sy=1,sz=1)=>{ const m=new THREE.Mesh(geo,this.mat); m.position.set(x,y,z); m.scale.set(sx,sy,sz); parent.add(m); this.procMeshes.push(m); return m; };
     add(this.base,A.palm,0,0,0,s);                                          // palma (o pulso fica em z=0; dedos para -z)
     add(this.base,A.wristStub,0,.001,0);                                    // toco do pulso
     add(this.base,A.lump,-.026*s,-.009,-.03,1.1,.75,1.7);                    // base carnuda do polegar
@@ -42,7 +44,30 @@ class HandModel{
     this.x=new Float32Array(21); this.v=new Float32Array(21); this.tgt=new Float32Array(21); this.f=new Float32Array(21);
     this.squeeze=0; this.slack=0; this.tremor=0; this.time=Math.random()*10; this.wasContact=false;
     this.baseTgt=new THREE.Vector3();
+    this.rig=null; this._useModel();
     this.setPose('relaxed'); this.x.set(this.tgt); this._apply();
+  }
+  // Modelo 3D com esqueleto (MODEL_DEFS handR/handL): troca a malha procedural pela do arquivo, e os ossos
+  // passam a seguir as mesmas molas. Sem o modelo (file://, falha de carga, ossos faltando), fica a procedural.
+  _useModel(){
+    const id=this.side<0?'handL':'handR', g=typeof Models!=='undefined'&&Models.get(id); if(!g) return;
+    const bones={}; let mesh=null;
+    g.traverse(o=>{ if(o.isBone) bones[o.name]=o; if(o.isSkinnedMesh) mesh=o; });
+    const fingers=HandModel.RIG_FINGERS.map(n=>['Proximal','Intermediate','Distal'].map(p=>bones[n+'_'+p]));
+    const thumb=['Metacarpal','Proximal','Distal'].map(p=>bones['Thumb_'+p]);
+    if(!mesh||fingers.flat().some(b=>!b)||thumb.some(b=>!b)){ console.warn(`HandModel: "${id}" sem os ossos esperados; usando a mão procedural.`); return; }
+    // espaço do arquivo (dedos +y, palma +z) → espaço de base (dedos -z, palma -y); o polegar continua do mesmo lado
+    g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(-1,0,0),new THREE.Vector3(0,0,-1),new THREE.Vector3(0,-1,0)));
+    // material próprio (tint() mexe no emissivo); pele não é metal; cor da textura sem conversão, como a pele procedural
+    const mat=mesh.material.clone(); mat.metalness=0; if(mat.map) mat.map.encoding=THREE.LinearEncoding;
+    mesh.material=this.mat=mat; mesh.frustumCulled=false;
+    this.procMeshes.forEach(m=>{ m.visible=false; });
+    this.base.add(g);
+    // o metacarpo do polegar vai da pose aberta à do punho, ambas tiradas das poses do próprio arquivo
+    const clipQ=(name)=>{ const c=Models.clips(id).find(c=>c.name===name), t=c&&c.tracks.find(t=>t.name===thumb[0].name+'.quaternion');
+      return t?new THREE.Quaternion().fromArray(t.values,t.values.length-4):thumb[0].quaternion.clone(); };
+    const rest=b=>({b,e:b.rotation.clone()});
+    this.rig={fingers:fingers.map(f=>f.map(rest)),thumb:thumb.map(rest),qOpen:clipQ('Pose_Open'),qFist:clipQ('Pose_Fist')};
   }
   // pose-alvo; com b e t, mistura linear entre duas poses
   setPose(a,b=null,t=0){
@@ -77,6 +102,19 @@ class HandModel{
     const tb=this.thumb.base, n=tr?Math.sin(t*33)*tr*.5:0;
     tb.rotation.set(-(x[17]+n),x[16]*s,x[18]*s);
     this.thumb.joints.forEach((jt,j)=>{ const c=x[19+j]; jt.rotation.set(-c*.45,-c*s*.85,0); });
+    if(this.rig) this._applyRig();
+  }
+  // mesmas molas nos ossos do modelo: flexão = +x local; abertura = z local (sinal espelhado entre as mãos)
+  _applyRig(){
+    const x=this.x, s=this.side, tr=this.tremor, t=this.time, R=this.rig, rel=HandModel.POSES.relaxed;
+    R.fingers.forEach((f,i)=>{
+      const n=tr?(Math.sin(t*41+i*1.7)+Math.sin(t*27+i*2.9))*.5*tr:0;
+      f.forEach(({b,e},j)=>{ b.rotation.set(x[i*4+1+j]+n*(j?.6:1),e.y,j?e.z:e.z-(x[i*4]-rel[i*4])*s); });
+    });
+    // polegar: abertura (16) e oposição (17) viram um só avanço da pose aberta (0) ao punho (1)
+    const k=clamp((.95-x[16])/1.3*.7+(x[17]-.05)/.55*.3,0,1.1)+(tr?Math.sin(t*33)*tr*.3:0);
+    R.thumb[0].b.quaternion.slerpQuaternions(R.qOpen,R.qFist,k);
+    for(let j=1;j<3;j++){ const {b,e}=R.thumb[j]; b.rotation.set(x[18+j]*1.5,e.y,e.z); }
   }
   // geometrias e textura compartilhadas pelas duas mãos (criadas uma vez)
   static assets(){
@@ -141,6 +179,8 @@ HandModel.FINGERS=[
   {x:.0105,z:-.094,w:.015,len:[.037,.024,.019]},
   {x:.0295,z:-.089,w:.013,len:[.029,.019,.016]}
 ];
+// prefixo dos ossos do modelo 3D na mesma ordem de FINGERS (indicador → mindinho)
+HandModel.RIG_FINGERS=['Index','Middle','Ring','Pinky'];
 // rigidez relativa: o indicador fecha primeiro, o mindinho por último
 HandModel.STIFF=Float32Array.from([1.2,1.2,1.2,1.2, 1,1,1,1, .88,.88,.88,.88, .76,.76,.76,.76, 1,1,1,1,1]);
 // orientação da mão (base): palma para baixo; "aperto de mão" (polegar para cima)

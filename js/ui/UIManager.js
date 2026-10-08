@@ -156,5 +156,8 @@ class UIManager{
       if(look.prompt){ const [k,txt]=look.prompt.split('|'); const kb=document.createElement('kbd'); kb.textContent=k; pr.append(kb,txt); } }
     this.renderInventory(items);
     this.$('vig').style.opacity=gs.massDistance!=null?clamp((14-gs.massDistance)/12,0,.85):0;
+    // fadiga da puxada: pulsa de leve com o "batimento" quando está crítica
+    const f=player.fatigueFx||0, st=f<.005?0:Math.min(1,f*(1+Math.max(0,f-.7)*.25*Math.sin(performance.now()/1000*7.5)));
+    if(Math.abs(st-(this._strain||0))>.004||(st===0&&this._strain)){ this._strain=st; this.$('strain').style.opacity=st.toFixed(3); }
   }
 }
