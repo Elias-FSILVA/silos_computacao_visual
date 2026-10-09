@@ -31,9 +31,10 @@
 <section class="screen" id="menu" aria-label="Menu principal">
   <div class="col">
     <h1 class="title">Silos</h1>
-    <p class="tag">Inspirado em White Knuckle. Mouse e teclado.</p>
+    <p class="tag">Inspirado em White Knuckle. Mouse e teclado, ou VR no Meta Quest.</p>
     <div class="list">
       <button class="mbtn primary" id="btnStart">Começar</button>
+      <button class="mbtn" id="btnStartVR" hidden>Começar em VR</button>
       <div class="field">
         <label for="nameIn">Nome do jogador</label>
         <input id="nameIn" type="text" maxlength="16" autocomplete="off" spellcheck="false" aria-describedby="nameErr">
@@ -44,6 +45,7 @@
       <button class="mbtn" id="btnQuit">Sair</button>
     </div>
     <p class="note-small">Botões esquerdo e direito do mouse seguram com cada mão; agarrado, arraste o mouse para baixo para puxar o corpo. 1 a 4 colocam um item na mão direita, que passa a usar o botão direito. X guarda o item, F interage, Espaço pula ou sobe numa borda, Q toma uma pílula.</p>
+    <p class="note-small" id="vrNote" hidden>VR (Meta Quest): grip agarra com cada mão; segurando, desça o braço para puxar o corpo. Analógico esquerdo anda, o direito gira. A pula ou sobe, gatilho direito usa o item ou interage, B troca o item, X guarda, Y toma uma pílula, clique no analógico esquerdo pausa. Com hand tracking: feche a mão para agarrar, pinça direita interage, pinça esquerda pula.</p>
   </div>
 </section>
 
@@ -63,6 +65,10 @@
     <fieldset class="set"><legend>Jogo</legend>
       <label class="row">Sensibilidade <input type="range" min="0.3" max="2.5" step="0.05" data-key="sensitivity"><output></output></label>
       <label class="row">Inverter eixo Y <input type="checkbox" data-key="invertY"><span></span></label>
+    </fieldset>
+    <fieldset class="set"><legend>VR (Meta Quest)</legend>
+      <label class="row">Giro <select data-key="vrTurn"><option value="30">Em passos de 30°</option><option value="45">Em passos de 45°</option><option value="0">Suave</option></select><span></span></label>
+      <label class="row">Vinheta ao andar <input type="checkbox" data-key="vrVignette"><span></span></label>
     </fieldset>
     <div class="list"><button class="mbtn" id="btnSetBack">Voltar</button></div>
   </div>
@@ -90,6 +96,7 @@
     <p class="tag">O tempo e a massa estão parados.</p>
     <div class="list">
       <button class="mbtn primary" id="btnResume">Continuar</button>
+      <button class="mbtn" id="btnPauseVR" hidden>Continuar em VR</button>
       <button class="mbtn" id="btnPauseSettings">Configurações</button>
       <button class="mbtn" id="btnPauseMenu">Abandonar e voltar ao menu</button>
     </div>
@@ -140,6 +147,10 @@
 <script src="js/items/ItemSystem.js"></script>
 <script src="js/player/HandModel.js"></script>
 <script src="js/player/Player.js"></script>
+<script src="js/ui/VRPanel.js"></script>
+<script src="js/ui/VRMenu.js"></script>
+<script src="js/ui/VRHud.js"></script>
+<script src="js/player/VRPlayer.js"></script>
 <script src="js/systems/MassSystem.js"></script>
 <script src="js/systems/progress.js"></script>
 <script src="js/systems/PuzzleSystem.js"></script>

@@ -11,6 +11,8 @@
 // (pullFatigue) reduz a eficiência, faz a câmera/mão tremer e, no nível crítico, drena a pegada.
 // Com item na mão direita (pregos, martelo…), o braço que segura trava na altura atual (lockOff):
 // não cede, o mouse fica livre para mirar, mas a fadiga sobe aos poucos.
+// Modo VR (opcional): com `xr` (VRPlayer) ligado, mira e agarre saem dos controles, a puxada vem do braço
+// (pullBy) e a câmera é posicionada pelo rig; sem ele, tudo segue como no mouse e teclado.
 // ============================================================================
 // PULL_GAIN: puxada por pixel de mouse (~130px levam de pendurado a puxado, descansado)
 const PULL_GAIN=.0075, PULL_MANTLE=.5, FATIGUE_CRIT=.85;
@@ -20,7 +22,7 @@ class Hand{
   reset(){ this.occupied=false; this.isGrabbing=false; this.inContact=false; this.surface=null; this.stamina=100; this.cooldown=0; this.pull=0; this.exhausted=false; }
   get state(){ return this.isGrabbing?'closed':'open'; }
 }
-const _e=new V3(), _t=new V3(), _d=new V3(), _f=new V3(), _r=new V3(), _mv=new V3(), _p=new V3(), _q=new V3(), _n=new V3(), _c0=new THREE.Vector2(0,0);
+const _e=new V3(), _t=new V3(), _d=new V3(), _f=new V3(), _r=new V3(), _mv=new V3(), _p=new V3(), _q=new V3(), _n=new V3(), _c0=new THREE.Vector2(0,0), _wq=new THREE.Quaternion();
 
 class Player{
   constructor(scene,camera,world){
@@ -29,7 +31,7 @@ class Player{
     this.leftHand=new Hand('left',-1); this.rightHand=new Hand('right',1);
     this.hands=[this.leftHand,this.rightHand];
     this.position=new V3(); this.velocity=new V3(); this._prev=new V3();
-    this.ray=new THREE.Raycaster(); this.listeners={};
+    this.ray=new THREE.Raycaster(); this.listeners={}; this.xr=null;
     this.handModels=this.hands.map(h=>new HandModel(h.side)); this.handModels.forEach(hm=>scene.add(hm.root));
     this.reset();
   }
@@ -65,6 +67,15 @@ class Player{
     if(dy>0&&this.canPull){ this.pullIn+=dy*s.sensitivity; dy*=.2; }
     this.pitch=clamp(this.pitch-(s.invertY?-dy:dy)*k,-1.5,1.5);
   }
+  // VR: o braço que segura descendo vira puxada (mesma unidade do mouse)
+  pullBy(px){ if(this.canPull) this.pullIn+=px; }
+  // VR: passos reais no quarto; o corpo acompanha com colisão (só no chão e solto)
+  stepBy(d){
+    if(this.dead||this.mantle||!this.grounded||this.isClimbing) return false;
+    this._prev.copy(this.position); this.position.add(d);
+    const vy=this.velocity.y; this.velocity.y=0; this._collide(false); this.velocity.y=vy;
+    return true;
+  }
   // com um item na mão direita o braço que segura fica travado (lockOff): o mouse volta a mirar livremente
   get canPull(){ return !this.mantle&&!this.dead&&!this.lockOff&&this.pull<.995&&this.hands.some(h=>h.inContact&&h.isGrabbing); }
   get lockOff(){ return this.rightHand.occupied&&this.isHanging; }
@@ -77,10 +88,22 @@ class Player{
     if(down&&!h.inContact) this._tryGrab(h);
   }
   releaseAll(){ this.hands.forEach(h=>{ h.isGrabbing=false; if(h.inContact) this._release(h); }); }
-  aim(far){
-    this.ray.setFromCamera(_c0,this.camera); this.ray.far=far;
-    const hits=this.ray.intersectObjects(this.world.raycastTargets,false);
-    return hits.find(h=>h.object.userData.alive!==false)||null;
+  // em VR, mira com o controle (i: 0 esquerda, 1 direita)
+  aim(far,i=1){
+    if(this.xr){ if(!this.xr.ray(i,_p,_q)) return null; this.ray.set(_p,_q); }
+    else this.ray.setFromCamera(_c0,this.camera);
+    this.ray.far=far; return this._cast();
+  }
+  _cast(){ const hits=this.ray.intersectObjects(this.world.raycastTargets,false); return hits.find(h=>h.object.userData.alive!==false)||null; }
+  // VR: agarra o que o controle aponta de perto; senão, o que está atrás da mão vista da cabeça
+  _grabHit(h){
+    if(!this.xr) return this.aim(this.reach);
+    const i=this.hands.indexOf(h), xr=this.xr;
+    if(xr.ray(i,_p,_q)){ this.ray.set(_p,_q); this.ray.far=xr.grabReach; const hit=this._cast(); if(hit&&hit.object.userData.grab) return hit; }
+    if(!xr.handPos(i,_p)) return null;
+    _e.setFromMatrixPosition(this.camera.matrixWorld); _d.subVectors(_p,_e); const L=_d.length(); if(L<.05) return null;
+    this.ray.set(_e,_d.multiplyScalar(1/L)); this.ray.far=Math.min(L+xr.grabReach,this.reach);
+    return this._cast();
   }
   canMantle(){
     if(this.mantle) return null;
@@ -119,7 +142,7 @@ class Player{
   // ---------- mãos ----------
   _tryGrab(h){
     if(h.cooldown>0||h.exhausted||h.occupied||this.mantle||this.dead) return false;
-    const hit=this.aim(this.reach); if(!hit||!hit.object.userData.grab) return false;
+    const hit=this._grabHit(h); if(!hit||!hit.object.userData.grab) return false;
     const fall=-this.velocity.y;
     if(!this.isClimbing&&fall>12){
       h.stamina=Math.max(0,h.stamina-25); h.cooldown=.35; this.stats.slips++; this.emit('slip',h); return false;
@@ -296,6 +319,7 @@ class Player{
   }
   // ---------- câmera e mãos em primeira pessoa ----------
   applyCamera(){
+    if(this.xr){ this.fxT=performance.now()/1000; this.xr.place(); return; }   // VR: o headset manda na câmera; sem tremor de tela
     const c=this.camera; this.eyePos(c.position);
     let s=this.shake*.06;
     if(this.isClimbing&&this.stamina<20) s+=(20-this.stamina)/20*.012;
@@ -317,25 +341,31 @@ class Player{
     // relógio próprio: o Game chama sem dt; o tempo real mantém a animação igual em qualquer taxa de quadros
     const now=performance.now(), dt=this._vmT?Math.min(.05,(now-this._vmT)/1000):1/60; this._vmT=now;
     // balanço ao andar e afundada ao aterrissar (espaço da câmera)
-    const sp=this.grounded&&!this.isClimbing?Math.hypot(this.velocity.x,this.velocity.z):0, w=Math.min(1,sp/3.4);
+    const sp=this.grounded&&!this.isClimbing&&!this.xr?Math.hypot(this.velocity.x,this.velocity.z):0, w=Math.min(1,sp/3.4);
     this._bob=(this._bob||0)+dt*(1.5+sp*2.4); this.landDip=(this.landDip||0)*Math.exp(-7*dt);
     const bobX=Math.sin(this._bob)*.01*w, bobY=-Math.abs(Math.cos(this._bob))*.012*w+Math.sin(this._bob*.7)*.002-this.landDip;
+    const xr=this.xr, camPos=_n.setFromMatrixPosition(this.camera.matrixWorld), camQ=this.camera.getWorldQuaternion(_wq);
     this.hands.forEach((h,i)=>{
       const hm=this.handModels[i], m=hm.root; m.visible=this.viewmodelVisible&&!this.dead;
       const pose=(h.occupied&&this.itemPose)?this.itemPose:null;
+      // VR: a mão solta (ou com item) fica no controle (ou na mão rastreada)
+      const inHand=xr&&!h.inContact&&xr.handPose(i,m.position,m.quaternion);
       if(pose){
-        m.position.copy(this.camera.localToWorld(_p.copy(pose.pos).add(_q.set(bobX*.6,bobY*.6,0))));
-        m.quaternion.copy(this.camera.quaternion); m.rotateX(.25); m.rotateZ(pose.roll||0);
+        if(!inHand){ m.position.copy(this.camera.localToWorld(_p.copy(pose.pos).add(_q.set(bobX*.6,bobY*.6,0))));
+          m.quaternion.copy(camQ); m.rotateX(.25); }
+        m.rotateZ(pose.roll||0);
         hm.wrist.rotation.set(pose.wrist.x,pose.wrist.y,pose.wrist.z); hm.setBase(pose.base);
         hm.setPose(pose.grip,pose.grip2,pose.blend); hm.squeeze=pose.squeeze; hm.slack=0; hm.tremor=pose.tremor;
       } else {
-        const tgt=h.inContact?_p.copy(h.point).addScaledVector(_q.subVectors(this.camera.position,h.point).normalize(),.11)
-          :this.camera.localToWorld(_p.set(h.side*.22+bobX,-.22+(h.isGrabbing?.08:0)+bobY,-.36));
-        // braço cansado: a mão agarrada escorrega e treme um pouco em volta da pegada
         const f=this.fatigueFx, t=this.fxT+i*1.9;
-        if(h.inContact&&f>0) tgt.add(_q.set(Math.sin(t*2.3)*.006*f,Math.sin(t*3.1)*.008*f-f*f*.01,0));
-        m.position.lerp(tgt,1-Math.exp(-(h.inContact?42:26)*dt));
-        m.quaternion.copy(this.camera.quaternion); m.rotateX(h.inContact?-.4-this.effort*.12:.3);
+        if(!inHand){
+          const tgt=h.inContact?_p.copy(h.point).addScaledVector(_q.subVectors(camPos,h.point).normalize(),.11)
+            :this.camera.localToWorld(_p.set(h.side*.22+bobX,-.22+(h.isGrabbing?.08:0)+bobY,-.36));
+          // braço cansado: a mão agarrada escorrega e treme um pouco em volta da pegada
+          if(h.inContact&&f>0) tgt.add(_q.set(Math.sin(t*2.3)*.006*f,Math.sin(t*3.1)*.008*f-f*f*.01,0));
+          m.position.lerp(tgt,1-Math.exp(-(h.inContact?42:26)*dt));
+          m.quaternion.copy(camQ); m.rotateX(h.inContact?-.4-this.effort*.12:.3);
+        }
         if(h.inContact&&f>0) m.rotateZ(Math.sin(t*1.7)*.06*f*h.side);
         hm.wrist.rotation.set(0,0,0); hm.setBase(HandModel.BASE_FLAT); hm.squeeze=0;
         if(h.inContact){

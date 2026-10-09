@@ -28,7 +28,8 @@ class ItemSystem{
   }
   onPickup(id,count){
     if(!this.hinted&&this.inv.has('hammer')&&this.inv.has('nails')){ this.hinted=true;
-      this.g.ui.msg('1 a 4 escolhem o que vai na mão direita. Botão direito usa. X guarda.',5); }
+      this.g.ui.msg(this.g.vr.active?'B troca o que vai na mão direita. Gatilho direito usa. X guarda.'
+        :'1 a 4 escolhem o que vai na mão direita. Botão direito usa. X guarda.',5); }
   }
   select(i){
     const p=this.player; if(p.dead) return;
