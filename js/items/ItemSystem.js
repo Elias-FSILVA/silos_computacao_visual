@@ -28,7 +28,7 @@ class ItemSystem{
   }
   onPickup(id,count){
     if(!this.hinted&&this.inv.has('hammer')&&this.inv.has('nails')){ this.hinted=true;
-      this.g.ui.msg(this.g.vr.active?'B troca o que vai na mão direita. Gatilho direito usa. X guarda.'
+      this.g.ui.msg(this.g.vr.active?'Y abre o inventário: toque num item com o indicador direito e aperte o gatilho. B troca, X guarda.'
         :'1 a 4 escolhem o que vai na mão direita. Botão direito usa. X guarda.',5); }
   }
   select(i){
@@ -93,7 +93,9 @@ class ItemSystem{
     if(this.phase!=='idle'||this.equipped!=='nails'||!tg||!tg.valid||this.inv.count('nails')<=0) return false;
     this.pending=tg; this._start('place'); return true;
   }
-  // VR: pancada física do martelo num prego (detectada pelo VRPlayer) — mesmo efeito do golpe, sem a animação
+  // VR: frasco levado à boca (detectado pelo VRPlayer) — mesmo consumo do botão: animação, uma pílula, cura das mãos
+  consume(){ if(this.phase!=='idle'||this.equipped!=='pills'||this.inv.count('pills')<=0) return false; this._start('consume'); return true; }
+  // VR: pancada física do martelo (num prego ou numa parede quebrável, detectada pelo VRPlayer) — mesmo efeito do golpe, sem a animação
   strike(tg){ if(this.phase!=='idle'||this.equipped!=='hammer') return false; this._hammerHit(tg); return this.landed; }
   update(dt){
     if(this.phase==='empty'){ this.pose.visible=false; return; }

@@ -23,6 +23,9 @@ class Hand{
   get state(){ return this.isGrabbing?'closed':'open'; }
 }
 const _e=new V3(), _t=new V3(), _d=new V3(), _f=new V3(), _r=new V3(), _mv=new V3(), _p=new V3(), _q=new V3(), _n=new V3(), _c0=new THREE.Vector2(0,0), _wq=new THREE.Quaternion();
+// gesto de apertar botão (painel): duração e distância pulso→ponta do indicador
+const PRESS_T=.34, PRESS_TIP=-HandModel.indexTip(1,new V3()).z;
+const _pm=new THREE.Matrix4(), _pqa=new THREE.Quaternion(), _pqb=new THREE.Quaternion(), _pup=new V3(), _px=new V3(1,0,0);
 
 class Player{
   constructor(scene,camera,world){
@@ -48,6 +51,7 @@ class Player{
     this.pullFatigue=0; this.fatigueFx=0; this.restT=0; this.fatigueWarned=false; this.fxT=0; this.pulledNow=false;
     this.hands.forEach(h=>h.reset());
     this.itemPose=null;
+    this.press=[null,null]; this.point=[false,false];   // gesto do indicador (painel); point: VR, mão perto do painel
     this.stats={slips:0,pillsUsed:0,pitonsUsed:0};
     this.viewmodelVisible=true;
   }
@@ -89,6 +93,13 @@ class Player{
     if(down&&!h.inContact) this._tryGrab(h);
   }
   releaseAll(){ this.hands.forEach(h=>{ h.isGrabbing=false; if(h.inContact) this._release(h); }); }
+  // gesto de apertar um botão com o indicador (só visual: quem chama já registrou o número).
+  // Desktop: a mão livre vai até `target` e volta. VR (target null): o dedo empurra para frente onde a mão está.
+  pressButton(target,prefer=1){
+    const free=i=>{ const h=this.hands[i]; return !h.inContact&&!h.occupied; };
+    const i=free(prefer)?prefer:free(1-prefer)?1-prefer:-1; if(i<0) return;
+    this.press[i]={t:0,target:target?target.clone():null};
+  }
   // em VR, mira com o controle (i: 0 esquerda, 1 direita)
   aim(far,i=1){
     if(this.xr){ if(!this.xr.ray(i,_p,_q)) return null; this.ray.set(_p,_q); }
@@ -358,6 +369,7 @@ class Player{
       // VR: a mão solta (ou com item) fica no controle (ou na mão rastreada)
       const inHand=xr&&!h.inContact&&xr.handPose(i,m.position,m.quaternion);
       if(pose){
+        hm.vmLocal=null;
         if(!inHand){ m.position.copy(this.camera.localToWorld(_p.copy(pose.pos).add(_q.set(bobX*.6,bobY*.6,0))));
           m.quaternion.copy(camQ); m.rotateX(.25); }
         m.rotateZ(pose.roll||0);
@@ -365,13 +377,24 @@ class Player{
         hm.setPose(pose.grip,pose.grip2,pose.blend); hm.squeeze=pose.squeeze; hm.slack=0; hm.tremor=pose.tremor;
       } else {
         const f=this.fatigueFx, t=this.fxT+i*1.9;
-        if(!inHand){
-          const tgt=h.inContact?_p.copy(h.point).addScaledVector(_q.subVectors(camPos,h.point).normalize(),.11)
-            :this.camera.localToWorld(_p.set(h.side*.22+bobX,-.22+(h.isGrabbing?.08:0)+bobY,-.36));
+        let pr=this.press[i];
+        if(pr&&(h.inContact||(pr.t+=dt)>=PRESS_T)) pr=this.press[i]=null;
+        if(inHand){ hm.vmLocal=null; if(pr) m.translateZ(-Math.sin(Math.PI*pr.t/PRESS_T)*.02); }   // VR: o dedo empurra 2 cm
+        else if(pr&&pr.target){ this._pressReach(m,pr,h,camPos,camQ); hm.vmLocal=null; }
+        else if(h.inContact){
+          // agarrada: suaviza no mundo, presa à pegada
+          const tgt=_p.copy(h.point).addScaledVector(_q.subVectors(camPos,h.point).normalize(),.11);
           // braço cansado: a mão agarrada escorrega e treme um pouco em volta da pegada
-          if(h.inContact&&f>0) tgt.add(_q.set(Math.sin(t*2.3)*.006*f,Math.sin(t*3.1)*.008*f-f*f*.01,0));
-          m.position.lerp(tgt,1-Math.exp(-(h.inContact?42:26)*dt));
-          m.quaternion.copy(camQ); m.rotateX(h.inContact?-.4-this.effort*.12:.3);
+          if(f>0) tgt.add(_q.set(Math.sin(t*2.3)*.006*f,Math.sin(t*3.1)*.008*f-f*f*.01,0));
+          m.position.lerp(tgt,1-Math.exp(-42*dt)); hm.vmLocal=null;
+          m.quaternion.copy(camQ); m.rotateX(-.4-this.effort*.12);
+        } else {
+          // solta: suaviza no espaço da câmera, para não ficar para trás (nem entrar na câmera) ao andar;
+          // ao soltar a pegada, parte de onde a mão está
+          if(!hm.vmLocal) hm.vmLocal=this.camera.worldToLocal(m.position.clone());
+          hm.vmLocal.lerp(_q.set(h.side*.22+bobX,-.22+(h.isGrabbing?.08:0)+bobY,-.36),1-Math.exp(-26*dt));
+          m.position.copy(this.camera.localToWorld(_p.copy(hm.vmLocal)));
+          m.quaternion.copy(camQ); m.rotateX(.3);
         }
         if(h.inContact&&f>0) m.rotateZ(Math.sin(t*1.7)*.06*f*h.side);
         hm.wrist.rotation.set(0,0,0); hm.setBase(HandModel.BASE_FLAT); hm.squeeze=0;
@@ -381,12 +404,26 @@ class Player{
           hm.setPose('hook'); hm.squeeze=(this.effort*.35+(this.lockOff?.25:0))*(1-f*.6);
           hm.slack=Math.min(.75,clamp((.3-s)/.3,0,1)*.55+crit*.35);
           hm.tremor=Math.min(.22,clamp((.35-s)/.35,0,1)*.14+this.effort*.04+f*.1);
-        } else { hm.setPose(h.isGrabbing&&!h.exhausted?'open':'relaxed'); hm.slack=0; hm.tremor=0; }
+        } else { hm.setPose(pr||this.point[i]?'point':h.isGrabbing&&!h.exhausted?'open':'relaxed'); hm.slack=0; hm.tremor=0; }
       }
       if(h.inContact&&!hm.wasContact) hm.kick(4);   // tranco ao agarrar
       hm.wasContact=h.inContact;
       const low=Math.max(1-h.stamina/this.maxStamina,this.fatigueFx*.8); hm.tint(low*low*.3);
       hm.update(dt);
     });
+  }
+  // desktop: a mão sai do repouso, leva a ponta do indicador ao botão, aperta 1 cm e volta.
+  // Botão além do braço (> 0,6 m da cabeça): a mão estica até o limite e só aponta.
+  _pressReach(m,pr,h,camPos,camQ){
+    const k=pr.t/PRESS_T, out=k<.45?smooth(k/.45):k<.6?1:1-smooth((k-.6)/.4);
+    const push=k>.35&&k<.7?Math.sin((k-.35)/.35*Math.PI)*.01:0;
+    const rest=this.camera.localToWorld(_p.set(h.side*.22,-.22,-.36));
+    _d.subVectors(pr.target,rest).normalize();
+    _e.copy(pr.target).addScaledVector(_d,-(PRESS_TIP-push));
+    _t.subVectors(_e,camPos); if(_t.length()>.6) _e.copy(camPos).add(_t.setLength(.6));
+    m.position.lerpVectors(rest,_e,out);
+    _pqa.copy(camQ).multiply(_pqb.setFromAxisAngle(_px,.3));                                   // repouso
+    _pqb.setFromRotationMatrix(_pm.lookAt(_e,pr.target,_pup.set(0,1,0).applyQuaternion(camQ)));   // dedo para o botão
+    m.quaternion.slerpQuaternions(_pqa,_pqb,out);
   }
 }

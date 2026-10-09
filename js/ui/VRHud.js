@@ -15,6 +15,12 @@ class VRHud{
     this.wrist=new THREE.Mesh(new THREE.PlaneGeometry(.144,.09),
       new THREE.MeshBasicMaterial({map:this.tex,transparent:true,fog:false}));
     this.wrist.visible=false; this.key=''; this.drawT=0;
+    // inventário (atalho Y): os mesmos slots do HUD do desktop, numa faixa acima do relógio
+    const ic=this.invCanvas=document.createElement('canvas'); ic.width=512; ic.height=160;
+    this.invTex=new THREE.CanvasTexture(ic);
+    this.inv=new THREE.Mesh(new THREE.PlaneGeometry(.2,.0625),new THREE.MeshBasicMaterial({map:this.invTex,transparent:true,fog:false}));
+    this.inv.position.set(0,.085,.01); this.inv.visible=false; this.wrist.add(this.inv);
+    this.invKey=''; this.icons={};
     // vinheta: gradiente radial num plano logo à frente dos olhos
     const v=document.createElement('canvas'); v.width=v.height=256;
     const g=v.getContext('2d'), gr=g.createRadialGradient(128,128,40,128,128,128);
@@ -44,6 +50,42 @@ class VRHud{
     this.wrist.visible=true;
     this.wrist.position.copy(pos); this.wrist.quaternion.copy(quat);
     this.wrist.translateY(.035); this.wrist.translateZ(.11); this.wrist.rotateX(-1.05);   // dorso do antebraço, inclinado para o rosto
+  }
+  // ---------- inventário ----------
+  setInventory(open){ this.inv.visible=open; this.invKey=''; }
+  // slot sob a ponta do dedo (mundo), ou -1: dentro da faixa e a até 4 cm dela
+  slotAt(tip){
+    if(!this.inv.visible||!this.wrist.visible) return -1;
+    this.inv.updateWorldMatrix(true,false); const l=this.inv.worldToLocal(tip.clone());
+    if(Math.abs(l.z)>.04||Math.abs(l.y)>.0325||Math.abs(l.x)>=.1) return -1;
+    return Math.floor((l.x+.1)/.05);
+  }
+  updateInventory(items,hover){
+    if(!this.inv.visible) return;
+    const inv=items.inv, key=inv.version+'|'+items.sel+'|'+hover+'|'+Object.keys(this.icons).length;
+    if(key===this.invKey) return; this.invKey=key;
+    const x=this.invCanvas.getContext('2d'), W=512, H=160, sw=W/4;
+    x.clearRect(0,0,W,H);
+    inv.slots.forEach((s,i)=>{
+      const bx=i*sw+6, sel=items.sel===i, hov=hover===i;
+      x.fillStyle=hov?'rgba(216,165,58,.55)':sel?'rgba(216,207,184,.28)':'rgba(8,7,5,.82)'; x.fillRect(bx,6,sw-12,H-12);
+      x.strokeStyle=sel||hov?'#f0c870':'rgba(216,207,184,.35)'; x.lineWidth=sel?5:3; x.strokeRect(bx,6,sw-12,H-12);
+      x.fillStyle='#7d7566'; x.font='500 24px "Barlow Condensed", sans-serif'; x.textAlign='left'; x.textBaseline='top'; x.fillText(String(i+1),bx+8,10);
+      if(!s) return;
+      const img=this._icon(s.id); if(img) x.drawImage(img,bx+(sw-12)/2-36,22,72,72);
+      x.textAlign='center'; x.fillStyle='#e8dfc8'; x.font='500 26px "Barlow Condensed", sans-serif';
+      x.fillText(ITEM_DEFS[s.id].stack?`${ITEM_DEFS[s.id].name} ×${s.count}`:ITEM_DEFS[s.id].name,bx+(sw-12)/2,104);
+    });
+    this.invTex.needsUpdate=true;
+  }
+  // ícone do item (o mesmo SVG do HUD), carregado uma vez; ao carregar, força redesenhar
+  _icon(id){
+    const c=this.icons[id]; if(c) return c.ready?c.img:null;
+    const img=new Image(), e={img,ready:false}; this.icons[id]=e;
+    img.onload=()=>{ e.ready=true; this.invKey=''; };
+    img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="96" height="96" style="color:#e8dfc8"><g fill="#e8dfc8">${ICONS[id]}</g></svg>`);
+    return null;
   }
   update(dt,ui,player,look){
     if(!this.wrist.visible) return;

@@ -197,6 +197,10 @@ HandModel.BASE_FLAT=[0,0,0];
     // pinça: pontas do indicador e do polegar se encontram em ≈ (-.028, -.055, -.095) no espaço de base
     pinch:  P([[.04,.8,1.0,.6],[-.02,1.3,1.5,1.0],[-.04,1.4,1.6,1.1],[-.06,1.45,1.6,1.1]],[-.1,.6,0,.1,.1]),
     press:  P([[.04,.9,.95,.5],[-.02,1.35,1.55,1.05],[-.04,1.45,1.65,1.1],[-.06,1.5,1.65,1.1]],[-.12,.55,0,.05,0]),
-    bottle: P([[.03,.9,1.0,.7],[0,.95,1.05,.7],[-.02,1.0,1.05,.7],[-.04,1.05,1.05,.7]],[-.25,.45,0,.3,.2])
+    bottle: P([[.03,.9,1.0,.7],[0,.95,1.05,.7],[-.02,1.0,1.05,.7],[-.04,1.05,1.05,.7]],[-.25,.45,0,.3,.2]),
+    // apontar: indicador estendido, os outros fechados, polegar por cima (apertar botões do painel)
+    point:  P([[.02,.04,.05,.03],[0,1.4,1.6,1.1],[-.02,1.45,1.65,1.1],[-.04,1.5,1.6,1.05]],[-.2,.5,0,.45,.35])
   };
 })();
+// ponta do indicador estendido (pose 'point') no espaço de base da mão
+HandModel.indexTip=(side,out)=>{ const f=HandModel.FINGERS[0]; return out.set(f.x*side,0,f.z-f.len[0]-f.len[1]-f.len[2]); };

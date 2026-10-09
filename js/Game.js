@@ -111,7 +111,7 @@ class Game{
   // saiu do headset no meio da corrida: fica pausado na tela 2D (com "Continuar em VR")
   onVRExit(){ this.applySettings(); if(this.state==='play') this.pause(); }
   // ---------- interação ----------
-  interact(){ this.interaction.interact(); }
+  interact(hand){ this.interaction.interact(hand); }
   // ---------- estado para UI e atmosfera ----------
   getUIState(){
     const cp=this.checkpoints.justCollected, pz=this.puzzles.current;
@@ -162,6 +162,7 @@ class Game{
     this.renderer.domElement.addEventListener('mousedown',e=>{
       if(this.state!=='play') return;
       if(!document.pointerLockElement) this.lock();
+      if(e.button===0&&this.interaction.keypadAimed()){ this.interact(0); return; }   // painel de senha: clique aperta o número
       if(e.button===0) this.player.setGrab(0,true);
       else if(e.button===2){ if(this.items.equipped) this.items.use(true); else this.player.setGrab(1,true); }
     });
