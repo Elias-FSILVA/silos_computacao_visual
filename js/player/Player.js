@@ -77,7 +77,8 @@ class Player{
     return true;
   }
   // com um item na mão direita o braço que segura fica travado (lockOff): o mouse volta a mirar livremente
-  get canPull(){ return !this.mantle&&!this.dead&&!this.lockOff&&this.pull<.995&&this.hands.some(h=>h.inContact&&h.isGrabbing); }
+  // em VR a mira é do controle, então o braço livre puxa mesmo com item na mão direita
+  get canPull(){ return !this.mantle&&!this.dead&&(!this.lockOff||!!this.xr)&&this.pull<.995&&this.hands.some(h=>h.inContact&&h.isGrabbing); }
   get lockOff(){ return this.rightHand.occupied&&this.isHanging; }
   // pendurado numa borda, mas baixo demais para subir: a UI sugere puxar
   get needsPull(){ return this.isHanging&&!this.mantle&&this.pull<PULL_MANTLE&&this.hands.some(h=>h.inContact&&h.surface.userData.plat); }
@@ -95,15 +96,21 @@ class Player{
     this.ray.far=far; return this._cast();
   }
   _cast(){ const hits=this.ray.intersectObjects(this.world.raycastTargets,false); return hits.find(h=>h.object.userData.alive!==false)||null; }
-  // VR: agarra o que o controle aponta de perto; senão, o que está atrás da mão vista da cabeça
+  // VR: 1) o que o controle aponta de perto; 2) braço estendido: do ombro passando pela mão;
+  // 3) o que está atrás da mão vista da cabeça. 2 e 3 vão até o mesmo alcance do desktop (this.reach)
   _grabHit(h){
     if(!this.xr) return this.aim(this.reach);
     const i=this.hands.indexOf(h), xr=this.xr;
-    if(xr.ray(i,_p,_q)){ this.ray.set(_p,_q); this.ray.far=xr.grabReach; const hit=this._cast(); if(hit&&hit.object.userData.grab) return hit; }
+    const grab=()=>{ const hit=this._cast(); return hit&&hit.object.userData.grab?hit:null; };
+    let hit=null;
+    if(xr.ray(i,_p,_q)){ this.ray.set(_p,_q); this.ray.far=xr.grabReach; hit=grab(); if(hit) return hit; }
     if(!xr.handPos(i,_p)) return null;
-    _e.setFromMatrixPosition(this.camera.matrixWorld); _d.subVectors(_p,_e); const L=_d.length(); if(L<.05) return null;
-    this.ray.set(_e,_d.multiplyScalar(1/L)); this.ray.far=Math.min(L+xr.grabReach,this.reach);
-    return this._cast();
+    for(const from of ['shoulder','eye']){
+      if(from==='eye') _e.setFromMatrixPosition(this.camera.matrixWorld); else xr.shoulderPos(i,_e);
+      _d.subVectors(_p,_e); const L=_d.length(); if(L<xr.armMin) continue;
+      this.ray.set(_e,_d.multiplyScalar(1/L)); this.ray.far=this.reach; hit=grab(); if(hit) return hit;
+    }
+    return null;
   }
   canMantle(){
     if(this.mantle) return null;

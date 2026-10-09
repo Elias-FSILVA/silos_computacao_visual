@@ -6,19 +6,27 @@
 // mãos do jogo. A física continua toda no Player: este módulo só traduz poses e botões e posiciona o rig.
 // Controles (gamepad xr-standard):
 //   grip (cada mão) = agarrar · segurando, descer o braço = puxada do corpo
-//   analógico esq. = andar (clique = pausa) · analógico dir. = giro (passos ou suave, nas configurações)
-//   A = pular/subir na borda · gatilho dir. = usar item ou interagir · B = trocar item · X = guardar · Y = pílula
+//   analógico esq. = andar (clique = pausa) · analógico dir. = giro (passos ou suave) e, na vertical,
+//   inclinar a vista (clique = nivelar) · A = pular/subir na borda · gatilho dir. = usar item ou interagir
+//   B = trocar item · X = guardar · Y = pílula
+// Sem gatilho: prego encostado na parede se coloca sozinho; martelada de verdade no prego conta como golpe.
 // Hand tracking: mão fechada = agarrar · pinça direita = gatilho direito · pinça esquerda = pular/subir.
-// Espaço de referência 'local': a origem é a cabeça no início da sessão, então a altura dos olhos do
-// jogo (EYE) vale tanto em pé quanto sentado. Passos reais no quarto levam o corpo junto (com colisão);
-// pendurado, inclinar a cabeça só move a vista.
+// Altura: com 'local-floor' (área de jogo do Quest), a vista fica na altura real do jogador; sentado (ou sem
+// chão, espaço 'local'), os olhos vão para a altura do jogo (EYE). Passos reais no quarto levam o corpo
+// junto (com colisão); pendurado, inclinar a cabeça só move a vista.
 // Fora do gameplay (intro, pausa, resultado) roda idle(): menus flutuantes (VRMenu) clicados com o raio.
 // ============================================================================
 // Ajustes finos — calibrar no headset
 const VR_TUNE={
-  pullGain:320,                    // "pixels de mouse" por metro de braço puxado (~0,4 m = puxada completa)
-  grabReach:.45,                   // alcance do agarre a partir do controle (m)
+  pullGain:420,                    // "pixels de mouse" por metro de braço puxado (~0,31 m = puxada completa)
+  grabReach:.45,                   // agarre de perto: raio do controle (m)
+  armMin:.3,                       // agarre de longe (até o alcance do desktop): braço estendido ao menos isto (m)
+  minEyeHeight:1.3,                // abaixo disso (sentado/ajoelhado na calibragem), sobe a vista até a altura do jogo
+  smoothJump:.12,                  // salto da vista acima do previsto pela velocidade (m) é suavizado, não teletransportado
   deadzone:.2, smoothTurn:2.4,     // analógicos; giro suave (rad/s)
+  pitchSpeed:1.2, pitchLimit:.9,   // analógico direito na vertical: inclina a vista (rad/s, limite em rad)
+  nailContact:.035, nailAlign:.8, nailDwell:.15, nailRearm:.08,   // prego: folga da ponta, alinhamento (cos), tempo encostado, afastar para o próximo
+  hammerRadius:.06, hammerSpeed:1.1, hammerCooldown:.25,          // martelo: raio cabeça↔prego (m), velocidade mínima (m/s), intervalo entre pancadas (s)
   handBack:.05, handPitch:0,       // modelo da mão sobre o controle: recuo do pulso (m) e inclinação (rad)
   fistClose:.085, fistOpen:.115,   // hand tracking: distância média pontas dos dedos → pulso (m)
   pinchClose:.02, pinchOpen:.035   // hand tracking: polegar → indicador (m)
@@ -26,13 +34,23 @@ const VR_TUNE={
 const VR_BTNS=['grip','trigger','a','b','stick'];
 const VR_TIPS=['index-finger-tip','middle-finger-tip','ring-finger-tip'];
 const _vh=new V3(), _vd=new V3(), _vo=new V3(), _vp=new V3(), _vy=new V3(0,1,0), _vx=new V3(1,0,0), _vqq=new THREE.Quaternion();
+const _ta=new V3(), _tb=new V3(), _tc=new V3(), _tv=new V3(), _te=new THREE.Euler(0,0,0,'YXZ'), _tq=new THREE.Quaternion();
+// distância do ponto p ao segmento ab
+function segDist(a,b,p){ _tv.subVectors(b,a); const L2=_tv.lengthSq(); const t=L2>1e-9?clamp(_tc.subVectors(p,a).dot(_tv)/L2,0,1):0;
+  return _tc.copy(a).addScaledVector(_tv,t).distanceTo(p); }
 class VRPlayer{
   constructor(game){
     this.g=game; this.renderer=game.renderer; this.camera=game.camera;
     this.active=false; this.entering=false; this.session=null;
     this.rig=new THREE.Group(); game.scene.add(this.rig);
-    this.rigYaw=0; this.anchor=new V3();   // deslocamento horizontal da cabeça já absorvido pelo corpo
+    this.rigYaw=0; this.rigPitch=0; this.anchor=new V3();   // anchor: deslocamento horizontal da cabeça já absorvido pelo corpo
+    // altura: rig.y = pés + heightOffset. Com 'local-floor' a câmera já traz a altura real do jogador;
+    // com 'local' (origem na cabeça), heightOffset põe a cabeça na altura dos olhos do jogo
+    this.floor=false; this.heightOffset=EYE; this.frames=0; this.pendingRecenter=false;
+    this.smooth=new V3(); this._rigLast=null; this._rigT=0;   // suavização de trancos da vista
     this.input={x:0,y:0}; this.motion=0; this.cineState=null;
+    this.caster=new THREE.Raycaster();
+    this.nail={t:0,armed:true}; this.ham={prev:null,cd:0,armed:new Map()};
     this.ctrl=[null,null];                 // 0 = esquerda, 1 = direita (mesma ordem de Player.hands)
     const xr=this.renderer.xr;
     this._all=[0,1].map(i=>{
@@ -53,6 +71,7 @@ class VRPlayer{
   get player(){ return this.g.player; }
   get busy(){ return this.active||this.entering; }
   get grabReach(){ return VR_TUNE.grabReach; }
+  get armMin(){ return VR_TUNE.armMin; }
   _assign(){
     this.ctrl=[null,null];
     this._all.forEach(c=>{ const h=c.source&&c.source.handedness; if(h==='left') this.ctrl[0]=c; else if(h==='right') this.ctrl[1]=c; });
@@ -64,12 +83,14 @@ class VRPlayer{
   enter(onStart){
     if(!navigator.xr||this.busy) return;
     this.entering=true;
-    navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','hand-tracking']}).then(s=>{
-      this.renderer.xr.setReferenceSpaceType('local');
+    navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','hand-tracking']}).then(s=>
+      // chão real quando o Quest tem a área de jogo configurada; senão, origem na cabeça
+      s.requestReferenceSpace('local-floor').then(()=>'local-floor',()=>'local').then(type=>{
+      this.floor=type==='local-floor'; this.renderer.xr.setReferenceSpaceType(type);
       s.addEventListener('end',()=>this._onEnd());
       s.addEventListener('visibilitychange',()=>this.g.onVRVisibility(s.visibilityState));
       return this.renderer.xr.setSession(s).then(()=>{ this.session=s; this._onStart(); if(onStart) onStart(); });
-    }).catch(err=>{ console.warn('VR:',err); this.g.ui.msg('Não foi possível entrar em VR.',3); })
+    })).catch(err=>{ console.warn('VR:',err); this.g.ui.msg('Não foi possível entrar em VR.',3); })
       .then(()=>{ this.entering=false; });
   }
   exit(){ if(this.session) this.session.end().catch(()=>{}); }
@@ -79,6 +100,8 @@ class VRPlayer{
     this.rig.add(this.camera); this.camera.position.set(0,0,0); this.camera.rotation.set(0,0,0);
     this.panel.attach(this.camera); this.hud.attach(this.g.scene,this.camera);
     this.g.atmosphere.setLightCount(3);
+    this.frames=0; this.heightOffset=this.floor?0:EYE; this.rigPitch=0;
+    this.nail={t:0,armed:true}; this.ham={prev:null,cd:0,armed:new WeakMap()};
     this.player.xr=this; this.recenter();
   }
   _onEnd(){
@@ -87,13 +110,19 @@ class VRPlayer{
     this._all.forEach(c=>{ c.prev=null; c.lastY=null; c.fist=c.pinch=false; });
     this.g.onVRExit();
   }
-  // corpo embaixo da cabeça, olhando para player.yaw
+  // corpo embaixo da cabeça, olhando para player.yaw, vista nivelada; calibra a altura.
+  // A pose da cabeça só chega depois do primeiro quadro desenhado: até lá, fica pendente.
   recenter(){
-    this.camera.getWorldDirection(_vd);
-    const headYaw=Math.hypot(_vd.x,_vd.z)>.1?Math.atan2(-_vd.x,-_vd.z)-this.rigYaw:0;
-    this.rigYaw=this.player.yaw-headYaw;
+    if(this.frames<2){ this.pendingRecenter=true; this.place(true); return; }
+    this.pendingRecenter=false;
+    // altura: em pé, vale a altura real (local-floor); sentado/ajoelhado ou sem chão, os olhos vão para EYE
+    const h=this.camera.position.y;
+    this.heightOffset=this.floor?(h<VR_TUNE.minEyeHeight?EYE-h:0):EYE-h;
+    this.rigPitch=0;
+    _te.set(0,0,0); _te.setFromQuaternion(this.camera.quaternion,'YXZ');
+    this.rigYaw=this.player.yaw-_te.y;
     this._headOffset(this.anchor); this.anchor.y=0;
-    this.place();
+    this.place(true);
   }
   // ---------- menus e cinemática ----------
   showPause(){
@@ -125,7 +154,7 @@ class VRPlayer{
   // gameplay, antes de Player.update: botões, analógicos, puxada e direção do corpo
   update(dt){
     const g=this.g, p=this.player, s=g.settings.data;
-    this.rig.updateMatrixWorld(true);
+    this._frame();
     const [L,R]=this._readAll();
     for(let i=0;i<2;i++){ const st=i?R:L; if(!st) continue;
       if(st.d.grip) p.setGrab(i,true); else if(st.u.grip) p.setGrab(i,false); }
@@ -142,7 +171,7 @@ class VRPlayer{
       else if(R.u.trigger) g.items.use(false);
       if(R.d.a) p.jump();
       if(R.d.b) g.items.cycle(1);
-      turning=this._turnInput(R,dt,s.vrTurn);
+      turning=this._lookInput(R,dt,s.vrTurn);
     }
     this.input.x=mx; this.input.y=my; this.motion=Math.max(Math.min(1,Math.hypot(mx,my)),turning);
     // andar segue o olhar
@@ -162,9 +191,10 @@ class VRPlayer{
     });
     if(pull>0) p.pullBy(pull*VR_TUNE.pullGain);
   }
-  // gameplay, depois da física e do HUD: mira, pulso e vinheta
+  // gameplay, depois da física, das mãos e do HUD: prego/martelo, mira, pulso e vinheta
   afterPlay(dt,look,gs){
     const s=this.g.settings.data;
+    this._tools(dt);
     this.pointer.visible=!!look.reticle&&look.reticle!=='dot'&&look.reticle!=='grab';
     this._placeWrist(); this.hud.update(dt,this.g.ui,this.player,look);
     const mass=gs.massDistance!=null?clamp((14-gs.massDistance)/12,0,.85):0;
@@ -172,7 +202,7 @@ class VRPlayer{
   }
   // fora do gameplay: menus, pular a intro
   idle(dt){
-    this.rig.updateMatrixWorld(true);
+    this._frame();
     const st=this._readAll(), g=this.g;
     if(this.menu.open){
       const i=this.ctrl[1]?1:0, dist=this.ray(i,_vo,_vd)?this.menu.hit(_vo,_vd):null;
@@ -185,23 +215,105 @@ class VRPlayer{
     this._placeWrist();
     this.hud.setVignette(dt,0,0,0,false);
   }
-  // depois da física: rig nos olhos do corpo, descontado o que a cabeça já andou
-  place(){
-    const p=this.player; p.eyePos(_vo);
-    this.rig.position.set(_vo.x-this.anchor.x,_vo.y,_vo.z-this.anchor.z);
-    this.rig.rotation.set(0,this.rigYaw,0); this.rig.updateMatrixWorld(true);
+  // início de cada quadro em VR: conta quadros (pose da cabeça disponível) e atualiza as matrizes dos controles
+  _frame(){
+    this.frames++;
+    if(this.pendingRecenter&&this.frames>=2) this.recenter();
+    this.rig.updateMatrixWorld(true);
+  }
+  // depois da física: rig nos pés do corpo (+ altura), descontado o que a cabeça já andou.
+  // reset: posição nova de propósito (início, recentralizar, giro) — sem suavizar
+  place(reset){
+    const p=this.player;
+    _vo.set(p.position.x-this.anchor.x,p.position.y+this.heightOffset,p.position.z-this.anchor.z);
+    // inclinação pelo analógico: gira em volta da cabeça, não dos pés
+    _te.set(this.rigPitch,this.rigYaw,0); this.rig.quaternion.setFromEuler(_te);
+    if(this.rigPitch){ _vo.add(_vh.copy(this.camera.position).applyAxisAngle(_vy,this.rigYaw)).sub(_vp.copy(this.camera.position).applyQuaternion(this.rig.quaternion)); }
+    // trancos da física (agarrar longe, correção de colisão): a vista alcança o corpo em ~0,1 s em vez de pular
+    const now=performance.now()/1000, dt=this._rigLast?Math.min(.1,now-this._rigT):0; this._rigT=now;
+    if(reset||this._noSmooth||!this._rigLast) this.smooth.set(0,0,0);
+    else if(this.g.state==='play'){
+      _vd.subVectors(_vo,this._rigLast).addScaledVector(p.velocity,-dt);
+      if(_vd.length()>VR_TUNE.smoothJump) this.smooth.sub(_vd);
+    }
+    this._noSmooth=false;
+    this.smooth.multiplyScalar(Math.exp(-14*dt));
+    this._rigLast=(this._rigLast||new V3()).copy(_vo);
+    this.rig.position.copy(_vo).add(this.smooth); this.rig.updateMatrixWorld(true);
   }
   _turn(a){
     // gira em volta da cabeça: ela fica no mesmo ponto do mundo
     this.anchor.sub(this._headOffset(_vh)); this.rigYaw+=a; this.anchor.add(this._headOffset(_vh)); this.anchor.y=0;
+    this._noSmooth=true;
   }
-  _turnInput(R,dt,mode){
-    const ax=R.sx;
-    if(mode==='0'){ if(Math.abs(ax)>VR_TUNE.deadzone){ this._turn(-ax*VR_TUNE.smoothTurn*dt); return Math.abs(ax); } return 0; }
-    const step=(+mode||30)*Math.PI/180, c=this.ctrl[1];
-    if(Math.abs(ax)>.7){ if(!c.turned){ c.turned=true; this._turn(ax>0?-step:step); return 1; } }
+  // analógico direito: giro horizontal (passos ou suave) e inclinação vertical, pelo eixo dominante.
+  // Soma-se ao rastreamento da cabeça (o headset continua mandando na vista); clique no analógico nivela.
+  _lookInput(R,dt,mode){
+    const ax=R.sx, ay=R.sy, c=this.ctrl[1], vertical=Math.abs(ay)>Math.abs(ax)*1.2;
+    let m=0;
+    if(R.d.stick) this.rigPitch=0;
+    if(vertical&&Math.abs(ay)>VR_TUNE.deadzone+.1){
+      this.rigPitch=clamp(this.rigPitch-ay*VR_TUNE.pitchSpeed*dt,-VR_TUNE.pitchLimit,VR_TUNE.pitchLimit); m=Math.abs(ay)*.8;
+    }
+    if(mode==='0'){ if(!vertical&&Math.abs(ax)>VR_TUNE.deadzone){ this._turn(-ax*VR_TUNE.smoothTurn*dt); m=Math.max(m,Math.abs(ax)); } return m; }
+    const step=(+mode||30)*Math.PI/180;
+    if(!vertical&&Math.abs(ax)>.7){ if(!c.turned){ c.turned=true; this._turn(ax>0?-step:step); return 1; } }
     else if(Math.abs(ax)<.3) c.turned=false;
-    return 0;
+    return m;
+  }
+  // ombro aproximado (da pose da cabeça): origem do agarre de longe com o braço estendido
+  shoulderPos(i,out){
+    out.setFromMatrixPosition(this.camera.matrixWorld);
+    this.camera.getWorldDirection(_tv); const yaw=Math.hypot(_tv.x,_tv.z)>.1?Math.atan2(-_tv.x,-_tv.z):this.player.yaw;
+    return out.add(_tc.set(i?.17:-.17,-.2,0).applyAxisAngle(_vy,yaw));
+  }
+  // ---------- prego e martelo sem gatilho ----------
+  _tools(dt){
+    const it=this.g.items, m=it.mesh, ok=!!m&&m.visible&&it.phase==='idle';
+    if(ok) m.updateWorldMatrix(true,false);
+    if(ok&&it.equipped==='nails') this._nailCheck(dt,m); else this.nail.t=0;
+    if(ok&&it.equipped==='hammer') this._hammerCheck(dt,m); else this.ham.prev=null;
+  }
+  // prego na mão: com a ponta encostada numa superfície válida, alinhado com a parede por um instante,
+  // dispara a mesma colocação do botão (ItemSystem.place). Para o próximo, é preciso afastar a ponta.
+  _nailCheck(dt,m){
+    const N=this.nail, tip=m.localToWorld(_ta.set(0,-.17,0)), back=m.localToWorld(_tb.set(0,.05,0));
+    _tv.subVectors(tip,back); const len=_tv.length(); if(len<1e-4) return; _tv.multiplyScalar(1/len);
+    this.caster.set(back,_tv); this.caster.far=len+VR_TUNE.nailRearm+.02;
+    const hit=this.caster.intersectObjects(this.g.world.raycastTargets,false).find(h=>h.object.userData.alive!==false);
+    const gap=hit?hit.distance-len:Infinity;   // folga entre a ponta e a superfície (<0: já encostou)
+    if(gap>VR_TUNE.nailRearm) N.armed=true;
+    if(!hit||gap>VR_TUNE.nailContact||!N.armed){ N.t=0; return; }
+    const ctx=this.g.interaction.ctx(hit), obj=hit.object.userData.interactable, c=obj&&obj.canUseItem('nails',ctx);
+    if(!c||!c.valid||-_tv.dot(ctx.normal)<VR_TUNE.nailAlign){ N.t=0; return; }
+    N.t+=dt; if(N.t<VR_TUNE.nailDwell) return;
+    if(this.g.items.place({hit,obj,ctx,valid:true})){ N.armed=false; N.t=0; this._haptic(1,.5,40); }
+  }
+  // martelo na mão: a cabeça do martelo cruzando a cabeça de um prego, rápido e indo contra a parede,
+  // conta como uma pancada (ItemSystem.strike → NailAnchor.useItem, que avança o prego como no desktop).
+  // Uma pancada por contato: o martelo precisa se afastar do prego e há um intervalo mínimo.
+  _hammerCheck(dt,m){
+    const H=this.ham, head=m.localToWorld(_ta.set(0,.27,0));
+    H.cd=Math.max(0,H.cd-dt);
+    if(!H.prev){ H.prev=head.clone(); return; }
+    _tb.subVectors(head,H.prev); const k=1/Math.max(dt,1e-4), speed=_tb.length()*k;
+    for(const a of this.g.world.grabbables){
+      const u=a.userData, nail=u.interactable;
+      if(u.type!=='nail'||u.alive===false||!(nail instanceof NailAnchor)||nail.fixed) continue;
+      _vp.set(0,.135,0); nail.visual.localToWorld(_vp);   // cabeça do prego
+      const d=segDist(H.prev,head,_vp);
+      if(d>VR_TUNE.hammerRadius*2) H.armed.set(a,true);
+      if(d>VR_TUNE.hammerRadius||H.armed.get(a)===false||H.cd>0) continue;
+      if(speed<VR_TUNE.hammerSpeed||-_tb.dot(u.wallNormal)*k<VR_TUNE.hammerSpeed*.5) continue;   // só encostar não vale
+      const hit={point:_vp.clone(),object:a,distance:0,face:{normal:new V3(0,1,0)}};
+      if(this.g.items.strike({hit,obj:nail,ctx:this.g.interaction.ctx(hit),valid:true})) this._haptic(1,.9,60);
+      H.armed.set(a,false); H.cd=VR_TUNE.hammerCooldown; break;
+    }
+    H.prev.copy(head);
+  }
+  _haptic(i,v,ms){
+    try{ const c=this.ctrl[i], gp=c&&c.source&&c.source.gamepad, a=gp&&gp.hapticActuators&&gp.hapticActuators[0];
+      if(a&&a.pulse){ const r=a.pulse(v,ms); if(r&&r.catch) r.catch(()=>{}); } }catch(e){}
   }
   _placeWrist(){ const ok=this.handPose(0,_vh,_vqq,true); this.hud.placeWrist(ok?_vh:null,_vqq); }
   // ---------- leitura dos controles ----------

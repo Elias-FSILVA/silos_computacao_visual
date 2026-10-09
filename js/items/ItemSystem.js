@@ -76,16 +76,25 @@ class ItemSystem{
   _start(ph){ this.phase=ph; this.t=0; this.impacted=false; if(ph==='swing') this.g.audio.swing(); }
   _impact(){
     const tg=this.pending; this.pending=null;
-    if(this.phase==='swing'){
-      if(this.player.isClimbing) this.player.hands.forEach(h=>{ if(h.inContact) h.stamina=Math.max(0,h.stamina-2); });
-      this.landed=!!(tg&&tg.obj&&tg.hit.object.userData.alive!==false);
-      if(this.landed) tg.obj.useItem('hammer',tg.ctx);
-    } else if(this.phase==='place'){
+    if(this.phase==='swing') this._hammerHit(tg);
+    else if(this.phase==='place'){
       if(tg&&tg.obj) tg.obj.useItem(this.equipped,tg.ctx);
     } else if(this.phase==='consume'){
       if(this.inv.take('pills')){ this.player.restoreStamina(); this.g.audio.pill(); this.g.ui.msg('O tremor nas mãos passa.',2); }
     }
   }
+  _hammerHit(tg){
+    if(this.player.isClimbing) this.player.hands.forEach(h=>{ if(h.inContact) h.stamina=Math.max(0,h.stamina-2); });
+    this.landed=!!(tg&&tg.obj&&tg.hit.object.userData.alive!==false);
+    if(this.landed) tg.obj.useItem('hammer',tg.ctx);
+  }
+  // VR: prego encostado na parede (detectado pelo VRPlayer) — mesma colocação do botão, sem o clique
+  place(tg){
+    if(this.phase!=='idle'||this.equipped!=='nails'||!tg||!tg.valid||this.inv.count('nails')<=0) return false;
+    this.pending=tg; this._start('place'); return true;
+  }
+  // VR: pancada física do martelo num prego (detectada pelo VRPlayer) — mesmo efeito do golpe, sem a animação
+  strike(tg){ if(this.phase!=='idle'||this.equipped!=='hammer') return false; this._hammerHit(tg); return this.landed; }
   update(dt){
     if(this.phase==='empty'){ this.pose.visible=false; return; }
     if(this.player.dead){ return; }
