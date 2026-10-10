@@ -37,7 +37,8 @@ body.inv-open #reticle, body.inv-open #prompt, body.inv-open #inv{ visibility:hi
 /* painel de detalhe: ao lado do círculo (ou embaixo, em telas mais altas que largas) */
 #packInfo{ position:absolute; top:50%; left:calc(50% + var(--pk)*.5 + 20px); transform:translateY(-50%);
   width:min(280px,calc(50vw - var(--pk)*.5 - 36px)); display:flex; flex-direction:column; align-items:flex-start; text-align:left; gap:.35em; pointer-events:none; }
-#packPips{ display:flex; gap:6px; margin-bottom:2px; }
+/* os indicadores de ocupação quebram de linha quando a capacidade é grande (10 espaços) e o painel é estreito */
+#packPips{ display:flex; flex-wrap:wrap; gap:6px; max-width:100%; margin-bottom:2px; }
 #packPips i{ display:block; width:10px; height:10px; border-radius:50%; border:1px solid var(--dust); }
 #packPips i.on{ background:var(--sodium); border-color:var(--sodium); }
 #packInfo .hn{ font-family:"Big Shoulders Stencil Display",Impact,sans-serif; font-weight:800; font-size:34px; line-height:.95; color:var(--sodium); }
@@ -117,6 +118,7 @@ body.inv-open #reticle, body.inv-open #prompt, body.inv-open #inv{ visibility:hi
   #packWrap{ --pk:min(94vw,max(200px,calc(100vh - 240px)),600px); }
   #packInfo{ left:50%; top:auto; bottom:calc(env(safe-area-inset-bottom,0px) + 50px); transform:translateX(-50%);
     width:min(92vw,520px); align-items:center; text-align:center; gap:.2em; }
+  #packPips{ justify-content:center; }
   #packInfo .hn{ font-size:28px; }
   #packLegend{ font-size:13px; }
 }

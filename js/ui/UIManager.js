@@ -6,11 +6,12 @@
 // Inventário: a hotbar (1–4) e a mochila circular (Tab) LEEM items.inv / ItemSystem.
 // A única escrita da UI no jogo é inv.bind / inv.unbind (vínculos de atalho); equipar e usar continuam no ItemSystem.
 // As posições dos itens dentro do círculo (this.layout) são só apresentação: id do item → {x,y}; não são dados do inventário.
+// Capacidade, limites de pilha e peso vêm do Inventory (INVENTORY_CONFIG / ITEM_DEFS); a UI não tem regras por item.
 // ============================================================================
 const HAND_OPEN='<rect x="9" y="21" width="22" height="21" rx="7"/><rect x="9" y="7" width="5" height="18" rx="2.5"/><rect x="15" y="3" width="5" height="21" rx="2.5"/><rect x="21" y="4" width="5" height="20" rx="2.5"/><rect x="27" y="9" width="4.5" height="16" rx="2.25"/><rect x="2" y="24" width="5" height="14" rx="2.5" transform="rotate(-35 4.5 31)"/>';
 const HAND_CLOSED='<rect x="8" y="14" width="25" height="27" rx="8"/><rect x="4" y="25" width="15" height="6.5" rx="3.25"/>';
 function staminaColor(s){ return s>60?'#c9d2d6':s>35?'#e3b341':s>15?'#e0633a':'#ff2a1a'; }
-// textos de ajuda (só apresentação; nomes e quantidades vêm de ITEM_DEFS / Inventory)
+// textos de ajuda (só apresentação; nomes e quantidades vêm de ITEM_DEFS / Inventory). Item sem texto aqui mostra só o nome.
 const ITEM_HINT={
   hammer:'Botão direito: golpear. Quebra painéis frágeis e crava pregos soltos.',
   nails:'Botão direito: cravar em parede de concreto, perto.',
@@ -208,7 +209,7 @@ class UIManager{
     const storeEl=$('packStore'), quickEl=$('packQuick'), pipsEl=$('packPips');
     storeEl.textContent=''; quickEl.textContent=''; pipsEl.textContent='';
     const pk=this.pk={sel:-1,store:[],quick:[],pips:[],hn:$('packHn'),hs:$('packHs'),hd:$('packHd'),hh:$('packHh')};
-    // um elemento por espaço de armazenamento; fica oculto enquanto o espaço está vazio e é posicionado por this.layout
+    // um elemento por entrada de armazenamento (inv.size); fica oculto enquanto a entrada está vazia e é posicionado por this.layout
     for(let i=0;i<N;i++){
       const el=document.createElement('button'); el.type='button'; el.className='ps store'; el.dataset.kind='store'; el.dataset.i=i; el.hidden=true;
       el.style.width=G.itemD+'%'; el.style.height=G.itemD+'%';
@@ -232,45 +233,80 @@ class UIManager{
       pk.quick.push({el,clr,id:null,ic:el.querySelector('.ic'),ct:el.querySelector('.ct')});
     }
   }
-  // ---- posicionamento livre dentro do círculo ----
-  // Limita ao círculo e afasta de outros itens e dos quatro atalhos. skip = id do item que está sendo posicionado.
-  _fit(x,y,skip){
-    const G=PACK_GEO, r=G.itemD/2, maxR=G.R-r-1.5, minD=G.itemD+.8, need=r+1;
+  // ---- posicionamento livre dentro do círculo (sem sobreposição) ----
+  // Um item é um disco de diâmetro itemD cujo centro fica a até maxR da origem, a pelo menos minD de qualquer outro item
+  // e a pelo menos `need` de cada atalho quadrado. As coordenadas só existem aqui (this.layout), nunca no Inventory.
+  _ctx(){ const G=PACK_GEO, r=G.itemD/2; return {maxR:G.R-r-1.5, minD:G.itemD+.8, need:r+1, sq:this._quickRects()}; }
+  // o ponto (x,y) é uma posição válida para o item `skip`? (os demais itens vêm de this.layout)
+  _clear(x,y,skip,C){
+    if(Math.hypot(x,y)>C.maxR+.01) return false;
+    for(const [id,o] of this.layout) if(id!==skip&&Math.hypot(x-o.x,y-o.y)<C.minD-.01) return false;
+    for(const q of C.sq){
+      const nx=clamp(x,q.x-q.h,q.x+q.h), ny=clamp(y,q.y-q.h,q.y+q.h);
+      if(Math.hypot(x-nx,y-ny)<C.need-.01) return false;
+    }
+    return true;
+  }
+  // empurra (x,y) para fora de itens e atalhos e para dentro do círculo (relaxação iterativa; pode não convergir em layouts apertados)
+  _push(x,y,skip,C){
     const others=[]; this.layout.forEach((o,id)=>{ if(id!==skip) others.push(o); });
-    const sq=this._quickRects();
     for(let n=0;n<30;n++){
       let moved=false; const d=Math.hypot(x,y);
-      if(d>maxR){ x*=maxR/d; y*=maxR/d; }
+      if(d>C.maxR){ x*=C.maxR/d; y*=C.maxR/d; }
       for(const o of others){
         let dx=x-o.x, dy=y-o.y, dd=Math.hypot(dx,dy);
-        if(dd<minD){ if(dd<.01){ dx=1; dy=0; dd=1; } x=o.x+dx/dd*minD; y=o.y+dy/dd*minD; moved=true; }
+        if(dd<C.minD){ if(dd<.01){ dx=1; dy=0; dd=1; } x=o.x+dx/dd*C.minD; y=o.y+dy/dd*C.minD; moved=true; }
       }
-      for(const q of sq){
+      for(const q of C.sq){
         const nx=clamp(x,q.x-q.h,q.x+q.h), ny=clamp(y,q.y-q.h,q.y+q.h), dx=x-nx, dy=y-ny, dd=Math.hypot(dx,dy);
-        if(dd<need){
-          if(dd<.001){ const L=Math.hypot(q.x,q.y)||1; x=q.x-q.x/L*(q.h+need); y=q.y-q.y/L*(q.h+need); }   // centro dentro do atalho: empurra para o círculo
-          else { x=nx+dx/dd*need; y=ny+dy/dd*need; }
+        if(dd<C.need){
+          if(dd<.001){ const L=Math.hypot(q.x,q.y)||1; x=q.x-q.x/L*(q.h+C.need); y=q.y-q.y/L*(q.h+C.need); }   // centro dentro do atalho: empurra para o círculo
+          else { x=nx+dx/dd*C.need; y=ny+dy/dd*C.need; }
           moved=true;
         }
       }
       if(!moved) break;
     }
-    const d=Math.hypot(x,y); if(d>maxR){ x*=maxR/d; y*=maxR/d; }
+    const d=Math.hypot(x,y); if(d>C.maxR){ x*=C.maxR/d; y*=C.maxR/d; }
     return {x,y};
   }
-  // lugar inicial de um item novo: as quatro diagonais, depois o centro, depois qualquer ponto livre
-  _defaultSpot(id){
-    const list=[[-12,-12],[12,-12],[-12,12],[12,12],[0,0]], grid=[];
-    for(let y=-28;y<=28;y+=8) for(let x=-28;x<=28;x+=8) grid.push([x,y]);
-    grid.sort((a,b)=>Math.hypot(a[0],a[1])-Math.hypot(b[0],b[1]));
-    for(const [x,y] of list.concat(grid)){ const f=this._fit(x,y,id); if(Math.hypot(f.x-x,f.y-y)<.25) return f; }
-    return this._fit(0,0,id);
+  // ponto livre mais próximo de (x,y), numa grade de 1% do lado da mochila; null se o círculo não tem mais lugar
+  _nearest(x,y,skip,C){
+    let best=null, bd=Infinity;
+    for(let gy=-Math.floor(C.maxR);gy<=C.maxR;gy++) for(let gx=-Math.floor(C.maxR);gx<=C.maxR;gx++){
+      const d=(gx-x)*(gx-x)+(gy-y)*(gy-y); if(d>=bd) continue;
+      if(this._clear(gx,gy,skip,C)){ best={x:gx,y:gy}; bd=d; }
+    }
+    return best;
   }
-  // mantém this.layout alinhado ao inventário: esquece itens que não existem mais e posiciona os novos
+  // posição final de um item solto/empurrado perto de (x,y): sempre válida; `fb` (posição anterior) é a rede de segurança
+  _fit(x,y,skip,fb){
+    const C=this._ctx(), p=this._push(x,y,skip,C);
+    if(this._clear(p.x,p.y,skip,C)) return p;
+    return this._nearest(x,y,skip,C)||fb||p;
+  }
+  // lugar inicial de um item novo: as quatro diagonais, depois o ponto livre mais próximo do centro; null se não houver
+  _defaultSpot(id){
+    const C=this._ctx();
+    for(const [x,y] of [[-12,-12],[12,-12],[-12,12],[12,12],[0,0]]) if(this._clear(x,y,id,C)) return {x,y};
+    return this._nearest(0,0,id,C);
+  }
+  // raro: o círculo está tão fragmentado que um item novo não acha lugar; reorganiza TODOS os itens do zero, compactos
+  _relayout(inv,exceptId){
+    const ids=inv.slots.filter(s=>s&&s.id!==exceptId).map(s=>s.id);
+    this.layout.clear();
+    ids.forEach(id=>{ this.layout.set(id,this._defaultSpot(id)||{x:0,y:0}); });
+  }
+  // mantém this.layout alinhado ao inventário: esquece itens que não existem mais e posiciona os novos (os existentes não se movem)
   _syncLayout(inv){
     const ids=new Set(); inv.slots.forEach(s=>{ if(s) ids.add(s.id); });
     for(const id of [...this.layout.keys()]) if(!ids.has(id)) this.layout.delete(id);
-    inv.slots.forEach(s=>{ if(s&&!this.layout.has(s.id)) this.layout.set(s.id,this._defaultSpot(s.id)); });
+    inv.slots.forEach(s=>{
+      if(!s||this.layout.has(s.id)) return;
+      let p=this._defaultSpot(s.id);
+      if(!p){ this._relayout(inv,s.id); p=this._defaultSpot(s.id)||{x:0,y:0}; }
+      this.layout.set(s.id,p);
+    });
   }
   renderPack(items,player){
     const pk=this.pk; if(!pk||!this.packOpen) return;
@@ -281,11 +317,9 @@ class UIManager{
     const tg=(el,c,on)=>el.classList.toggle(c,!!on);
     const icon=(o,id)=>{ if(o.id===id) return; o.id=id; o.ic.innerHTML=id?iconSvg(id):''; };
     const dragging=(this._pd&&this._pd.on&&this._pd.kind==='store')?this._pd.i:-1;   // o item arrastado é posicionado pelo ponteiro
-    let used=0;
     pk.store.forEach((o,i)=>{
       const s=inv.slots[i]; o.el.hidden=!s;
       if(!s){ icon(o,null); return; }
-      used++;
       const def=ITEM_DEFS[s.id], st=this.slotInfo(items,player,i), bk=inv.binds.indexOf(s.id), L=this.layout.get(s.id);
       if(i!==dragging){ o.el.style.left=(50+L.x)+'%'; o.el.style.top=(50+L.y)+'%'; }
       icon(o,s.id);
@@ -308,16 +342,16 @@ class UIManager{
         o.clr.setAttribute('aria-label',`Remover ${def.name} do atalho ${L}`);
       } else o.el.setAttribute('aria-label',`Atalho ${L} (${P}): vazio`);
     });
-    // painel de detalhe: item selecionado ou resumo
+    // painel de detalhe: item selecionado ou resumo de ocupação (ex.: "6 / 10 espaços")
     const R=player.rightHand, keys=this._keysText(inv), selSlot=pk.sel>=0?inv.slots[pk.sel]:null;
     pk.hh.textContent=(R.occupied&&items.equipped)?'Na mão: '+ITEM_DEFS[items.equipped].name:R.inContact?'Mão direita agarrada':'Mão direita livre';
     if(selSlot){
       const def=ITEM_DEFS[selSlot.id], st=this.slotInfo(items,player,pk.sel), bk=inv.binds.indexOf(selSlot.id);
       pk.hn.textContent=def.name;
-      pk.hs.textContent=st.label+(def.stack?` · ×${selSlot.count}`:'')+(bk>=0?` · atalho ${QUICK_KEYS[bk].label}`:' · sem atalho');
+      pk.hs.textContent=st.label+(def.stack?` · ×${selSlot.count} (máx. ${inv.stackLimitOf(selSlot.id)})`:'')+(bk>=0?` · atalho ${QUICK_KEYS[bk].label}`:' · sem atalho');
       pk.hd.textContent=`${ITEM_HINT[selSlot.id]||''} Escolha ${keys} para atribuir.`.trim();
     } else {
-      pk.hn.textContent='Mochila'; pk.hs.textContent=`${used}/${inv.size} espaços`;
+      pk.hn.textContent='Mochila'; pk.hs.textContent=`${inv.usedSlots} / ${inv.size} espaços`+(inv.isFull?' · cheia':'');
       pk.hd.textContent=`Arraste os itens dentro do círculo para organizá-los. Selecione ou arraste um item para ${keys}.`;
     }
   }
@@ -340,7 +374,7 @@ class UIManager{
   }
   _nudge(i,dx,dy){
     const s=this._it.inv.slots[i], L=s&&this.layout.get(s.id); if(!L) return;
-    this.layout.set(s.id,this._fit(L.x+dx,L.y+dy,s.id)); this._packKey=null; this.renderPack(this._it,this._pl);
+    this.layout.set(s.id,this._fit(L.x+dx,L.y+dy,s.id,L)); this._packKey=null; this.renderPack(this._it,this._pl);
   }
   // ---------- mochila: ponteiro (clique, arrastar e soltar) ----------
   _bindPack(){
@@ -401,8 +435,8 @@ class UIManager{
     if(d.on){
       const q=this._overQuick(e);
       if(d.kind==='store'){
-        if(q) this._drop(d,+q.dataset.i);                                   // soltou sobre um atalho: atribui; o ícone volta ao seu lugar
-        else this.layout.set(d.id,this._fit(d.nx,d.ny,d.id));               // soltou no círculo: guarda a nova posição
+        if(q) this._drop(d,+q.dataset.i);                                                       // soltou sobre um atalho: atribui; o ícone volta ao seu lugar
+        else this.layout.set(d.id,this._fit(d.nx,d.ny,d.id,this.layout.get(d.id)));             // soltou no círculo: guarda a nova posição (sem sobrepor)
       } else this._drop(d,q?+q.dataset.i:-1);
       redraw=true;
       this._noClick=true; setTimeout(()=>{ this._noClick=false; },0);       // o click que o navegador dispara após o arrasto é ignorado
