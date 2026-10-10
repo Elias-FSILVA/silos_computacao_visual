@@ -67,7 +67,7 @@ class UIManager{
     [['#','n'],['Jogador',''],['Pontos','n'],['Tempo','n'],['Resultado','']].forEach(([s,c])=>{ const th=document.createElement('th'); th.textContent=s; if(c) th.className=c; head.appendChild(th); });
     list.forEach((e,i)=>{
       const r=t.insertRow(); if(i===highlight) r.className='me';
-      [[String(i+1),'n'],[e.name,''],[fmtInt(e.score),'n'],[fmtTime(e.time),'n'],[e.result==='finish'?'Saiu':e.result==='mass'?'Alcançado':'Caiu','']]
+      [[String(i+1),'n'],[e.name,''],[fmtInt(e.score),'n'],[fmtTime(e.time),'n'],[e.result==='finish'?('Saiu'+(e.ending&&ENDINGS[e.ending]?` · ${ENDINGS[e.ending].name}`:'')):e.result==='mass'?'Alcançado':'Caiu','']]
         .forEach(([s,c])=>{ const td=r.insertCell(); td.textContent=s; if(c) td.className=c; });
     });
     body.appendChild(t);
@@ -75,12 +75,14 @@ class UIManager{
   // ---------- resultado ----------
   showResult(r){
     const t=this.$('resT');
-    t.textContent=r.result==='finish'?'Subida completa':r.result==='mass'?'A massa te alcançou':'Você caiu';
+    const E=r.result==='finish'&&ENDINGS[r.ending||'escape'];
+    t.textContent=r.result==='finish'?(E?E.name:'Subida completa'):r.result==='mass'?'A massa te alcançou':'Você caiu';
+    const et=this.$('resEnd'); et.textContent=E?`FINAL · ${E.tag}\n\n${E.text}`:''; et.hidden=!E;
     t.className=r.result==='finish'?'win':'danger';
     this.$('resName').textContent=r.name; this.$('resTime').textContent=fmtTime(r.time);
     this.$('resH').textContent=`${Math.floor(r.height)} m de ${TOP} m`; this.$('resScore').textContent=fmtInt(r.breakdown.total);
     const br=this.$('resBreak'); br.textContent='';
-    [['Altura',r.breakdown.height],['Marcos',r.breakdown.checkpoints],['Contenção',r.breakdown.puzzle||0],['Segredos',r.breakdown.secrets||0],['Velocidade',r.breakdown.speed],['Desempenho',r.breakdown.performance],['Penalidades',-r.breakdown.penalties]]
+    [['Altura',r.breakdown.height],['Marcos',r.breakdown.checkpoints],['Destinos',r.breakdown.puzzle||0],['Segredos',r.breakdown.secrets||0],['Velocidade',r.breakdown.speed],['Desempenho',r.breakdown.performance],['Penalidades',-r.breakdown.penalties]]
       .forEach(([k,v])=>{ const dt=document.createElement('dt'); dt.textContent=k; const dd=document.createElement('dd'); dd.textContent=(v<0?'−':'')+fmtInt(Math.abs(v)); br.append(dt,dd); });
     this.$('resSaved').textContent=''; const b=this.$('btnSave'); b.disabled=false; b.textContent='Salvar pontuação';
     this.show('result');

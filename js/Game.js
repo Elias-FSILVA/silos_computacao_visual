@@ -25,11 +25,13 @@ class Game{
     this.ui=new UIManager();
     this.puzzles.reset(); this._zones();
     this.cinematic=new IntroCinematic(this);
+    this.spectator=new SpectatorMode(this);
     this.state='menu'; this.keys={}; this.playerName=''; this.result=null; this.saved=false; this.savedIndex=-1;
     this.settingsReturn='menu'; this.wasLocked=false; this.menuT=0; this.vt=0;
     this._wire(); this.applySettings();
     try{ const n=LS&&LS.getItem('silos.lastName'); if(n) this.ui.$('nameIn').value=n; }catch(e){}
     this.ui.show('menu'); this.ui.setHUD(false);
+    if(/[?&]espectador\b/.test(location.search)) this.spectator.enter();   // link direto: .../index.html?espectador
     this.last=performance.now(); requestAnimationFrame(t=>this._loop(t));
   }
   // ---------- configurações ----------
@@ -58,7 +60,7 @@ class Game{
     this.checkpoints.reset(); this.atmosphere.reset(); this.result=null; this.saved=false; this.savedIndex=-1; this.vt=0;
     this.ui.hideNote(); this.keys={};
   }
-  _zones(){ this.mass.safeZones=Object.values(this.world.puzzleRooms).flatMap(r=>[r.zoneRoom,r.zoneDuct].filter(Boolean)); }
+  _zones(){ this.mass.safeZones=Object.values(this.world.puzzleRooms).flatMap(r=>[r.zoneRoom,r.zoneDuct,...(r.zones||[])].filter(Boolean)); }
   beginPlay(){
     this.state='play'; this.timer.start(); this.ui.hideScreens(); this.ui.setHUD(true);
     this.audio.setHum(1); this.lock();
@@ -82,13 +84,13 @@ class Game{
     this.player.releaseAll(); this.unlock(); this.ui.hideNote(); this.ui.clearMsg();
     this.audio.siren(false);
     if(result==='finish') this.audio.chime(); else this.audio.boom();
-    this.lastRun={name:this.playerName,score:breakdown.total,time:this.timer.time,result,height:this.player.maxHeightReached,breakdown};
+    this.lastRun={name:this.playerName,score:breakdown.total,time:this.timer.time,result,height:this.player.maxHeightReached,breakdown,ending:result==='finish'?(this.route||'escape'):null};
     setTimeout(()=>{ if(this.state!=='ending') return; this.state='result'; this.ui.setHUD(false); this.ui.showResult(this.lastRun); },result==='finish'?1400:900);
   }
   saveScore(){
     if(this.saved||!this.lastRun) return;
     const r=this.lastRun;
-    const entry={name:r.name,score:r.score,time:Math.round(r.time*100)/100,result:r.result,height:Math.floor(r.height),date:new Date().toISOString().slice(0,10)};
+    const entry={name:r.name,score:r.score,time:Math.round(r.time*100)/100,result:r.result,height:Math.floor(r.height),ending:r.ending||null,date:new Date().toISOString().slice(0,10)};
     this.savedIndex=this.ranking.save(entry); this.saved=true;
     const b=this.ui.$('btnSave'); b.disabled=true; b.textContent='Pontuação salva';
     this.ui.$('resSaved').textContent=this.savedIndex>=0?`Posição ${this.savedIndex+1} no ranking.`:'Fora do top 20.';
@@ -122,6 +124,7 @@ class Game{
     $('btnPauseSettings').onclick=()=>{ this.settingsReturn='pause'; this.ui.show('settings'); };
     $('btnSetBack').onclick=()=>this.ui.show(this.settingsReturn);
     $('btnRanking').onclick=()=>this.showRanking('menu');
+    $('btnSpectate').onclick=()=>this.spectator.enter();
     $('btnResRanking').onclick=()=>this.showRanking('result');
     $('btnRankBack').onclick=()=>this.ui.show(this.rankReturn||'menu');
     $('btnQuit').onclick=()=>this.ui.show('quit');
@@ -140,22 +143,26 @@ class Game{
     document.addEventListener('pointerlockchange',()=>{
       const locked=document.pointerLockElement===this.renderer.domElement;
       if(!locked&&this.wasLocked&&this.state==='play') this.pause();
+      if(!locked&&this.wasLocked&&this.state==='spectate') this.spectator.exit();
       this.wasLocked=locked;
     });
-    addEventListener('mousemove',e=>{ if(this.state==='play') this.player.look(e.movementX||0,e.movementY||0,this.settings.data); });
+    addEventListener('mousemove',e=>{ if(this.state==='play') this.player.look(e.movementX||0,e.movementY||0,this.settings.data); else if(this.state==='spectate'&&document.pointerLockElement) this.spectator.look(e.movementX||0,e.movementY||0); });
     this.renderer.domElement.addEventListener('mousedown',e=>{
+      if(this.state==='spectate'){ if(!document.pointerLockElement) this.lock(); return; }
       if(this.state!=='play') return;
       if(!document.pointerLockElement) this.lock();
       if(e.button===0) this.player.setGrab(0,true);
       else if(e.button===2){ if(this.items.equipped) this.items.use(true); else this.player.setGrab(1,true); }
     });
     addEventListener('mouseup',e=>{ if(e.button===0) this.player.setGrab(0,false); else if(e.button===2){ this.items.use(false); this.player.setGrab(1,false); } });
-    addEventListener('wheel',e=>{ if(this.state==='play'&&Math.abs(e.deltaY)>4) this.items.cycle(e.deltaY>0?1:-1); },{passive:true});
+    addEventListener('wheel',e=>{ if(this.state==='play'&&Math.abs(e.deltaY)>4) this.items.cycle(e.deltaY>0?1:-1); else if(this.state==='spectate'&&Math.abs(e.deltaY)>4) this.spectator.wheel(e.deltaY); },{passive:true});
     addEventListener('keydown',e=>{
+      if(e.code==='F2'&&this.state==='menu'&&!this.ui.$('menu').hidden){ e.preventDefault(); this.spectator.enter(); return; }   // atalho do modo espectador
       const typing=e.target&&e.target.tagName==='INPUT'&&e.target.type==='text';
       if(typing) return;
       if(this.state==='intro'){ if(['Space','Escape','Enter'].includes(e.code)){ e.preventDefault(); this.cinematic.skip(); } return; }
       if(this.state==='paused'&&(e.code==='Escape'||e.code==='KeyP')&&!this.ui.$('pause').hidden){ if(performance.now()-(this.pausedAt||0)>350) this.resume(); return; }
+      if(this.state==='spectate'){ this.keys[e.code]=true; this.spectator.key(e); return; }
       if(this.state!=='play') return;
       this.keys[e.code]=true;
       if(['Space','KeyW','KeyA','KeyS','KeyD','KeyF','KeyQ','KeyX','Digit1','Digit2','Digit3','Digit4'].includes(e.code)) e.preventDefault();
@@ -184,6 +191,7 @@ class Game{
     p.on('nailPop',()=>{ ui.msg('O prego solto escapou da parede.',1.8); a.noise(.1,2600,.15); });
     this.world.onCrumble=o=>{ if(o.userData.type==='nail') this.player.emit('nailPop'); else a.crack(); };
     this.world.onSecretRevealed=()=>{ this.score.onSecret(300); };
+    this.world.onMazeEvent=ev=>{ if(ev==='countdown'){ ui.msg('A tela começou a falhar. Memorize a rota.',3); a.buzz(); } else if(ev==='dark'){ ui.msg('A tela apagou. Agora é de memória.',3); a.buzz(); } };
   }
   // ---------- loop ----------
   _loop(now){
@@ -192,6 +200,7 @@ class Game{
       if(this.state==='play') this._play(dt);
       else if(this.state==='intro'){ this.cinematic.update(dt); this._ambient(dt,false); }
       else if(this.state==='menu'){ this._menuCam(dt); this._ambient(dt,false); }
+      else if(this.state==='spectate'){ this.spectator.update(dt); this.fx.update(dt); }
       else this._ambient(dt,false);
       this.mass.visual(this.vt);
       this.ui.tick(dt);
@@ -207,7 +216,7 @@ class Game{
   }
   _play(dt){
     const k=this.keys, input={x:(k.KeyD?1:0)-(k.KeyA?1:0),y:(k.KeyW?1:0)-(k.KeyS?1:0)};
-    this.world.update(dt);
+    this.world.update(dt,this.player);
     this.player.update(dt,input);
     this.items.update(dt); this.fx.update(dt);
     this.timer.update(dt);

@@ -43,6 +43,13 @@
       <button class="mbtn" id="btnQuit">Sair</button>
     </div>
     <p class="note-small">Botões esquerdo e direito do mouse seguram com cada mão. 1 a 4 colocam um item na mão direita, que passa a usar o botão direito. X guarda o item, F interage, Espaço pula ou sobe numa borda, Q toma uma pílula.</p>
+    <div class="devbox">
+      <p class="dev-title">Ferramentas de desenvolvimento</p>
+      <button class="mbtn dev" id="btnSpectate">Modo espectador (câmera livre no mapa)</button>
+      <p class="dev-note">Voe por todo o mapa de 400 m, com paredes transparentes, nomes de cada parte e régua de altura. Não precisa de nome.<br>
+        Atalho: <b>F2</b> neste menu · ou abra o endereço com <b>?espectador</b> no final.</p>
+      <p class="dev-ver">Versão do mapa: 400 m · 3 puzzles · espectador v2</p>
+    </div>
   </div>
 </section>
 
@@ -98,6 +105,7 @@
 <section class="screen" id="result" hidden aria-label="Resultado">
   <div class="col">
     <h2 id="resT"></h2>
+    <p class="end-text" id="resEnd" hidden></p>
     <dl class="stats">
       <dt>Jogador</dt><dd id="resName"></dd>
       <dt>Tempo</dt><dd id="resTime"></dd>
@@ -129,6 +137,7 @@
 <script src="js/world/assets.js"></script>
 <script src="js/world/levelData.js"></script>
 <script src="js/world/World.js"></script>
+<script src="js/world/Halls.js"></script>
 <script src="js/items/itemDefs.js"></script>
 <script src="js/items/Inventory.js"></script>
 <script src="js/fx/FxSystem.js"></script>
@@ -140,9 +149,11 @@
 <script src="js/systems/MassSystem.js"></script>
 <script src="js/systems/progress.js"></script>
 <script src="js/systems/PuzzleSystem.js"></script>
+<script src="js/systems/HallPuzzles.js"></script>
 <script src="js/atmosphere/AtmosphereManager.js"></script>
 <script src="js/ui/UIManager.js"></script>
 <script src="js/ui/IntroCinematic.js"></script>
+<script src="js/systems/SpectatorMode.js"></script>
 <script src="js/Game.js"></script>
 <script src="js/main.js"></script>
 </body>

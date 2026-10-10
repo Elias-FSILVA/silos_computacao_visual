@@ -2,6 +2,8 @@
 // ============================================================================
 // js/systems/MassSystem.js — a ameaça que sobe pelo poço
 // ============================================================================
+// a aceleração da massa foi calibrada para um poço de 120 m; mantém a mesma pressão proporcional em TOP m
+const MASS_RAMP=.0004*(120/TOP);
 class MassSystem{
   constructor(scene){
     this.geo=new THREE.PlaneGeometry(2*W,2*W,36,36); this.geo.rotateX(-Math.PI/2);
@@ -12,7 +14,7 @@ class MassSystem{
     this.light=new THREE.PointLight(0x9a1a10,1.4,10,2); scene.add(this.light);
     this.reset();
   }
-  reset(){ this.y=-14; this.active=false; this.riseTime=0; this.speed=0; this.caught=false; this.hold=null; }
+  reset(){ this.y=-14; this.active=false; this.riseTime=0; this.speed=0; this.caught=false; this.hold=null; this.frozen=false; this.scale=1; }
   // contenção: a massa sobe até 'cap' (rápido, se surge) e fica presa ali; breach=true volta a contar como ameaça na sala
   setHold(cap,surge){ this.hold={cap,surge:surge||0,breach:false}; this.active=true; }
   releaseHold(y){ this.hold=null; if(y!=null) this.y=Math.min(this.y,y); }
@@ -26,7 +28,8 @@ class MassSystem{
       if(this.reaches(player)) this.caught=true;
     } else if(this.active){
       const gap=player.position.y-this.y;
-      let sp=.22+this.riseTime*.0004; if(gap>24) sp+=(gap-24)*.06;
+      let sp=.22+this.riseTime*MASS_RAMP; if(gap>24) sp+=(gap-24)*.06; sp*=this.scale||1;
+      if(this.frozen) sp=0;                          // rota SELO: a massa fica selada onde está
       this.speed=sp; this.y+=sp*dt; this.riseTime+=dt;
       if(this.reaches(player)) this.caught=true;
     }

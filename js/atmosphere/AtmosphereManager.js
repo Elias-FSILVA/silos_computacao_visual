@@ -40,10 +40,11 @@ class AtmosphereManager{
       else if(l.broken) k=(Math.sin(this.t*19+l.phase)+Math.sin(this.t*7.3+l.phase*2)>.6)?.08:1;
       else k=.92+Math.sin(this.t*50+l.phase)*.03;
       if(this.blackout>0&&Math.abs(l.pos.y-this.blackoutY)<16) k=this.blackout<.35?k*Math.random():0;
-      l.k=k; l.mat.color.setRGB(.25+.75*k,.24+.71*k,.2+.58*k);
+      const T=world.tint||[1,1,1];                                    // tom das lâmpadas: muda conforme a ROTA escolhida (world.setRoute)
+      l.k=k; l.mat.color.setRGB((.25+.75*k)*T[0],(.24+.71*k)*T[1],(.2+.58*k)*T[2]);
     }
     const near=world.lamps.slice().sort((a,b)=>Math.abs(a.pos.y-y)-Math.abs(b.pos.y-y));
-    this.pool.forEach((l,i)=>{ const lp=near[i]; if(!lp){ l.intensity=0; return; } l.position.copy(lp.pos); l.intensity=1.3*lp.k; });
+    const tc=world.tint?world.tintColor:0xffffff; this.pool.forEach((l,i)=>{ const lp=near[i]; if(!lp){ l.intensity=0; return; } l.position.copy(lp.pos); l.intensity=1.3*lp.k; if(world.tint) l.color.setHex(tc); });
     // silhueta
     if(this.shape){ const s=this.shape; s.t+=dt; this.shapeMesh.position.y+=dt*7;
       if(s.t>=s.dur){ this.shape=null; this.shapeMesh.visible=false; } }
