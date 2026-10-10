@@ -68,9 +68,10 @@ class World{
   // ---------- primitivas ----------
   _box(minX,maxX,minY,maxY,minZ,maxZ,mat,o={}){
     const w=maxX-minX,h=maxY-minY,d=maxZ-minZ, geo=new THREE.BoxGeometry(w,h,d);
-    if(UVSCALE_MATS.has(mat)) scaleUV(geo,w,h,d);
+    if(mat.userData&&mat.userData.tile) worldUV(geo,(minX+maxX)/2,(minY+maxY)/2,(minZ+maxZ)/2,mat.userData.tile); else if(UVSCALE_MATS.has(mat)) scaleUV(geo,w,h,d);
     const m=new THREE.Mesh(geo,mat); m.position.set((minX+maxX)/2,(minY+maxY)/2,(minZ+maxZ)/2);
-    m.userData={type:o.type||'wall',interactable:o.interactable===undefined?(mat===MAT.concrete?SURFACE.concrete:null):o.interactable};
+    const nail=mat===MAT.concrete||!!(mat.userData&&mat.userData.nailable);   // concreto, tijolo e pedra: aceitam prego
+    m.userData={type:o.type||'wall',interactable:o.interactable===undefined?(nail?SURFACE.concrete:null):o.interactable};
     (o.parent||this.root).add(m);
     if(o.cut) this.cutaway.push(m);                  // candidatos a 'parede fantasma' no modo espectador
     if(o.ray!==false) this.walls.push(m);
@@ -84,29 +85,38 @@ class World{
   }
   // paredes do poço. Entre soleira e duto de cada puzzle (LOCK_BANDS) a parede vira CHAPA DE CONTENÇÃO:
   // sem prego (interactable nulo) e sem agarras — a única passagem para cima é pela sala.
+  // Fora delas, o acabamento segue as fases de SHELL_FINISH (concreto, tijolo, pedra), com uma cinta de concreto entre fases.
   _shell(){
     for(const [axis,s] of [['x',1],['x',-1],['z',1],['z',-1]]){
       const ops=this.openings.filter(o=>o.axis===axis&&o.s===s);
       const oi=s*W, oo=s*(W+.5), L0=-W-.5, L1=W+.5;
       const ys=new Set([-30,TOP+30]); ops.forEach(o=>{ ys.add(o.y0); ys.add(o.y1); }); LOCK_BANDS.forEach(b=>{ ys.add(b.y0); ys.add(b.y1); });
+      SHELL_FINISH.forEach(f=>{ ys.add(f.y); if(f.band) ys.add(f.y+SHELL_BAND); });
       const Y=[...ys].sort((p,q)=>p-q);
       for(let i=0;i<Y.length-1;i++){
         const ya=Y[i], yb=Y[i+1]; if(yb-ya<1e-6) continue; const mid=(ya+yb)/2;
-        const mat=LOCK_BANDS.some(b=>mid>b.y0&&mid<b.y1)?MAT.liner:MAT.concrete;
+        const mat=LOCK_BANDS.some(b=>mid>b.y0&&mid<b.y1)?MAT.liner:this._wallMat(axis,s,mid);
+        const bo={cut:true,interactable:mat===MAT.liner?null:SURFACE.concrete};
         const op=ops.find(o=>mid>o.y0&&mid<o.y1);
-        if(op){ this._boxLO(axis,L0,op.lat0,oi,oo,ya,yb,mat,{cut:true}); this._boxLO(axis,op.lat1,L1,oi,oo,ya,yb,mat,{cut:true}); }
-        else this._boxLO(axis,L0,L1,oi,oo,ya,yb,mat,{cut:true});
+        if(op){ this._boxLO(axis,L0,op.lat0,oi,oo,ya,yb,mat,bo); this._boxLO(axis,op.lat1,L1,oi,oo,ya,yb,mat,bo); }
+        else this._boxLO(axis,L0,L1,oi,oo,ya,yb,mat,bo);
       }
     }
     const fl=new THREE.Mesh(new THREE.PlaneGeometry(2*W,2*W),MAT.grate); fl.rotation.x=-Math.PI/2;
     fl.userData={type:'floor'}; this.root.add(fl); this.walls.push(fl);
     this.platforms.push({minX:-W,maxX:W,minZ:-W,maxZ:W,top:0,bottom:-.3,kind:'floor'});
   }
+  // acabamento da parede do poço (axis,s) na altura y — SHELL_FINISH (levelData.js)
+  _wallMat(axis,s,y){
+    const wi=RING.findIndex(r=>r.axis===axis&&r.s===s); let f=SHELL_FINISH[0];
+    for(const k of SHELL_FINISH) if(y>=k.y) f=k;
+    return f.band&&y<f.y+SHELL_BAND?MAT.concreteBand:(FINISH[f.mats[wi]]||MAT.concrete);
+  }
   _inOpening(axis,s,lat,y,m=.3){ return this.openings.some(o=>o.axis===axis&&o.s===s&&lat>o.lat0-m&&lat<o.lat1+m&&y>o.y0-m&&y<o.y1+m); }
   _inBand(y,m=.6){ return LOCK_BANDS.some(b=>y>b.y0-m&&y<b.y1+m); }
   _wallPos(axis,s,lat,y,out){ return axis==='x'?new V3(s*(W-out),y,lat):new V3(lat,y,s*(W-out)); }
   hold(axis,s,lat,y,crumble){
-    const m=new THREE.Mesh(axis==='x'?GEO.holdX:GEO.holdZ,crumble?MAT.crumble:MAT.rust);
+    const m=new THREE.Mesh(axis==='x'?GEO.holdX:GEO.holdZ,crumble?MAT.crumble:MAT.holdBrick);
     m.position.copy(this._wallPos(axis,s,lat,y,.1));
     if(axis==='x') m.rotation.x=this.rand(-.25,.25); else m.rotation.z=this.rand(-.25,.25);
     m.userData={grab:true,type:'hold',crumble:!!crumble,alive:true,wallNormal:axis==='x'?new V3(-s,0,0):new V3(0,0,-s)};
@@ -151,8 +161,9 @@ class World{
     } else this.path(axis,s,la,ya,lb,yb,o);
   }
   _block(minX,maxX,minZ,maxZ,bottom,top,o){
-    const m=new THREE.Mesh(new THREE.BoxGeometry(maxX-minX,top-bottom,maxZ-minZ),o.mat);
+    const geo=new THREE.BoxGeometry(maxX-minX,top-bottom,maxZ-minZ), m=new THREE.Mesh(geo,o.mat);
     m.position.set((minX+maxX)/2,(top+bottom)/2,(minZ+maxZ)/2);
+    if(o.mat.userData&&o.mat.userData.tile) worldUV(geo,m.position.x,m.position.y,m.position.z,o.mat.userData.tile);
     const grab=o.grab!==false;
     const pd={minX,maxX,minZ,maxZ,top,bottom,climbable:grab,kind:o.kind||o.type};
     m.userData={grab,type:o.type,alive:true,plat:pd,solid:pd};
@@ -165,7 +176,8 @@ class World{
     const w=o.w||3, d=o.d||1.8; let minX,maxX,minZ,maxZ;
     if(axis==='x'){ if(s>0){minX=W-d;maxX=W;}else{minX=-W;maxX=-W+d;} minZ=lat-w/2; maxZ=lat+w/2; }
     else { if(s>0){minZ=W-d;maxZ=W;}else{minZ=-W;maxZ=-W+d;} minX=lat-w/2; maxX=lat+w/2; }
-    return this._block(minX,maxX,minZ,maxZ,top-.3,top,{mat:MAT.metal,type:'ledge',kind:o.kind||'platform',label:o.label,id:o.id});
+    const mat=o.kind==='rest'?MAT.woodDeck:MAT.metal;   // descansos: tablado de madeira de andaime · demais: chapa de aço
+    return this._block(minX,maxX,minZ,maxZ,top-.3,top,{mat,type:'ledge',kind:o.kind||'platform',label:o.label,id:o.id});
   }
   beam(dir,c,y){ const h=.11;
     return dir==='x'?this._block(-W,W,c-h,c+h,y-h,y+h,{mat:MAT.beam,type:'beam'}):this._block(c-h,c+h,-W,W,y-h,y+h,{mat:MAT.beam,type:'beam'}); }
@@ -212,12 +224,13 @@ class World{
     const it=new Note(text,true); b.userData={type:'terminal',interactable:it}; s.userData={type:'terminal',interactable:it};
     this.interactables.push(b,s);
   }
-  // painel quebrável preenchendo uma abertura. Por padrão a pista é sutil (tom, parafusos, desalinhamento, som oco);
-  // com o.mat (ex.: MAT.concreteCracked) a própria textura entrega o painel e o.bolts=false remove os parafusos.
+  // painel quebrável preenchendo uma abertura. Por padrão a pista é sutil (o acabamento da parede em volta num tom um pouco
+  // mais quente, parafusos, desalinhamento, som oco); com o.mat (ex.: MAT.concreteCracked) a própria textura entrega o painel,
+  // o.bolts=false remove os parafusos e o.flush deixa o painel rente à parede (o desenho continua o da parede vizinha).
   breakable(opId,o){
-    const op=this.openings.find(x=>x.id===opId), s=op.s, mat=o.mat||MAT.concreteAlt;
-    const m=this._boxLO(op.axis,op.lat0,op.lat1,s*(W-.015),s*(W+.5),op.y0,op.y1,mat,{type:'breakable',interactable:null,kind:'breakable'});
-    if(op.axis==='x') m.rotation.x=.006; else m.rotation.z=.006;
+    const op=this.openings.find(x=>x.id===opId), s=op.s, mat=o.mat||altOf(this._wallMat(op.axis,s,(op.y0+op.y1)/2));
+    const m=this._boxLO(op.axis,op.lat0,op.lat1,s*(W-(o.flush?.002:.015)),s*(W+.5),op.y0,op.y1,mat,{type:'breakable',interactable:null,kind:'breakable'});
+    if(!o.flush){ if(op.axis==='x') m.rotation.x=.006; else m.rotation.z=.006; }
     const n=op.axis==='x'?new V3(-s,0,0):new V3(0,0,-s);
     if(o.bolts!==false) for(const [la,ya] of [[op.lat0+.12,op.y0+.15],[op.lat1-.12,op.y0+.15],[op.lat0+.12,op.y1-.15],[op.lat1-.12,op.y1-.15]]){
       const b=new THREE.Mesh(new THREE.CylinderGeometry(.022,.022,.03,6),MAT.bolt);
@@ -228,13 +241,13 @@ class World{
     m.userData.interactable=it; m.userData.alive=true; return it;
   }
   alcove(opId,depth=1.7,floorIn=0){
-    const op=this.openings.find(x=>x.id===opId), s=op.s, ax=op.axis;
+    const op=this.openings.find(x=>x.id===opId), s=op.s, ax=op.axis, C=this._wallMat(ax,s,(op.y0+op.y1)/2);
     const oi=s*(W-floorIn), o1=s*(W+.5), oD=s*(W+.5+depth), oE=s*(W+.75+depth), a=op.lat0, b=op.lat1;
-    this._boxLO(ax,a-.25,b+.25,oi,oE,op.y0-.3,op.y0,MAT.concrete,{kind:'floor'});
-    this._boxLO(ax,a-.25,b+.25,o1,oE,op.y1,op.y1+.3,MAT.concrete);
-    this._boxLO(ax,a-.25,a,o1,oE,op.y0,op.y1,MAT.concrete);
-    this._boxLO(ax,b,b+.25,o1,oE,op.y0,op.y1,MAT.concrete);
-    this._boxLO(ax,a,b,oD,oE,op.y0,op.y1,MAT.concrete);
+    this._boxLO(ax,a-.25,b+.25,oi,oE,op.y0-.3,op.y0,C,{kind:'floor'});
+    this._boxLO(ax,a-.25,b+.25,o1,oE,op.y1,op.y1+.3,C);
+    this._boxLO(ax,a-.25,a,o1,oE,op.y0,op.y1,C);
+    this._boxLO(ax,b,b+.25,o1,oE,op.y0,op.y1,C);
+    this._boxLO(ax,a,b,oD,oE,op.y0,op.y1,C);
     const mid=(a+b)/2, oc=s*(W+.5+depth*.55);
     return ax==='x'?new V3(oc,op.y0,mid):new V3(mid,op.y0,oc);
   }
@@ -301,7 +314,7 @@ class World{
     if(sp.loot){ const p=P(c-sg*.6,.75); this.box(p.x,T,p.z,sp.loot); }
     if(sp.note){ const p=P(c+sg*.55,.55); this.note(p.x,T,p.z,sp.note); }
     if(sp.terminal){ const p=P(c,.45), face=axis==='x'?-s*Math.PI/2:(s>0?Math.PI:0); this.terminal(p.x,T,p.z,face,sp.terminal); }
-    const wing=WINGS.find(w=>w.after===sp.id); if(wing) this._wing(wall,c,T,{id:wing.id,dress:(fr,I)=>this._dressWing(wing,fr,I)});
+    const wing=WINGS.find(w=>w.after===sp.id); if(wing) this._wing(wall,c,T,{id:wing.id,finish:wing.finish,dress:(fr,I)=>this._dressWing(wing,fr,I)});
   }
   // soleira de um destino: pequena plataforma na parede (axis,s), na altura do piso da sala
   _sill(axis,sd,lat,w,H,note){
@@ -369,8 +382,10 @@ class World{
     this.path('x',-1,1.4,10.7,1.0,18.6);
     this.platform('x',-1,.5,20,{w:4.4,d:2.2,label:'Depósito',id:'cp1',kind:'rest'});
     this.box(-3.2,20,2.0,{nails:2}); this.note(-3.0,20,-1.0,NOTES[20]);
-    // segredo 0: parede de concreto RACHADO atrás do ponto de partida → salão vazio de 10 m de profundidade
-    this.breakable('secret0',{maxDamage:4,secretId:'secret0',mat:MAT.concreteCracked,bolts:false});
+    // segredo 0: parede de concreto RACHADO atrás do ponto de partida → salão vazio de 10 m de profundidade.
+    // O painel ocupa exatamente dois painéis de fôrma (3 × 3 m, juntas da textura nas bordas) e fica rente à parede:
+    // é o mesmo concreto da parede em volta, com uma trinca natural desenhada nele (TEXGEN.crackOver)
+    this.breakable('secret0',{maxDamage:4,secretId:'secret0',mat:MAT.concreteCracked,bolts:false,flush:true});
     const h0=this.hall('secret0',{depth:10,width:8,height:4});
     this.secrets.push({id:'secret0',revealed:false,anchor:h0.anchor,content:null,onReveal:null});
     this.puzzleRooms.secret0={id:'secret0',zoneRoom:h0.zone};   // sem puzzleDef: só vira zona segura contra a massa
@@ -410,7 +425,7 @@ class World{
     this._box(a,b,roofTop,H+9.7,zf,zf+.3,C);
     // agarras na parede do fundo do duto (normal +z)
     for(let y=H+1.9,i=0;y<H+9.2;y+=1.0,i++){
-      const m=new THREE.Mesh(GEO.holdZ,MAT.rust); m.position.set(xc+(i%2?.3:-.3)+this.rand(-.08,.08),y,zf-1.6); m.rotation.z=this.rand(-.25,.25);
+      const m=new THREE.Mesh(GEO.holdZ,MAT.holdBrick); m.position.set(xc+(i%2?.3:-.3)+this.rand(-.08,.08),y,zf-1.6); m.rotation.z=this.rand(-.25,.25);
       m.userData={grab:true,type:'hold',crumble:false,alive:true,wallNormal:new V3(0,0,1)}; this.root.add(m); this.grabbables.push(m);
     }
     // túnel até o poço
@@ -423,7 +438,7 @@ class World{
   // quando o jogador chega a < MAZE.near m, uma contagem de MAZE.countdown s começa e a tela apaga PARA SEMPRE.
   // O duto de manutenção de saída fica numa abertura baixa na parede do fundo, sem luz nem placa.
   _mazeRoom(M){
-    const H=M.H, cs=M.cell, t=M.wall, h=M.height, halfW=M.cols*cs/2, C=MAT.concreteDark, sf=SURFACE.concrete;
+    const H=M.H, cs=M.cell, t=M.wall, h=M.height, halfW=M.cols*cs/2, C=MAT.stoneDark, sf=SURFACE.concrete;   // labirinto de pedra antiga
     const zA=-4.5, zG=zA-M.ante, zF=zG-M.rows*cs;                 // face externa do poço · linha da frente da grade · face interna da parede do fundo
     const xb=c=>-halfW+cs*c, zb=r=>zG-cs*r;                         // bordas de coluna / de linha
     const o={interactable:sf};

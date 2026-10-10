@@ -42,6 +42,7 @@ class Game{
     this.renderer.setPixelRatio(pr); this.renderer.setSize(innerWidth,innerHeight);
     this.renderer.domElement.style.filter=`brightness(${s.brightness})`;
     this.atmosphere.setLightCount(s.quality==='low'?3:5);
+    applyTextureQuality(this.renderer,s.quality);   // filtragem anisotrópica das paredes (assets.js)
     this.audio.apply(s);
   }
   // ---------- fluxo ----------

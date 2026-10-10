@@ -109,11 +109,12 @@ const ARCHIVE_TEXT={
 };
 
 // ---- ramais opcionais (salas pequenas) ligados aos descansos do poço: exploração, história e pistas dos três caminhos ----
+// finish = acabamento das paredes (FINISH em assets.js): cada ramal tem o seu — dormitório de tijolo, capela de pedra…
 const WINGS=[
-  {id:'w1',after:'cp3', name:'Dormitório',  text:"DORMITÓRIO DA EQUIPE\n\nSete beliches, seis arrumados. Na sétima, o cobertor ainda está quente.\nNa cabeceira de Almeida, escrito a carvão: 'SELAR'.\nNa de Helena: 'CULTIVAR'. Na de Quintino: 'REGISTRAR'."},
-  {id:'w2',after:'cp7', name:'Refeitório',  text:"REFEITÓRIO\n\nUma mesa posta para sete. Só há seis pratos sujos.\nNo quadro de avisos: 'quem tiver o cartão de Almeida ainda pode ir ao Coração'."},
-  {id:'w3',after:'cp11',name:'Sala do rádio',text:"SALA DO RÁDIO\n\nO rádio só pega uma estação: três vozes discutindo o que fazer. Quando uma cala, as outras duas continuam.\nA terceira voz sempre pergunta: 'e o que você acha?'"},
-  {id:'w4',after:'cp15',name:'Capela',      text:"CAPELA\n\nVelas de sebo, ainda acesas. Três bilhetes no altar, um por caminho.\n'Quem sela fica em silêncio. Quem cultiva nunca está sozinho. Quem registra nunca mais descansa.'"}
+  {id:'w1',after:'cp3', finish:'brick',     name:'Dormitório',  text:"DORMITÓRIO DA EQUIPE\n\nSete beliches, seis arrumados. Na sétima, o cobertor ainda está quente.\nNa cabeceira de Almeida, escrito a carvão: 'SELAR'.\nNa de Helena: 'CULTIVAR'. Na de Quintino: 'REGISTRAR'."},
+  {id:'w2',after:'cp7', finish:'concretePale',name:'Refeitório',  text:"REFEITÓRIO\n\nUma mesa posta para sete. Só há seis pratos sujos.\nNo quadro de avisos: 'quem tiver o cartão de Almeida ainda pode ir ao Coração'."},
+  {id:'w3',after:'cp11',finish:'brickSoot', name:'Sala do rádio',text:"SALA DO RÁDIO\n\nO rádio só pega uma estação: três vozes discutindo o que fazer. Quando uma cala, as outras duas continuam.\nA terceira voz sempre pergunta: 'e o que você acha?'"},
+  {id:'w4',after:'cp15',finish:'stone',     name:'Capela',      text:"CAPELA\n\nVelas de sebo, ainda acesas. Três bilhetes no altar, um por caminho.\n'Quem sela fica em silêncio. Quem cultiva nunca está sozinho. Quem registra nunca mais descansa.'"}
 ];
 
 // ---- finais ----
@@ -146,6 +147,24 @@ const CLIMB={step:.8,jitterLat:.14,jitterY:.07,blank:2.4,crumble:[.10,.14,.16,.2
 
 // ---- trechos de poço selados por chapas (impedem escalar por fora das salas) ----
 const LOCK_BANDS=[100,200,300].map(H=>({H,y0:H+2.7,y1:H+9.6}));
+
+// ---- acabamento das paredes do poço (direção de arte: folha de referência de texturas) ----
+// O poço foi erguido em FASES: cada fase a partir de y tem um material por parede [W0 +x, W1 +z, W2 -x, W3 -z]
+// (chaves de FINISH em assets.js). band → cinta de concreto de SHELL_BAND m no início da fase: a troca de material sempre
+// acontece numa junta estrutural, nunca no meio da parede. As chapas de contenção (LOCK_BANDS) já fazem essa transição.
+// A parede -x da fase 0 PRECISA ser 'concrete': o painel rachado da sala secreta (MAT.concreteCracked) é esse concreto trincado.
+const SHELL_BAND=.35;
+const SHELL_FINISH=[
+  {y:-30,  band:false,mats:['concrete',    'concrete',    'concrete',    'stone'       ]},   // S-0: concreto moldado; a -z é a fundação de pedra
+  {y:17.6, band:true, mats:['brick',       'concrete',    'brick',       'brick'       ]},   // depósito e bifurcação: alvenaria antiga
+  {y:47,   band:true, mats:['concreteCold','stone',       'concreteCold','concreteCold']},   // casa de máquinas, sala de controle
+  {y:109.6,band:false,mats:['stone',       'stone',       'brickSoot',   'concreteCold']},   // acima da Casa das Bombas: fuligem no lado oeste
+  {y:152,  band:true, mats:['concrete',    'brick',       'stone',       'brick'       ]},   // galeria de cabos, mezanino (umidade da Estufa)
+  {y:209.6,band:false,mats:['concreteCold','brick',       'concreteCold','concreteCold']},
+  {y:256,  band:true, mats:['brickSoot',   'stone',       'brick',       'brick'       ]},   // corredor de serviço, antessala do Arquivo
+  {y:309.6,band:false,mats:['concretePale','stone',       'concretePale','stone'       ]},
+  {y:352,  band:true, mats:['concretePale','concretePale','brick',       'concretePale']}    // último trecho até a superfície
+];
 
 // ---- aberturas nas paredes do poço (axis/s = parede; lat = coordenada ao longo da parede) ----
 // secret0  : sala secreta inicial (0 m), parede -x, atrás de quem começa a subir (painel de concreto rachado)

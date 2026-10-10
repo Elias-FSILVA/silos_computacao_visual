@@ -24,3 +24,4 @@ Models.load('mao.glb').then(gltf => {
 
 | Arquivo | Autor | Fonte | Licença |
 |---|---|---|---|
+| `map/tijolo/_TEXTURES/Brick_Wall_017_*` (cor, AO, normal — usados em `js/world/assets.js`; o `.obj` não é carregado) | a confirmar | a confirmar | a confirmar |

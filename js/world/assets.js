@@ -1,50 +1,11 @@
 'use strict';
 // ============================================================================
-// js/world/assets.js — texturas procedurais (canvas), materiais e geometrias compartilhadas
-// Novidades: concreteCrackedCanvas() + MAT.concreteCracked (painel quebrável da sala secreta, 0 m),
-//            linerCanvas() + MAT.liner (chapas de contenção que selam o poço nos trechos dos puzzles),
-//            MAT.concreteDark (paredes do labirinto), UVSCALE_MATS (materiais cujo UV acompanha o tamanho da caixa)
+// js/world/assets.js — texturas, materiais e geometrias compartilhadas
+// Superfícies dos ambientes (concreto, tijolo, pedra, pedra com musgo, madeira) vêm de js/world/textures.js e seguem a
+// folha de referência de texturas do projeto. Materiais com userData.tile recebem UV DE MUNDO (worldUV): o desenho
+// continua de uma caixa para a vizinha — por isso o painel rachado da sala secreta encaixa no concreto em volta.
+// FINISH = acabamentos das paredes do poço (levelData.js → SHELL_FINISH). UVSCALE_MATS = materiais antigos com UV por caixa.
 // ============================================================================
-function concreteCanvas(){
-  const c=document.createElement('canvas'); c.width=c.height=256; const g=c.getContext('2d');
-  g.fillStyle='#5d5a54'; g.fillRect(0,0,256,256);
-  for(let i=0;i<9000;i++){ const v=70+Math.random()*40|0; g.fillStyle=`rgba(${v},${v-3},${v-8},${Math.random()*.35})`;
-    g.fillRect(Math.random()*256,Math.random()*256,1+Math.random()*2,1+Math.random()*2); }
-  for(let i=0;i<14;i++){ const x=Math.random()*256,y=Math.random()*120; const gr=g.createLinearGradient(0,y,0,256);
-    gr.addColorStop(0,'rgba(60,30,12,.4)'); gr.addColorStop(1,'rgba(60,30,12,0)'); g.fillStyle=gr; g.fillRect(x,y,2+Math.random()*6,256); }
-  g.strokeStyle='rgba(15,15,15,.55)'; g.lineWidth=3; g.strokeRect(1,1,254,254);
-  return c;
-}
-// concreto rachado: mesmo tom do concreto do poço, mas com rachaduras ramificadas, placas de reboco soltas
-// e ferrugem escorrida — a pista visual de que aquela parede não é maciça. Usa RNG fixo (aparência estável).
-function concreteCrackedCanvas(){
-  const S=512, c=document.createElement('canvas'); c.width=c.height=S; const g=c.getContext('2d'), R=mulberry(4141);
-  g.fillStyle='#5f5b54'; g.fillRect(0,0,S,S);
-  for(let i=0;i<26000;i++){ const v=70+R()*44|0; g.fillStyle=`rgba(${v},${v-3},${v-9},${R()*.35})`; g.fillRect(R()*S,R()*S,1+R()*2.2,1+R()*2.2); }
-  for(let i=0;i<12;i++){ const x=R()*S,y=R()*S*.55, gr=g.createLinearGradient(0,y,0,S);
-    gr.addColorStop(0,'rgba(72,40,16,.42)'); gr.addColorStop(1,'rgba(72,40,16,0)'); g.fillStyle=gr; g.fillRect(x,y,3+R()*10,S); }
-  // placas de reboco soltas (tom mais claro, borda escura)
-  for(let i=0;i<8;i++){
-    const cx=R()*S, cy=R()*S, r=22+R()*38; g.beginPath();
-    for(let k=0;k<7;k++){ const a=k/7*Math.PI*2, rr=r*(.6+R()*.5); const px=cx+Math.cos(a)*rr, py=cy+Math.sin(a)*rr; k?g.lineTo(px,py):g.moveTo(px,py); }
-    g.closePath(); g.fillStyle='rgba(122,116,104,.28)'; g.fill(); g.strokeStyle='rgba(12,11,10,.5)'; g.lineWidth=1.6; g.stroke();
-  }
-  // rachaduras ramificadas: traço escuro + realce claro deslocado (dá relevo)
-  const crack=(x,y,ang,len,w,depth)=>{
-    let px=x,py=y; const n=Math.max(4,len/9|0); g.lineCap='round';
-    for(let i=0;i<n;i++){
-      const a=ang+(R()-.5)*.95, l=len/n, nx=px+Math.cos(a)*l, ny=py+Math.sin(a)*l;
-      g.strokeStyle='rgba(8,7,6,.94)'; g.lineWidth=w; g.beginPath(); g.moveTo(px,py); g.lineTo(nx,ny); g.stroke();
-      g.strokeStyle='rgba(160,152,138,.3)'; g.lineWidth=Math.max(.6,w*.38); g.beginPath(); g.moveTo(px+1.6,py+1.6); g.lineTo(nx+1.6,ny+1.6); g.stroke();
-      if(depth>0&&R()<.38) crack(px,py,a+(R()<.5?-1:1)*(.5+R()*.8),len*.42,w*.66,depth-1);
-      px=nx; py=ny; ang=a;
-    }
-  };
-  crack(S*.06,S*.10,.62,S*.95,4.6,3); crack(S*.94,S*.04,2.35,S*.85,3.8,3);
-  crack(S*.50,S*.58,1.35,S*.55,3.2,2); crack(S*.15,S*.92,-.55,S*.6,3.0,2);
-  g.strokeStyle='rgba(15,15,15,.55)'; g.lineWidth=3; g.strokeRect(1,1,S-2,S-2);
-  return c;
-}
 // chapa de contenção: placas de aço escuro com rebites e escorridos de ferrugem
 function linerCanvas(){
   const c=document.createElement('canvas'); c.width=c.height=256; const g=c.getContext('2d'), R=mulberry(9001);
@@ -79,24 +40,6 @@ function foundryCanvas(){
   g.fillStyle='rgba(0,0,0,.35)'; for(let i=0;i<5;i++){ g.beginPath(); g.ellipse(R()*256,R()*256,10+R()*26,5+R()*10,0,0,Math.PI*2); g.fill(); }
   return c;
 }
-// Estufa: pedra coberta de musgo, raízes e manchas de umidade
-function mossCanvas(){
-  const c=document.createElement('canvas'); c.width=c.height=256; const g=c.getContext('2d'), R=mulberry(522);
-  g.fillStyle='#2f3a2c'; g.fillRect(0,0,256,256);
-  for(let i=0;i<9000;i++){ const v=40+R()*50|0; g.fillStyle=`rgba(${v-12},${v+16},${v-18},${R()*.5})`; g.fillRect(R()*256,R()*256,1+R()*3,1+R()*3); }
-  for(let i=0;i<7;i++){ g.strokeStyle='rgba(38,24,14,.85)'; g.lineWidth=2+R()*3; g.beginPath(); let x=R()*256,y=0; g.moveTo(x,y); for(let k=0;k<8;k++){ x+=(R()-.5)*34; y+=32; g.lineTo(x,y); } g.stroke(); }
-  for(let i=0;i<12;i++){ g.fillStyle=`rgba(120,200,110,${.08+R()*.14})`; g.beginPath(); g.ellipse(R()*256,R()*256,14+R()*30,8+R()*16,0,0,Math.PI*2); g.fill(); }
-  g.strokeStyle='rgba(10,16,8,.7)'; g.lineWidth=3; g.strokeRect(1,1,254,254);
-  return c;
-}
-// Arquivo: madeira escura de estante e papel envelhecido
-function archiveCanvas(){
-  const c=document.createElement('canvas'); c.width=c.height=256; const g=c.getContext('2d'), R=mulberry(733);
-  g.fillStyle='#4a3626'; g.fillRect(0,0,256,256);
-  for(let i=0;i<180;i++){ const y=R()*256; g.strokeStyle=`rgba(${30+R()*30|0},${20+R()*20|0},12,${.15+R()*.3})`; g.lineWidth=1+R()*2; g.beginPath(); g.moveTo(0,y); g.bezierCurveTo(80,y+R()*6-3,170,y+R()*6-3,256,y); g.stroke(); }
-  g.strokeStyle='rgba(12,8,4,.8)'; g.lineWidth=3; g.strokeRect(1,1,254,254);
-  return c;
-}
 function paperCanvas(){
   const c=document.createElement('canvas'); c.width=c.height=256; const g=c.getContext('2d'), R=mulberry(844);
   g.fillStyle='#b9a98b'; g.fillRect(0,0,256,256);
@@ -126,6 +69,78 @@ function scaleUV(geo,w,h,d){
     for(let v=0;v<4;v++){ const i=f*4+v; uv.setXY(i,uv.getX(i)*su,uv.getY(i)*sv); } }
   uv.needsUpdate=true; return geo;
 }
+// UV DE MUNDO: u,v = coordenada do mundo ÷ tile (m) — o desenho continua entre caixas vizinhas e entre os trechos em que
+// uma parede é partida (aberturas, fases). tile=[tu,tv,offU,offV]. Faces horizontais: fiadas/veios seguem o lado mais longo.
+function worldUV(geo,cx,cy,cz,tile){
+  const pos=geo.attributes&&geo.attributes.position, uv=geo.attributes&&geo.attributes.uv; if(!pos||!uv) return geo;
+  const tu=tile[0], tv=tile[1]||tile[0], ou=tile[2]||0, ov=tile[3]||0, p=geo.parameters||{}, along=(p.depth||0)>(p.width||0);
+  for(let i=0;i<pos.count;i++){ const f=i>>2, x=pos.getX(i)+cx, y=pos.getY(i)+cy, z=pos.getZ(i)+cz; let u,v;   // faces da caixa: +x −x +y −y +z −z
+    if(f===0){ u=-z; v=y; } else if(f===1){ u=z; v=y; } else if(f===4){ u=x; v=y; } else if(f===5){ u=-x; v=y; } else if(along){ u=z; v=x; } else { u=x; v=-z; }
+    uv.setXY(i,u/tu+ou,v/tv+ov); }
+  uv.needsUpdate=true; return geo;
+}
+// variação de tom em grande escala (≈12 m e ≈3,5 m, coordenadas de mundo) — quebra a repetição dos tiles sem textura extra
+// por superfície. A mesma função em todos os materiais → um único programa de shader (mesma chave de cache).
+function macroHook(sh){
+  sh.uniforms.macroMap={value:TEX.macro}; sh.uniforms.macroAmt={value:this.userData.macro||0};
+  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vMacroP; varying vec3 vMacroN;')
+    .replace('#include <project_vertex>','#include <project_vertex>\n  vMacroP=(modelMatrix*vec4(transformed,1.)).xyz; vMacroN=mat3(modelMatrix)*objectNormal;');
+  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform sampler2D macroMap; uniform float macroAmt; varying vec3 vMacroP; varying vec3 vMacroN;')
+    .replace('#include <map_fragment>',`#include <map_fragment>
+  { vec3 an=abs(vMacroN); vec2 mp=an.y>max(an.x,an.z)?vMacroP.xz:(an.x>an.z?vMacroP.zy:vMacroP.xy);
+    float mv=texture2D(macroMap,mp*.083).r*.65+texture2D(macroMap,mp*.29+vec2(.37,.11)).g*.35;
+    diffuseColor.rgb*=1.+macroAmt*(mv-.5)*2.; }`);
+}
+// variante discreta de um acabamento (painéis quebráveis "disfarçados"): mesmo desenho e escala, tom um pouco mais quente
+const ALT=new Map();
+function altOf(mat){
+  if(!mat||!mat.clone) return mat;
+  if(!ALT.has(mat)){ const m=mat.clone(); m.color.multiply(new THREE.Color(0xe9e2d6)); m.onBeforeCompile=macroHook; ALT.set(mat,m); }
+  return ALT.get(mat);
+}
+// filtragem anisotrópica: num poço vertical as paredes são vistas quase sempre em ângulo rasante — é a melhora mais barata
+const TEXQ={aniso:1};
+function surfTex(c){ const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.anisotropy=TEXQ.aniso; t.userData={aniso:true}; return t; }
+function applyTextureQuality(renderer,quality){
+  const max=renderer.capabilities&&renderer.capabilities.getMaxAnisotropy?renderer.capabilities.getMaxAnisotropy():1;
+  TEXQ.aniso=Math.max(1,Math.min(max,{low:2,medium:4,high:8}[quality]||4));
+  for(const k in TEX){ const t=TEX[k]; if(t&&t.userData&&t.userData.aniso&&t.anisotropy!==TEXQ.aniso){ t.anisotropy=TEXQ.aniso; t.needsUpdate=true; } }
+}
+// TIJOLO: a foto do projeto (assets/models/map/tijolo/_TEXTURES · Brick_Wall_017), levada para a paleta da referência,
+// vale para as paredes e para as agarras. Enquanto ela carrega as paredes usam um tom liso; se não carregar (ex.: jogo aberto
+// por duplo clique, file://, onde o navegador bloqueia a leitura dos pixels) entra o tijolo procedural.
+// O .obj do tijolo não é usado: ~3,7 mil triângulos × ~900 agarras pesaria demais.
+// troca a textura TEX[key] (e o normal map TEX[key+'N']) em todos os materiais que a usam
+function swapTex(key,map,nmap){
+  const oldM=TEX[key], oldN=TEX[key+'N'];
+  for(const m of [...Object.values(MAT),...ALT.values()]){ if(m.map===oldM){ m.map=map; m.normalMap=nmap; m.needsUpdate=true; } }
+  TEX[key]=map; TEX[key+'N']=nmap; [oldM,oldN].forEach(t=>t&&t.dispose&&t.dispose());
+}
+// texturas que não aparecem na abertura (madeira, pedra com musgo da Estufa): geradas logo depois do primeiro quadro,
+// sem atrasar a carga do jogo; até lá os materiais usam um tom liso equivalente
+function deferTex(fn){
+  if(!TEXGEN.CAN||typeof window==='undefined'){ fn(); return; }
+  (window.requestIdleCallback||(f=>setTimeout(f,120)))(()=>fn(),{timeout:1500});
+}
+const flatTex=rgb=>surfTex(TEXGEN.flat(8,rgb));
+function brickFallback(){
+  const br=TEXGEN.masonry(512,1618,{rows:8,bond:true,perRow:4,joint:.018,bevel:.014,rough:.004,toneJit:.32,hueJit:.06,stain:.2,dark:.12,base:[96,66,56],mortar:[60,58,54],lum:56,grain:22,edgeCells:56});
+  swapTex('brick',surfTex(br.canvas),surfTex(TEXGEN.normalFrom(br.height,br.S,512,.010)));
+}
+function loadBrickPhoto(){
+  if(!TEXGEN.CAN||typeof Image==='undefined'||typeof location==='undefined'||location.protocol==='file:'){ brickFallback(); return; }
+  const dir='assets/models/map/tijolo/_TEXTURES/Brick_Wall_017_', ld=f=>new Promise((ok,no)=>{ const im=new Image(); im.onload=()=>ok(im); im.onerror=no; im.src=dir+f; });
+  Promise.all([ld('basecolor.jpg'),ld('ambientOcclusion.jpg').catch(()=>null),ld('normal.jpg').catch(()=>null)]).then(([col,ao,nrm])=>{
+    try{
+      const map=surfTex(TEXGEN.gradeBrick(col,ao,512,{desat:.62,tint:[1,.9,.8],mortarDark:.45,soot:.26,lum:54}));
+      let nmap; if(nrm){ const c=document.createElement('canvas'); c.width=c.height=512; c.getContext('2d').drawImage(nrm,0,0,512,512); nmap=surfTex(c); }
+      else nmap=surfTex(TEXGEN.flat(8,[128,128,255]));
+      swapTex('brick',map,nmap);
+      TEX.hold.image=TEXGEN.holdBrick(col,false); TEX.hold.needsUpdate=true;
+      TEX.holdWorn.image=TEXGEN.holdBrick(col,true); TEX.holdWorn.needsUpdate=true;
+    }catch(e){ console.warn('Tijolo: foto indisponível, usando o tijolo procedural.',e&&e.message); brickFallback(); }
+  }).catch(()=>brickFallback());
+}
 function canvasTex(w,h,draw){ const c=document.createElement('canvas'); c.width=w; c.height=h; const g=c.getContext('2d'); draw(g,w,h); const t=new THREE.CanvasTexture(c); t.userData={canvas:c,ctx:g}; return t; }
 function drawSymbol(g,sym,cx,cy,r){
   g.beginPath();
@@ -137,29 +152,61 @@ function drawSymbol(g,sym,cx,cy,r){
   else g.rect(cx-r*.85,cy-r*.85,r*1.7,r*1.7);
   g.fill();
 }
-const TEX={}, MAT={}, GEO={}, UVSCALE_MATS=new Set();
+const TEX={}, MAT={}, GEO={}, FINISH={}, UVSCALE_MATS=new Set();
 (function initAssets(){
   const rep=t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; return t; };
-  TEX.wall=rep(new THREE.CanvasTexture(concreteCanvas()));
-  TEX.wallCracked=rep(new THREE.CanvasTexture(concreteCrackedCanvas()));
+  // ---------- superfícies dos ambientes (js/world/textures.js · folha de referência de texturas) ----------
+  // tile em metros: concreto 3 m (painéis de fôrma de 1,5 m) · tijolo 1,4 m (8 fiadas de 17,5 cm) · pedra 3 m · madeira 1,6–4 m
+  const N=(t,s)=>surfTex(TEXGEN.normalFrom(t.height,t.S,512,s));
+  const surf=(map,nrm,o)=>{ const m=new THREE.MeshStandardMaterial({map,normalMap:nrm,color:o.color==null?0xffffff:o.color,roughness:o.rough||.95,metalness:0});
+    if(m.normalScale&&m.normalScale.set) m.normalScale.set(o.ns||.85,o.ns||.85);
+    m.userData.tile=o.tile; m.userData.macro=o.macro==null?.22:o.macro; if(o.nail) m.userData.nailable=true; m.onBeforeCompile=macroHook; return m; };
+  TEX.macro=rep(new THREE.CanvasTexture(TEXGEN.macro(128)));
+  // concreto moldado: cinza levemente quente, poros, fôrma, tirantes, escorridos (1024 px → nítido de perto)
+  const conc=TEXGEN.concrete(1024,4141,{lum:96}), crk=TEXGEN.crackOver(conc,77);
+  TEX.concrete=surfTex(conc.canvas); TEX.concreteN=N(conc,.010);
+  TEX.cracked=surfTex(crk.canvas); TEX.crackedN=N(crk,.010);
+  const CT=[3,3,.5,0];                         // offset .5: os painéis de 1,5 m do mundo caem nas juntas da textura
+  MAT.concrete=surf(TEX.concrete,TEX.concreteN,{tile:CT,color:0xe6dfd4,nail:true,macro:.3});          // envelhecido (base do poço, dutos)
+  MAT.concreteCold=surf(TEX.concrete,TEX.concreteN,{tile:CT,color:0xbcc1c6,nail:true});      // frio e mais escuro (fases do meio)
+  MAT.concretePale=surf(TEX.concrete,TEX.concreteN,{tile:CT,color:0xf3efe8,nail:true});      // mais novo, perto da superfície
+  MAT.concreteBand=surf(TEX.concrete,TEX.concreteN,{tile:CT,color:0x9a948b,rough:.9,nail:true});   // cinta de amarração entre fases
+  // painel quebrável da sala secreta inicial (0 m): o MESMO concreto de MAT.concrete (cor, escala, relevo), só que trincado
+  MAT.concreteCracked=surf(TEX.cracked,TEX.crackedN,{tile:CT,color:0xe6dfd4,macro:.3});
+  MAT.concreteDark=surf(TEX.concrete,TEX.concreteN,{tile:CT,color:0x8d8a84});              // salão secreto
+  // pedra aparelhada: blocos cinza de fiadas irregulares, juntas escuras, trincas finas na base de algumas pedras
+  const st=TEXGEN.masonry(512,2718,{rows:5,minW:.2,maxW:.36,joint:.007,bevel:.010,rough:.004,edgeCells:16,toneJit:.26,hueJit:.05,stain:.3,dark:.08,base:[100,99,96],mortar:[50,48,44],lum:84,cracks:.14});
+  TEX.stone=surfTex(st.canvas); TEX.stoneN=N(st,.007);
+  MAT.stone=surf(TEX.stone,TEX.stoneN,{tile:[3,3],nail:true});
+  MAT.stoneDark=surf(TEX.stone,TEX.stoneN,{tile:[3,3],color:0x8e9196,nail:true});        // labirinto
+  // tijolo escuro: tom liso até a foto do projeto carregar (loadBrickPhoto; sem ela, brickFallback)
+  TEX.brick=flatTex([70,52,45]); TEX.brickN=flatTex([128,128,255]);
+  MAT.brick=surf(TEX.brick,TEX.brickN,{tile:[1.4,1.4],nail:true});
+  MAT.brickSoot=surf(TEX.brick,TEX.brickN,{tile:[1.4,1.4],color:0xa49b94,nail:true});       // fuligem (casa das bombas, sala do rádio)
+  // pedra irregular com musgo, raízes e terra nos vãos (Estufa)
+  TEX.mossStone=flatTex([62,64,52]); TEX.mossStoneN=flatTex([128,128,255]);
+  deferTex(()=>{ const cb=TEXGEN.cobble(512,3141,{n:5,gap:.06,base:[98,95,88],soil:[46,42,34],moss:[60,70,46],mossAmt:.5,lum:64,roots:6}); swapTex('mossStone',surfTex(cb.canvas),N(cb,.022)); });
+  MAT.moss=surf(TEX.mossStone,TEX.mossStoneN,{tile:[3.2,3.2],rough:1,macro:.28});
+  // madeira envelhecida: tábuas com veio, nós, emendas e pregos
+  TEX.wood=flatTex([66,50,38]); TEX.woodN=flatTex([128,128,255]);
+  deferTex(()=>{ const wd=TEXGEN.planks(512,7331,{n:10,base:[84,61,44],greyTo:[94,90,84],lum:64}); swapTex('wood',surfTex(wd.canvas),N(wd,.006)); });
+  MAT.archive=surf(TEX.wood,TEX.woodN,{tile:[1.6,1.6],rough:.85});                           // móveis, estantes, beliches
+  MAT.woodDeck=surf(TEX.wood,TEX.woodN,{tile:[2,2],color:0xc9bfb2,rough:.9});               // tablado dos descansos (andaime)
+  MAT.beam=surf(TEX.wood,TEX.woodN,{tile:[3,4],color:0x9a8a7c,rough:.85,macro:.12});        // vigas de madeira que cruzam o poço
+  // agarras: tijolos salientes (firmes = tijolo inteiro; gastos = claros, trincados e com a quina lascada → esfarelam)
+  TEX.hold=new THREE.CanvasTexture(TEXGEN.holdBrick(null,false)); TEX.holdWorn=new THREE.CanvasTexture(TEXGEN.holdBrick(null,true));
+  MAT.holdBrick=new THREE.MeshStandardMaterial({map:TEX.hold,roughness:.78});
+  MAT.crumble=new THREE.MeshStandardMaterial({map:TEX.holdWorn,roughness:1});
+  Object.assign(FINISH,{concrete:MAT.concrete,concreteCold:MAT.concreteCold,concretePale:MAT.concretePale,brick:MAT.brick,brickSoot:MAT.brickSoot,stone:MAT.stone,stoneDark:MAT.stoneDark});
+  // ---------- metal, chapas e demais ----------
   TEX.liner=rep(new THREE.CanvasTexture(linerCanvas()));
   TEX.grate=new THREE.CanvasTexture(grateCanvas()); TEX.grate.wrapS=TEX.grate.wrapT=THREE.RepeatWrapping; TEX.grate.repeat.set(4,4);
-  MAT.concrete=new THREE.MeshStandardMaterial({map:TEX.wall,roughness:.95});
-  // painel quebrável (segredos 1 e 2): mesma textura, tom levemente mais quente/claro
-  MAT.concreteAlt=new THREE.MeshStandardMaterial({map:TEX.wall,roughness:.92,color:0xe9e2d6});
-  // painel quebrável da sala secreta inicial (0 m): concreto RACHADO — a pista é a própria textura
-  MAT.concreteCracked=new THREE.MeshStandardMaterial({map:TEX.wallCracked,roughness:.97});
-  // paredes do labirinto: o mesmo concreto, mais escuro e frio
-  MAT.concreteDark=new THREE.MeshStandardMaterial({map:TEX.wall,roughness:.97,color:0x8d8a84});
   // chapa de contenção (trechos de poço selados): não aceita prego, sem agarras
   MAT.liner=new THREE.MeshStandardMaterial({map:TEX.liner,roughness:.5,metalness:.65});
-  [MAT.concrete,MAT.concreteAlt,MAT.concreteCracked,MAT.concreteDark,MAT.liner].forEach(m=>UVSCALE_MATS.add(m));
-  TEX.foundry=rep(new THREE.CanvasTexture(foundryCanvas())); TEX.moss=rep(new THREE.CanvasTexture(mossCanvas()));
-  TEX.archive=rep(new THREE.CanvasTexture(archiveCanvas())); TEX.paper=rep(new THREE.CanvasTexture(paperCanvas()));
+  UVSCALE_MATS.add(MAT.liner);
+  TEX.foundry=rep(new THREE.CanvasTexture(foundryCanvas())); TEX.paper=rep(new THREE.CanvasTexture(paperCanvas()));
   TEX.glass=rep(new THREE.CanvasTexture(glassCanvas()));
   MAT.foundry=new THREE.MeshStandardMaterial({map:TEX.foundry,roughness:.75,metalness:.5});
-  MAT.moss=new THREE.MeshStandardMaterial({map:TEX.moss,roughness:1});
-  MAT.archive=new THREE.MeshStandardMaterial({map:TEX.archive,roughness:.9});
   MAT.paperWall=new THREE.MeshStandardMaterial({map:TEX.paper,roughness:1});
   MAT.glass=new THREE.MeshStandardMaterial({map:TEX.glass,transparent:true,opacity:.45,roughness:.15,metalness:.2,side:THREE.DoubleSide,depthWrite:false});
   MAT.vine=new THREE.MeshStandardMaterial({color:0x2c5a2a,roughness:1});
@@ -167,14 +214,12 @@ const TEX={}, MAT={}, GEO={}, UVSCALE_MATS=new Set();
   MAT.darkLamp=new THREE.MeshBasicMaterial({color:0x1a1612});
   MAT.socket=new THREE.MeshBasicMaterial({color:0xd9962a});   // anel do soquete de prego (visível no escuro)
   MAT.socketUsed=new THREE.MeshBasicMaterial({color:0x55c46a});
-  [MAT.foundry,MAT.moss,MAT.archive,MAT.paperWall].forEach(m=>UVSCALE_MATS.add(m));
+  [MAT.foundry,MAT.paperWall].forEach(m=>UVSCALE_MATS.add(m));
   MAT.crack=new THREE.MeshBasicMaterial({color:0x1a1814});
   MAT.bolt=new THREE.MeshStandardMaterial({color:0x6b5a44,roughness:.6,metalness:.6});
   MAT.grate=new THREE.MeshStandardMaterial({map:TEX.grate,alphaTest:.5,side:THREE.DoubleSide,metalness:.5,roughness:.6});
   MAT.rust=new THREE.MeshStandardMaterial({color:0x8a4a22,roughness:.7,metalness:.4});
-  MAT.crumble=new THREE.MeshStandardMaterial({color:0x6a5c4c,roughness:1});
   MAT.metal=new THREE.MeshStandardMaterial({color:0x3c3f42,roughness:.55,metalness:.6});
-  MAT.beam=new THREE.MeshStandardMaterial({color:0x4a3628,roughness:.6,metalness:.5});
   MAT.pipe=new THREE.MeshStandardMaterial({color:0x2f4038,roughness:.5,metalness:.6});
   MAT.weight=new THREE.MeshStandardMaterial({color:0x2a2622,roughness:.8,metalness:.3});
   MAT.paper=new THREE.MeshStandardMaterial({color:0xd8cfb8,roughness:1});
@@ -188,4 +233,5 @@ const TEX={}, MAT={}, GEO={}, UVSCALE_MATS=new Set();
   GEO.nailHit=new THREE.BoxGeometry(.14,.26,.14).translate(0,.13,0);
   GEO.pickHit=new THREE.BoxGeometry(.24,.18,.24);
   for(const k in GEO) GEO[k].userData.shared=true;
+  loadBrickPhoto();
 })();

@@ -32,7 +32,7 @@ Object.assign(World.prototype,{
   _fmesh(fr,geo,mat,u,y,v,yawDu,yawDv,parent){ const m=new THREE.Mesh(geo,mat); m.position.copy(fr.p(u,y,v)); if(yawDu!=null) m.rotation.y=fr.yaw(yawDu,yawDv); (parent||this.root).add(m); return m; },
   // agarra num ponto qualquer, com normal local (nu,nv)
   _fhold(fr,u,y,v,nu,nv,crumble){
-    const n=fr.n(nu,nv), p=fr.p(u,y,v), m=new THREE.Mesh(Math.abs(n.x)>.5?GEO.holdX:GEO.holdZ,crumble?MAT.crumble:MAT.rust);
+    const n=fr.n(nu,nv), p=fr.p(u,y,v), m=new THREE.Mesh(Math.abs(n.x)>.5?GEO.holdX:GEO.holdZ,crumble?MAT.crumble:MAT.holdBrick);
     m.position.set(p.x+n.x*.1,y,p.z+n.z*.1); if(Math.abs(n.x)>.5) m.rotation.x=this.rand(-.25,.25); else m.rotation.z=this.rand(-.25,.25);
     m.userData={grab:true,type:'hold',crumble:!!crumble,alive:true,wallNormal:n}; this.root.add(m); this.grabbables.push(m); return m;
   },
@@ -128,7 +128,7 @@ Object.assign(World.prototype,{
   _wing(wall,c,T,spec){
     const fr=this._fr(wall.axis,wall.s), id=spec.id, w=1.0;
     this.openings.push({id:id+'_in',axis:wall.axis,s:wall.s,lat0:c-w,lat1:c+w,y0:T,y1:T+2.6});
-    const C=MAT.concrete, sf=SURFACE.concrete, L=7, RW=4.2, RL=9, rh=3.6, t=.3, u1=4.5+L, u2=u1+RL;
+    const C=FINISH[spec.finish]||MAT.concrete, sf=SURFACE.concrete, L=7, RW=4.2, RL=9, rh=3.6, t=.3, u1=4.5+L, u2=u1+RL;
     this._fb(fr,4.0,u2+t,c-RW-t,c+RW+t,T-.3,T,C,{kind:'floor'});
     this._fb(fr,4.5,u1,c-w-t,c-w,T,T+2.9,C,{interactable:sf}); this._fb(fr,4.5,u1,c+w,c+w+t,T,T+2.9,C,{interactable:sf}); this._fb(fr,4.5,u1,c-w-t,c+w+t,T+2.6,T+2.9,C,{cut:true});
     this._fwall(fr,u1-t,u1,c-RW-t,c+RW+t,T,T+rh+t,[{v0:c-w,v1:c+w,y0:T,y1:T+2.6}],C,{interactable:sf});
@@ -198,7 +198,7 @@ Object.assign(World.prototype,{
 Object.assign(World.prototype,{
   _foundry(cfg){
     const F=FOUNDRY, T=FOUNDRY_TEXT, H=cfg.H, hall=cfg.id;
-    const mats={wall:MAT.foundry,floor:MAT.foundry,ceil:MAT.metal,gall:MAT.metal};
+    const mats={wall:MAT.brickSoot,floor:MAT.foundry,ceil:MAT.metal,gall:MAT.metal};   // tijolo com fuligem · piso de chapa de aço
     const g=this._hallShell({...cfg,climbV:-6.5},mats), fr=g.fr, V=g.V, uN=g.uN, uF=g.uF, P=(u,y,v)=>fr.p(u,y,v);
     const sf=SURFACE.concrete, FM=MAT.foundry;
     const refs={wheels:[],gauges:[],pumps:{},lamps:[],lights:[],doors:{}};

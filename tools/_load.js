@@ -19,7 +19,7 @@ global.THREE={Vector3:V3,Vector2:class{},Group:Obj,Mesh:Obj,PointLight:Obj,Ambie
   RepeatWrapping:1,DoubleSide:2,LinearToneMapping:1,Quaternion:class{},Euler:class{},Matrix4:class{},WebGLRenderer:class{}};
 global.window=global; global.localStorage=undefined; global.performance={now:()=>0};
 function load(rel){ const f=path.join(ROOT,rel); vm.runInThisContext(fs.readFileSync(f,'utf8'),{filename:rel}); }
-['js/core/utils.js','js/world/assets.js','js/world/levelData.js','js/world/World.js','js/world/Halls.js','js/items/itemDefs.js','js/items/Inventory.js',
+['js/core/utils.js','js/world/textures.js','js/world/assets.js','js/world/levelData.js','js/world/World.js','js/world/Halls.js','js/items/itemDefs.js','js/items/Inventory.js',
  'js/interaction/Interactables.js','js/systems/MassSystem.js','js/systems/progress.js','js/systems/PuzzleSystem.js','js/systems/HallPuzzles.js'].forEach(load);
 
 
