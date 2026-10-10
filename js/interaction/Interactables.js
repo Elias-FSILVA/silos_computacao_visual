@@ -107,17 +107,34 @@ class Crate extends Interactable{
   }
 }
 
+// Texto mostrado quando Inventory.receive() não aceita nada (reason vem do próprio Inventory)
+function pickupRefusal(id,reason,inv){
+  const d=ITEM_DEFS[id];
+  if(reason==='full') return `Mochila cheia (${inv.size} / ${inv.size} espaços).`;
+  if(reason==='duplicate') return `Você já carrega este item: ${d.name}.`;
+  if(reason==='limit') return `Limite de ${d.name.toLowerCase()} atingido (${inv.stackLimitOf(id)}).`;
+  return 'Não foi possível pegar isso.';
+}
+
 class Pickup extends Interactable{
   constructor(world,mesh,id,count){ super(); this.world=world; this.mesh=mesh; this.id=id; this.count=count; this.taken=false; }
   canInteract(){ return this.taken?null:{prompt:`Pegar ${itemLabel(this.id,this.count)}`,reticle:'pickup'}; }
+  // Coleta parcial: o que cabe vai para o inventário; o que não coube continua aqui (this.count) e o pickup permanece no mundo.
+  // Se nada coube, nada muda (nem o pickup nem o inventário).
   interact(ctx){
     if(this.taken) return;
-    const idx=ctx.items.inv.add(this.id,this.count);
-    if(idx<0){ ctx.ui.msg('Sem espaço para carregar mais nada.',1.6); return; }
+    const inv=ctx.items.inv, r=inv.receive(this.id,this.count);
+    if(r.accepted<=0){ ctx.audio.deny(); ctx.ui.msg(pickupRefusal(this.id,r.reason,inv),1.8); return; }
+    this.count=r.remaining;
+    ctx.audio.pickup(); ctx.ui.slotPulse(r.index); ctx.items.onPickup(this.id,r.accepted);
+    if(r.remaining>0){
+      const d=ITEM_DEFS[this.id];
+      ctx.ui.msg(`${d.name}: levou ${r.accepted}, sobraram ${r.remaining} no chão (limite ${inv.stackLimitOf(this.id)}).`,2.4);
+      return;
+    }
     this.taken=true; this.t=0; this.cam=ctx.player.camera;
     this.from=new V3(); this.mesh.getWorldPosition(this.from);
     this.world.detach(this.mesh); this.world.root.add(this.mesh); this.mesh.position.copy(this.from);
-    ctx.audio.pickup(); ctx.ui.slotPulse(idx); ctx.items.onPickup(this.id,this.count);
     this.world.animated.push(this);
   }
   update(dt){

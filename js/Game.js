@@ -1,6 +1,7 @@
 'use strict';
 // ============================================================================
 // js/Game.js — fluxo: BOOT → MENU → NOME → START → CINEMATIC → GAMEPLAY → RESULTADO → RANKING
+// Estados: menu · intro · play · inventory (mochila aberta, jogo congelado) · paused · ending · result
 // ============================================================================
 class Game{
   constructor(){
@@ -27,6 +28,7 @@ class Game{
     this.puzzles.reset(); this._zones();
     this.cinematic=new IntroCinematic(this);
     this.state='menu'; this.keys={}; this.playerName=''; this.result=null; this.saved=false; this.savedIndex=-1;
+    this.gameBtn={}; this._lockGuard=0;   // gameBtn: botões do mouse pressionados DURANTE a partida (cliques na interface não contam)
     this.settingsReturn='menu'; this.wasLocked=false; this.menuT=0; this.vt=0;
     this._wire(); this.applySettings();
     try{ const n=LS&&LS.getItem('silos.lastName'); if(n) this.ui.$('nameIn').value=n; }catch(e){}
@@ -60,7 +62,7 @@ class Game{
     this.world.reset(); this.player.reset(); this.items.reset(); this.mass.reset(); this.timer.reset(); this.score.reset();
     this.fx.clear(); this.puzzles.reset(); this._zones(); this.audio.silence();
     this.checkpoints.reset(); this.atmosphere.reset(); this.result=null; this.saved=false; this.savedIndex=-1; this.vt=0;
-    this.ui.hideNote(); this.keys={};
+    this.ui.hideNote(); this.ui.resetPack(); this.keys={}; this.gameBtn={};   // resetPack: fecha a mochila e esquece as posições dos itens
   }
   _zones(){ this.mass.safeZones=Object.values(this.world.puzzleRooms).flatMap(r=>[r.zoneRoom,r.zoneDuct].filter(Boolean)); }
   beginPlay(){
@@ -77,15 +79,40 @@ class Game{
   pause(){
     if(this.state!=='play') return;
     this.state='paused'; this.timer.pause(); this.player.releaseAll(); this.items.use(false); this.keys={};
+    this.ui.setPack(false);
     this.unlock(); this.ui.clearMsg(); this.ui.show('pause'); this.audio.setRumble(.02); this.pausedAt=performance.now();
     if(this.vr.active) this.vr.showPause();
   }
   resume(){ if(this.state!=='paused') return; this.ui.hideScreens(); this.vr.closeMenu(); this.state='play'; this.timer.resume(); this.lock(); }
+  // ---------- inventário (mochila circular) ----------
+  // Abrir congela a partida (nenhum sistema com tempo roda no estado 'inventory'), solta o mouse para a interface
+  // e NÃO solta as mãos: a escalada continua exatamente como estava ao fechar.
+  openInventory(){
+    if(this.state!=='play'||this.player.dead) return;
+    this.state='inventory'; this._lockGuard=performance.now()+400;   // o estado muda antes do unlock: o pointerlockchange não vira pausa
+    this.timer.pause(); this.items.use(false); this.gameBtn={};      // soltar botões durante a mochila não mexe nas mãos
+    this.ui.hideNote(); this.audio.setRumble(.02);
+    this.ui.setPack(true,this.items,this.player);
+    this.unlock();
+  }
+  closeInventory(){
+    if(this.state!=='inventory') return;
+    this.ui.setPack(false); this.state='play'; this.timer.resume();
+    this._lockGuard=performance.now()+400; this.lock();
+  }
+  _inventoryKey(e){
+    if(e.code==='Tab'||e.code==='Escape'){
+      e.preventDefault(); if(e.repeat) return;
+      if(e.code==='Escape'&&this.ui.cancelDrag()) return;   // Esc cancela um arrasto em andamento antes de fechar
+      this.closeInventory(); return;
+    }
+    this.ui.packKey(e);
+  }
   endRun(result){
     if(this.state!=='play') return;
     this.state='ending'; this.result=result; this.timer.finish();
     const breakdown=this.score.finalize(result,this.timer.time,this.player);
-    this.player.releaseAll(); this.unlock(); this.ui.hideNote(); this.ui.clearMsg();
+    this.player.releaseAll(); this.unlock(); this.ui.hideNote(); this.ui.setPack(false); this.ui.clearMsg();
     this.audio.siren(false);
     if(result==='finish') this.audio.chime(); else this.audio.boom();
     this.lastRun={name:this.playerName,score:breakdown.total,time:this.timer.time,result,height:this.player.maxHeightReached,breakdown};
@@ -148,14 +175,16 @@ class Game{
     $('btnMenu').onclick=()=>this.toMenu();
     $('cine').addEventListener('click',()=>this.cinematic.skip());
     this.ui.bindSettings(this.settings,()=>this.applySettings());
+    this.ui.onPackClose=()=>this.closeInventory();
 
     addEventListener('resize',()=>this.applySettings());
-    addEventListener('contextmenu',e=>{ if(this.state==='play') e.preventDefault(); });
+    addEventListener('contextmenu',e=>{ if(this.state==='play'||this.state==='inventory') e.preventDefault(); });
     // em VR a janela perde o foco e o ponteiro ao entrar no headset: isso não é pausa
     addEventListener('blur',()=>{ this.keys={}; if(this.state==='play'&&!this.vr.busy) this.pause(); });
     document.addEventListener('pointerlockchange',()=>{
       const locked=document.pointerLockElement===this.renderer.domElement;
-      if(!locked&&this.wasLocked&&this.state==='play'&&!this.vr.busy) this.pause();
+      // abrir/fechar a mochila troca o Pointer Lock de propósito: isso nunca é um pedido de pausa
+      if(!locked&&this.wasLocked&&this.state==='play'&&!this.vr.busy&&performance.now()>this._lockGuard) this.pause();
       this.wasLocked=locked;
     });
     addEventListener('mousemove',e=>{ if(this.state==='play') this.player.look(e.movementX||0,e.movementY||0,this.settings.data); });
@@ -163,26 +192,35 @@ class Game{
       if(this.state!=='play') return;
       if(!document.pointerLockElement) this.lock();
       if(e.button===0&&this.interaction.keypadAimed()){ this.interact(0); return; }   // painel de senha: clique aperta o número
+      this.gameBtn[e.button]=true;
       if(e.button===0) this.player.setGrab(0,true);
       else if(e.button===2){ if(this.items.equipped) this.items.use(true); else this.player.setGrab(1,true); }
     });
-    addEventListener('mouseup',e=>{ if(e.button===0) this.player.setGrab(0,false); else if(e.button===2){ this.items.use(false); this.player.setGrab(1,false); } });
+    addEventListener('mouseup',e=>{
+      // só solta o que um clique de partida segurou: cliques e arrastos na mochila não soltam as mãos
+      if(!this.gameBtn[e.button]) return;
+      this.gameBtn[e.button]=false;
+      if(e.button===0) this.player.setGrab(0,false); else if(e.button===2){ this.items.use(false); this.player.setGrab(1,false); }
+    });
     addEventListener('wheel',e=>{ if(this.state==='play'&&Math.abs(e.deltaY)>4) this.items.cycle(e.deltaY>0?1:-1); },{passive:true});
     addEventListener('keydown',e=>{
       const typing=e.target&&e.target.tagName==='INPUT'&&e.target.type==='text';
       if(typing) return;
       if(this.state==='intro'){ if(['Space','Escape','Enter'].includes(e.code)){ e.preventDefault(); this.cinematic.skip(); } return; }
+      if(this.state==='inventory'){ this._inventoryKey(e); return; }
       if(this.state==='paused'&&(e.code==='Escape'||e.code==='KeyP')&&!this.ui.$('pause').hidden){ if(performance.now()-(this.pausedAt||0)>350) this.resume(); return; }
       if(this.state!=='play') return;
       this.keys[e.code]=true;
-      if(['Space','KeyW','KeyA','KeyS','KeyD','KeyF','KeyQ','KeyX','Digit1','Digit2','Digit3','Digit4'].includes(e.code)) e.preventDefault();
+      const qk=QUICK_KEYS.findIndex(q=>q.code===e.code);   // 1–4 → atalhos de equipamento (seguem o vínculo, não o índice do slot)
+      if(qk>=0||['Space','KeyW','KeyA','KeyS','KeyD','KeyF','KeyQ','KeyX','Tab'].includes(e.code)) e.preventDefault();
       if(e.repeat) return;
+      if(qk>=0){ this.items.selectQuick(qk); return; }
       switch(e.code){
         case 'Space': this.player.jump(); break;
         case 'KeyF': this.interact(); break;
         case 'KeyQ': this.items.quick('pills'); break;
         case 'KeyX': this.items.holster(); break;
-        case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': this.items.select(+e.code.slice(5)-1); break;
+        case 'Tab': this.openInventory(); break;   // alterna: a mochila é interativa e precisa do mouse solto
         case 'Escape': case 'KeyP': this.pause(); break;
       }
     });
@@ -212,6 +250,7 @@ class Game{
       if(this.state==='play') this._play(dt);
       else if(this.state==='intro'){ this.cinematic.update(dt); this._ambient(dt,false); }
       else if(this.state==='menu'){ this._menuCam(dt); this._ambient(dt,false); }
+      else if(this.state==='inventory'){ this._ambient(dt,false); this.ui.renderPack(this.items,this.player); }
       else this._ambient(dt,false);
       this.mass.visual(this.vt);
       this.ui.tick(dt);
