@@ -38,6 +38,11 @@
 @keyframes slotpulse{ from{ background:rgba(227,179,65,.45); } }
 .hand.busy{ opacity:.45; }
 #vig{ position:absolute; inset:0; opacity:0; background:radial-gradient(ellipse at center, transparent 42%, rgba(110,8,8,.88) 100%); }
+/* fadiga dos braços: escurece e desfoca só as bordas (visão afunilando); a opacidade vem do Player.fatigueFx */
+#strain{ position:absolute; inset:0; opacity:0;
+  background:radial-gradient(ellipse at center, transparent 48%, rgba(8,5,4,.78) 100%);
+  -webkit-backdrop-filter:blur(2.5px); backdrop-filter:blur(2.5px);
+  -webkit-mask-image:radial-gradient(ellipse at center, transparent 38%, #000 82%); mask-image:radial-gradient(ellipse at center, transparent 38%, #000 82%); }
 #toast{ position:absolute; top:14%; left:50%; transform:translateX(-50%); text-align:center; opacity:0; transition:opacity .5s; }
 #toast .a{ font-size:18px; color:var(--dust); }
 #toast .b{ font-family:"Big Shoulders Stencil Display",Impact,sans-serif; font-weight:800; font-size:44px; color:var(--sodium); line-height:1; }

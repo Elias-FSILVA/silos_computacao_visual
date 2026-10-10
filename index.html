@@ -10,29 +10,52 @@
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/screens.css">
 <link rel="stylesheet" href="css/hud.css">
+<link rel="stylesheet" href="css/inventory.css">
 <link rel="stylesheet" href="css/cinematic.css">
 </head>
 <body>
 <div id="view"></div>
 
 <div id="hud" hidden>
+  <div id="strain"></div>
   <div id="vig"></div>
   <div id="alt"><span class="n" id="altN">0</span><span class="u">m</span><div id="massN">silêncio abaixo</div></div>
   <div id="run"><div id="timeN">00:00.00</div><div id="scoreN">0 pts</div><div id="cpN"></div></div>
   <div id="reticle"><div class="hand" id="handL"></div><div id="ring"></div><div class="hand" id="handR"></div></div>
   <div id="prompt"></div>
-  <div id="inv"><div id="slotName"></div><div id="slots"></div></div>
+  <div id="inv"><div id="slotName"></div><div id="slots" role="list" aria-label="Atalhos de equipamento 1 a 4"></div></div>
+  <div id="packWrap" hidden>
+    <div id="packVeil"></div>
+    <div id="pack" role="dialog" aria-label="Inventário">
+      <svg id="packSvg" viewBox="-50 -50 100 100" aria-hidden="true">
+        <circle class="d0" r="40"/><circle class="d1" r="38.2"/><circle class="d2" r="35"/><circle class="d3" r="24"/>
+      </svg>
+      <div id="packStore" role="group" aria-label="Armazenamento: itens no círculo"></div>
+      <div id="packQuick" role="group" aria-label="Atalhos de equipamento 1 a 4"></div>
+    </div>
+    <div id="packInfo" aria-live="polite">
+      <span id="packPips" aria-hidden="true"></span>
+      <span id="packHn" class="hn"></span>
+      <span id="packHs" class="hs"></span>
+      <span id="packHd" class="hd"></span>
+      <span id="packHh" class="hh"></span>
+    </div>
+    <button id="packClose" type="button">Fechar <kbd>Tab</kbd></button>
+    <p id="packLegend">Arraste os itens dentro do círculo para organizá-los · arraste um item até <kbd>1</kbd>–<kbd>4</kbd> (ou selecione e clique no atalho) · <kbd>Del</kbd> remove o atalho · <kbd>Tab</kbd> fecha</p>
+  </div>
   <div id="toast"><div class="a" id="toastA"></div><div class="b" id="toastB"></div></div>
 </div>
+<div id="invLive" class="sr" role="status" aria-live="polite"></div>
 <div id="msg"></div>
 <div id="note" hidden></div>
 
 <section class="screen" id="menu" aria-label="Menu principal">
   <div class="col">
     <h1 class="title">Silos</h1>
-    <p class="tag">Inspirado em White Knuckle. Mouse e teclado.</p>
+    <p class="tag">Inspirado em White Knuckle. Mouse e teclado, ou VR no Meta Quest.</p>
     <div class="list">
       <button class="mbtn primary" id="btnStart">Começar</button>
+      <button class="mbtn" id="btnStartVR" hidden>Começar em VR</button>
       <div class="field">
         <label for="nameIn">Nome do jogador</label>
         <input id="nameIn" type="text" maxlength="16" autocomplete="off" spellcheck="false" aria-describedby="nameErr">
@@ -42,7 +65,15 @@
       <button class="mbtn" id="btnRanking">Ranking</button>
       <button class="mbtn" id="btnQuit">Sair</button>
     </div>
-    <p class="note-small">Botões esquerdo e direito do mouse seguram com cada mão. 1 a 4 colocam um item na mão direita, que passa a usar o botão direito. X guarda o item, F interage, Espaço pula ou sobe numa borda, Q toma uma pílula.</p>
+    <p class="note-small">Botões esquerdo e direito do mouse seguram com cada mão; agarrado, arraste o mouse para baixo para puxar o corpo. Tab abre a mochila: organize os itens no círculo e arraste-os para os atalhos 1 a 4. Apertar o número do atalho coloca o item na mão direita (apertar de novo guarda), e o botão direito usa. X guarda o item, Q toma uma pílula, F interage, Espaço pula ou sobe numa borda.</p>
+    <p class="note-small" id="vrNote" hidden>VR (Meta Quest): grip agarra com cada mão; segurando, desça o braço para puxar o corpo. Analógico esquerdo anda; o direito gira e, para cima ou para baixo, inclina a vista (clique nele nivela). A pula ou sobe, gatilho direito usa o item ou interage, B troca o item, X guarda, Y abre o inventário no pulso (toque no item com o indicador direito e aperte o gatilho), clique no analógico esquerdo pausa. Prego encostado na parede se fixa sozinho; depois, bata nele com o martelo. O martelo também quebra paredes rachadas. Pílula: leve o frasco à boca. Painel de senha: ponha o indicador na frente do número e aperte o gatilho daquela mão. Com hand tracking: feche a mão para agarrar, pinça direita interage, pinça esquerda pula.</p>
+    <div class="devbox">
+      <p class="dev-title">Ferramentas de desenvolvimento</p>
+      <button class="mbtn dev" id="btnSpectate">Modo espectador (câmera livre no mapa)</button>
+      <p class="dev-note">Voe por todo o mapa de 400 m, com paredes transparentes, nomes de cada parte e régua de altura. Não precisa de nome.<br>
+        Atalho: <b>F2</b> neste menu · ou abra o endereço com <b>?espectador</b> no final.</p>
+      <p class="dev-ver">Versão do mapa: 400 m · 3 puzzles · espectador v2</p>
+    </div>
   </div>
 </section>
 
@@ -62,6 +93,10 @@
     <fieldset class="set"><legend>Jogo</legend>
       <label class="row">Sensibilidade <input type="range" min="0.3" max="2.5" step="0.05" data-key="sensitivity"><output></output></label>
       <label class="row">Inverter eixo Y <input type="checkbox" data-key="invertY"><span></span></label>
+    </fieldset>
+    <fieldset class="set"><legend>VR (Meta Quest)</legend>
+      <label class="row">Giro <select data-key="vrTurn"><option value="30">Em passos de 30°</option><option value="45">Em passos de 45°</option><option value="0">Suave</option></select><span></span></label>
+      <label class="row">Vinheta ao andar <input type="checkbox" data-key="vrVignette"><span></span></label>
     </fieldset>
     <div class="list"><button class="mbtn" id="btnSetBack">Voltar</button></div>
   </div>
@@ -89,6 +124,7 @@
     <p class="tag">O tempo e a massa estão parados.</p>
     <div class="list">
       <button class="mbtn primary" id="btnResume">Continuar</button>
+      <button class="mbtn" id="btnPauseVR" hidden>Continuar em VR</button>
       <button class="mbtn" id="btnPauseSettings">Configurações</button>
       <button class="mbtn" id="btnPauseMenu">Abandonar e voltar ao menu</button>
     </div>
@@ -98,6 +134,7 @@
 <section class="screen" id="result" hidden aria-label="Resultado">
   <div class="col">
     <h2 id="resT"></h2>
+    <p class="end-text" id="resEnd" hidden></p>
     <dl class="stats">
       <dt>Jogador</dt><dd id="resName"></dd>
       <dt>Tempo</dt><dd id="resTime"></dd>
@@ -120,15 +157,19 @@
 <!-- bibliotecas instaladas pelo npm (rode "npm install" uma vez; "npm run dev" abre o jogo) -->
 <script src="node_modules/three/build/three.min.js"></script>
 <script src="node_modules/three/examples/js/loaders/GLTFLoader.js"></script>
+<script src="node_modules/three/examples/js/utils/SkeletonUtils.js"></script>
 <!-- scripts da aplicação: a ordem importa (dependências de nível superior vêm antes) -->
 <script src="js/core/utils.js"></script>
 <script src="js/core/models.js"></script>
+<script src="js/core/modelDefs.js"></script>
 <script src="js/core/settings.js"></script>
 <script src="js/core/ranking.js"></script>
 <script src="js/atmosphere/AudioManager.js"></script>
+<script src="js/world/textures.js"></script>
 <script src="js/world/assets.js"></script>
 <script src="js/world/levelData.js"></script>
 <script src="js/world/World.js"></script>
+<script src="js/world/Halls.js"></script>
 <script src="js/items/itemDefs.js"></script>
 <script src="js/items/Inventory.js"></script>
 <script src="js/fx/FxSystem.js"></script>
@@ -137,12 +178,18 @@
 <script src="js/items/ItemSystem.js"></script>
 <script src="js/player/HandModel.js"></script>
 <script src="js/player/Player.js"></script>
+<script src="js/ui/VRPanel.js"></script>
+<script src="js/ui/VRMenu.js"></script>
+<script src="js/ui/VRHud.js"></script>
+<script src="js/player/VRPlayer.js"></script>
 <script src="js/systems/MassSystem.js"></script>
 <script src="js/systems/progress.js"></script>
 <script src="js/systems/PuzzleSystem.js"></script>
+<script src="js/systems/HallPuzzles.js"></script>
 <script src="js/atmosphere/AtmosphereManager.js"></script>
 <script src="js/ui/UIManager.js"></script>
 <script src="js/ui/IntroCinematic.js"></script>
+<script src="js/systems/SpectatorMode.js"></script>
 <script src="js/Game.js"></script>
 <script src="js/main.js"></script>
 </body>

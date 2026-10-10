@@ -5,7 +5,12 @@
   "description": "Silos — jogo de escalada em primeira pessoa com Three.js",
   "scripts": {
     "dev": "http-server . -c-1 -o",
-    "start": "npm run dev"
+    "start": "npm run dev",
+    "build": "node scripts/build.mjs",
+    "preview": "npm run build && http-server dist -c-1 -o"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "three": "0.128.0"

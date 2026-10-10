@@ -28,7 +28,8 @@ class ItemSystem{
   }
   onPickup(id,count){
     if(!this.hinted&&this.inv.has('hammer')&&this.inv.has('nails')){ this.hinted=true;
-      this.g.ui.msg('1 a 4 escolhem o que vai na mão direita. Botão direito usa. X guarda.',5); }
+      this.g.ui.msg(this.g.vr.active?'Y abre o inventário: toque num item com o indicador direito e aperte o gatilho. B troca, X guarda.'
+        :'Tab abre a mochila: arraste os itens para os atalhos 1 a 4. Botão direito usa. X guarda.',5); }
   }
   select(i){
     const p=this.player; if(p.dead) return;
@@ -38,6 +39,13 @@ class ItemSystem{
     if(p.rightHand.inContact){ this.g.ui.msg('A mão direita está segurando.',1.4); return; }
     if(this.equipped){ this.next=i; this.holster(); return; }
     this._equip(i);
+  }
+  // atalhos 1–4: resolve o item vinculado e entrega ao select() existente (equipar, trocar ou guardar)
+  selectQuick(k){
+    const inv=this.inv, i=inv.boundSlot(k); if(i<0) return false;
+    const s=inv.slots[i], d=ITEM_DEFS[s.id];
+    if(d.stack&&s.count<=0&&this.sel!==i){ this.g.audio.deny(); this.g.ui.msg(`Esgotado: ${d.name.toLowerCase()}.`,1.3); return false; }
+    this.select(i); return true;
   }
   cycle(dir){
     const filled=this.inv.slots.map((s,i)=>s?i:-1).filter(i=>i>=0); if(!filled.length) return;
@@ -50,7 +58,7 @@ class ItemSystem{
   }
   holster(){ if(!this.equipped||this.phase==='holstering') return; this.phase='holstering'; this.t=0; this.g.audio.holster(); }
   use(down){ this.useHeld=down; if(down) this._tryUse(); }
-  quick(id){ // Q: pílula sem precisar equipar
+  quick(id){ // pílula sem precisar equipar (tecla Q)
     if(id!=='pills') return;
     if(this.inv.count('pills')<=0){ this.g.ui.msg('Nenhuma pílula.',1.3); return; }
     this.inv.take('pills'); this.player.restoreStamina(); this.g.audio.pill(); this.g.ui.msg('O tremor nas mãos passa.',2);
@@ -75,16 +83,27 @@ class ItemSystem{
   _start(ph){ this.phase=ph; this.t=0; this.impacted=false; if(ph==='swing') this.g.audio.swing(); }
   _impact(){
     const tg=this.pending; this.pending=null;
-    if(this.phase==='swing'){
-      if(this.player.isClimbing) this.player.hands.forEach(h=>{ if(h.inContact) h.stamina=Math.max(0,h.stamina-2); });
-      this.landed=!!(tg&&tg.obj&&tg.hit.object.userData.alive!==false);
-      if(this.landed) tg.obj.useItem('hammer',tg.ctx);
-    } else if(this.phase==='place'){
+    if(this.phase==='swing') this._hammerHit(tg);
+    else if(this.phase==='place'){
       if(tg&&tg.obj) tg.obj.useItem(this.equipped,tg.ctx);
     } else if(this.phase==='consume'){
       if(this.inv.take('pills')){ this.player.restoreStamina(); this.g.audio.pill(); this.g.ui.msg('O tremor nas mãos passa.',2); }
     }
   }
+  _hammerHit(tg){
+    if(this.player.isClimbing) this.player.hands.forEach(h=>{ if(h.inContact) h.stamina=Math.max(0,h.stamina-2); });
+    this.landed=!!(tg&&tg.obj&&tg.hit.object.userData.alive!==false);
+    if(this.landed) tg.obj.useItem('hammer',tg.ctx);
+  }
+  // VR: prego encostado na parede (detectado pelo VRPlayer) — mesma colocação do botão, sem o clique
+  place(tg){
+    if(this.phase!=='idle'||this.equipped!=='nails'||!tg||!tg.valid||this.inv.count('nails')<=0) return false;
+    this.pending=tg; this._start('place'); return true;
+  }
+  // VR: frasco levado à boca (detectado pelo VRPlayer) — mesmo consumo do botão: animação, uma pílula, cura das mãos
+  consume(){ if(this.phase!=='idle'||this.equipped!=='pills'||this.inv.count('pills')<=0) return false; this._start('consume'); return true; }
+  // VR: pancada física do martelo (num prego ou numa parede quebrável, detectada pelo VRPlayer) — mesmo efeito do golpe, sem a animação
+  strike(tg){ if(this.phase!=='idle'||this.equipped!=='hammer') return false; this._hammerHit(tg); return this.landed; }
   update(dt){
     if(this.phase==='empty'){ this.pose.visible=false; return; }
     if(this.player.dead){ return; }

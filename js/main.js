@@ -1,5 +1,5 @@
 'use strict';
 // ============================================================================
-// js/main.js — ponto de entrada: instancia o jogo depois que todos os scripts carregaram
+// js/main.js — ponto de entrada: carrega os modelos 3D do catálogo e então instancia o jogo
 // ============================================================================
-window.__silos=new Game();
+Models.preload(MODEL_DEFS).then(()=>{ window.__silos=new Game(); });
