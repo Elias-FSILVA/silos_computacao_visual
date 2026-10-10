@@ -45,6 +45,7 @@ Models.load('items/martelo.glb').then(gltf => {
 | `items/martelo.glb` | Quaternius | Poly Pizza | CC0 (confirmar na página do modelo) |
 | `player/hand_lowpoly_rigged.glb` | ? | gerado ("procedural hand builder") | confirmar |
 | `player/hand_lowpoly_rigged_left.glb` | ? | gerado ("procedural hand builder") | confirmar |
+| `map/tijolo/_TEXTURES/Brick_Wall_017_*` (cor, AO, normal — usados em `js/world/assets.js`; o `.obj` não é carregado) | a confirmar | a confirmar | a confirmar |
 
 ## Mãos (`handR` / `handL`)
 

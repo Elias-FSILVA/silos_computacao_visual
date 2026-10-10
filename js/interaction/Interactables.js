@@ -158,3 +158,115 @@ class KeyButton extends Interactable{
   interact(ctx){ this.t=0; ctx.world.animated.push(this); ctx.game.puzzles.input(this.channel,this.label); }
   update(dt){ this.t+=dt; const k=Math.min(1,this.t/.18); this.mesh.position.z=this.base-.018*Math.sin(k*Math.PI); return k<1; }
 }
+
+// ============================================================================
+// Mecanismos dos Destinos (Casa das Bombas, Estufa, Arquivo). Todos falam com o PuzzleSystem por eventos:
+//   game.puzzles.allow(hall,nome,dados) → pode agir?    game.puzzles.event(hall,nome,dados) → avisa a lógica da sala
+// Mesmo contrato de Interactable (F interage; item na mão + botão direito usa o item).
+// ============================================================================
+const _snd=(ctx,n,...a)=>{ const f=ctx.audio&&ctx.audio[n]; if(f) f.apply(ctx.audio,a); };
+const _can=(ctx,hall,name,data)=>{ const p=ctx.game.puzzles; return p.allow?p.allow(hall,name,data):true; };
+const _tween=(o,key,from,to,dur=.35)=>{ o._tw={key,from,to,t:0,dur}; };
+function _tweenStep(o,dt,target,axis){ const w=o._tw; if(!w) return false; w.t+=dt; const k=Math.min(1,w.t/w.dur); target.rotation[axis]=lerp(w.from,w.to,smooth(k)); if(k>=1){ o._tw=null; return false; } return true; }
+
+// válvula-roda: cada F avança um passo (steps posições). Pode estar emperrada (precisa de martelo).
+class Wheel extends Interactable{
+  constructor(rot,o){ super(); this.rot=rot; this.hall=o.hall; this.id=o.id; this.steps=o.steps||4; this.state=o.state||0; this.label=o.label||'Válvula'; this.jam=o.jam||0; this._tw=null; this.rot.rotation.z=-this.state*Math.PI/2; }
+  canInteract(ctx){ return this.jam>0?{prompt:`${this.label} emperrada — precisa de força`,reticle:'fragile'}:{prompt:`${this.label}: girar um passo`,reticle:'panel'}; }
+  interact(ctx){
+    if(this.jam>0){ ctx.ui.msg('Emperrada. Só cede à força.',1.8); _snd(ctx,'thud'); return; }
+    if(!_can(ctx,this.hall,'wheel',{id:this.id})){ ctx.ui.msg('A válvula não responde.',1.6); _snd(ctx,'thud'); return; }
+    this.setState((this.state+1)%this.steps,false); _snd(ctx,'tang',1); ctx.player.addShake(.08);
+    ctx.game.puzzles.event(this.hall,'wheel',{id:this.id,state:this.state});
+  }
+  setState(s,instant){ const from=this.rot.rotation.z; this.state=s; const to=-s*Math.PI/2; if(instant||!this.world) this.rot.rotation.z=to; else { _tween(this,'z',from,to,.4); this.world.animated.push(this); } }
+  update(dt){ return _tweenStep(this,dt,this.rot,'z'); }
+  canUseItem(id,ctx){ return (id==='hammer'&&this.jam>0)?{reticle:'fragile',valid:ctx.hit.distance<=REACH}:null; }
+  useItem(id,ctx){ if(id!=='hammer'||this.jam<=0) return; this.jam--; _snd(ctx,'tang',3-this.jam); ctx.fx.spawn('sparks',ctx.hit.point,ctx.normal,6); ctx.player.addShake(.2); if(!this.jam) ctx.ui.msg('A válvula cede.',1.8); }
+}
+// alavanca de dois estados; 'jam' = golpes de martelo para destravar; 'locked' bloqueia até a lógica liberar
+class Lever extends Interactable{
+  constructor(rot,o){ super(); this.rot=rot; this.hall=o.hall; this.id=o.id; this.label=o.label||'Alavanca'; this.on=!!o.on; this.jam=o.jam||0; this.denyMsg=o.deny||'Nada acontece.'; this._tw=null; this.rot.rotation.x=this.on?-.9:.9; }
+  canInteract(ctx){ if(this.jam>0) return {prompt:`${this.label} emperrada`,reticle:'fragile'}; return {prompt:`${this.label}: ${this.on?'desligar':'acionar'}`,reticle:'panel'}; }
+  interact(ctx){
+    if(this.jam>0){ ctx.ui.msg('Emperrada. Só cede à força.',1.8); _snd(ctx,'thud'); return; }
+    if(!_can(ctx,this.hall,'lever',{id:this.id,on:!this.on})){ ctx.ui.msg(this.denyMsg,1.8); _snd(ctx,'thud'); return; }
+    this.setOn(!this.on,false); _snd(ctx,'tang',2); ctx.player.addShake(.1);
+    ctx.game.puzzles.event(this.hall,'lever',{id:this.id,on:this.on});
+  }
+  setOn(on,instant){ const from=this.rot.rotation.x; this.on=on; const to=on?-.9:.9; if(instant||!this.world) this.rot.rotation.x=to; else { _tween(this,'x',from,to,.3); this.world.animated.push(this); } }
+  update(dt){ return _tweenStep(this,dt,this.rot,'x'); }
+  canUseItem(id,ctx){ return (id==='hammer'&&this.jam>0)?{reticle:'fragile',valid:ctx.hit.distance<=REACH}:null; }
+  useItem(id,ctx){ if(id!=='hammer'||this.jam<=0) return; this.jam--; _snd(ctx,'tang',3-this.jam); ctx.fx.spawn('sparks',ctx.hit.point,ctx.normal,6); ctx.player.addShake(.22); if(!this.jam) ctx.ui.msg('A alavanca cede.',1.8); }
+}
+// seletor de símbolo: cada F avança para o próximo símbolo e redesenha a face
+class Dial extends Interactable{
+  constructor(tex,o){ super(); this.tex=tex; this.hall=o.hall; this.id=o.id; this.symbols=o.symbols; this.state=o.state||0; this.label=o.label||'Seletor'; this.paint(); }
+  paint(){ const g=this.tex.userData.ctx, c=this.tex.userData.canvas, sym=this.symbols[this.state];
+    g.fillStyle='#10140f'; g.fillRect(0,0,c.width,c.height); g.strokeStyle='#5a6a4a'; g.lineWidth=6; g.strokeRect(4,4,c.width-8,c.height-8);
+    g.fillStyle='#e3c768'; drawSymbol(g,sym,c.width/2,c.height/2,c.width*.28); this.tex.needsUpdate=true; }
+  canInteract(){ return {prompt:`${this.label}: próximo símbolo`,reticle:'panel'}; }
+  interact(ctx){
+    if(!_can(ctx,this.hall,'dial',{id:this.id})){ ctx.ui.msg('O altar está inerte.',1.6); _snd(ctx,'thud'); return; }
+    this.state=(this.state+1)%this.symbols.length; this.paint(); _snd(ctx,'tang',1);
+    ctx.game.puzzles.event(this.hall,'dial',{id:this.id,state:this.state,symbol:this.symbols[this.state]});
+  }
+}
+// leitor de cartão: usa o item 'card' (já existente no jogo) — o cartão é consumido
+class Reader extends Interactable{
+  constructor(mesh,lamp,o){ super(); this.mesh=mesh; this.lamp=lamp; this.hall=o.hall; this.id=o.id; this.label=o.label||'Leitor de cartão'; this.hint=o.hint||'Precisa de um cartão de acesso.'; this.ok=false; }
+  canInteract(){ return this.ok?null:{prompt:`${this.label} — segure o cartão e use (botão direito)`,reticle:'panel'}; }
+  interact(ctx){ if(!this.ok) ctx.ui.msg(this.hint,2.6); }
+  canUseItem(id,ctx){ if(id!=='card'||this.ok) return null; const v=ctx.hit.distance<=REACH; return {reticle:v?'panel':'dot',valid:v}; }
+  useItem(id,ctx){ if(id!=='card'||this.ok) return; const inv=ctx.items.inv; if(!inv.take('card')) return;
+    const i=inv.slotOf('card'); if(i>=0&&inv.slots[i].count<=0){ inv.slots[i]=null; inv.version++; }   // o cartão é consumido: libera o espaço
+    this.ok=true; if(this.lamp) this.lamp.material=MAT.glowGreen; _snd(ctx,'chime'); ctx.ui.msg('Cartão aceito.',2); if(ctx.items.holster) ctx.items.holster();
+    ctx.game.puzzles.event(this.hall,'reader',{id:this.id}); }
+}
+// objeto que cede a golpes de martelo (vidro, armário, grade, raízes). onBreak(ctx) é chamado ao ceder.
+class Smashable extends Interactable{
+  constructor(mesh,o){ super(); this.mesh=mesh; this.hall=o.hall; this.id=o.id; this.hits=o.hits||2; this.left=this.hits; this.label=o.label||'Quebrar'; this.onBreak=o.onBreak||null; this.broken=false; this.fx=o.fx||'debris'; }
+  canUseItem(id,ctx){ if(this.broken) return null; if(id==='hammer') return ctx.hit.distance<=REACH?{reticle:'fragile',valid:true}:{reticle:'dot',valid:false}; return null; }
+  useItem(id,ctx){ if(id!=='hammer'||this.broken) return; this.left--; _snd(ctx,'hollow',1-this.left/this.hits); ctx.fx.spawn('chips',ctx.hit.point,ctx.normal,4); ctx.player.addShake(.22);
+    this.mesh.rotation.z+=(Math.random()-.5)*.03;
+    if(this.left<=0){ this.broken=true; ctx.fx.spawn(this.fx,this.mesh.position.clone(),ctx.normal,12); _snd(ctx,'crash'); ctx.player.addShake(.4);
+      ctx.world.removeSolid(this.mesh); if(this.onBreak) this.onBreak(ctx); ctx.game.puzzles.event(this.hall,'smash',{id:this.id}); } }
+}
+// placa de nome (colecionável de narrativa; não ocupa o inventário)
+class Tag extends Interactable{
+  constructor(mesh,o){ super(); this.mesh=mesh; this.hall=o.hall; this.id=o.id; this.name=o.name; this.taken=false; }
+  _nm(ctx){ return typeof this.name==='function'?this.name(ctx):this.name; }
+  canInteract(ctx){ return this.taken?null:{prompt:`Recolher a placa de ${this._nm(ctx)}`,reticle:'pickup'}; }
+  interact(ctx){ if(this.taken) return; this.taken=true; ctx.world.detach(this.mesh); _snd(ctx,'pickup');
+    ctx.game.puzzles.event(this.hall,'tag',{id:this.id,name:this._nm(ctx)}); }
+}
+// decisão: 1º F lê o que será feito; 2º F confirma. Define a ROTA (e o final) — a primeira decisão vale.
+class Decision extends Interactable{
+  constructor(o){ super(); this.hall=o.hall; this.id=o.id; this.route=o.route; this.label=o.label; this.text=o.text; this.armed=false; }
+  canInteract(ctx){ const p=ctx.game.puzzles; if(p.route&&p.route!==this.route) return {prompt:'Você já fez a sua escolha',reticle:'panel'}; return {prompt:this.armed?`CONFIRMAR: ${this.label}`:this.label,reticle:'panel'}; }
+  interact(ctx){
+    const p=ctx.game.puzzles;
+    if(p.route){ ctx.ui.msg(p.route===this.route?'Está feito.':'Você já fez a sua escolha. Não há volta.',2.4); return; }
+    if(!_can(ctx,this.hall,'decide',{route:this.route})){ ctx.ui.msg('Ainda não.',1.6); return; }
+    if(!this.armed){ this.armed=true; ctx.ui.showNote(this.text+'\n\n(aperte F de novo para confirmar — não há volta)',true); _snd(ctx,'noise',.15,3000,.06); return; }
+    ctx.game.puzzles.event(this.hall,'decide',{route:this.route});
+  }
+}
+// nota cujo texto é calculado na hora (ex.: nome do jogador, estado do puzzle)
+class LiveNote extends Note{ constructor(fn,term){ super('',term); this.fn=fn; } interact(ctx){ ctx.ui.showNote(this.fn(ctx),this.term); ctx.audio.noise(.15,3000,.06); } }
+
+// soquete de prego: marca fixa na parede (vão liso). O prego entra exatamente no centro, a distância certa para o próximo tijolo.
+// A parede continua aceitando prego em qualquer outro ponto de concreto; o soquete só garante um lugar bom e visível.
+class NailSocket extends Interactable{
+  constructor(world,pos,normal,ring){ super(); this.world=world; this.pos=pos; this.normal=normal; this.ring=ring; this.used=false; }
+  canUseItem(id,ctx){
+    if(id==='nails'){ const ok=!this.used&&ctx.hit.distance<=NAIL_REACH&&ctx.items.inv.count('nails')>0; return {reticle:ok?'nail-ok':'nail-bad',valid:ok}; }
+    if(id==='hammer') return {reticle:ctx.hit.distance<=REACH?'impact':'dot',valid:ctx.hit.distance<=REACH};
+    return null;
+  }
+  useItem(id,ctx){
+    if(id==='nails'){ if(this.used||!ctx.items.inv.take('nails')) return; this.used=true; ctx.world.addNail(this.pos.clone(),this.normal.clone()); ctx.player.stats.pitonsUsed++;
+      this.ring.material=MAT.socketUsed; ctx.audio.nailSet(); ctx.fx.spawn('chips',this.pos,this.normal,3); }
+    else if(id==='hammer'){ ctx.audio.thud(); ctx.fx.spawn('chips',ctx.hit.point,this.normal,4); ctx.player.addShake(.12); }
+  }
+}
