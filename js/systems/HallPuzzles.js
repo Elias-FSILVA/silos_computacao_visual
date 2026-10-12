@@ -5,15 +5,20 @@
 //   FoundryLogic    (Casa das Bombas): energia → equilibrar 4 tanques por dedução → ordem das bombas por 3 páginas → Válvula-Mestra (SELO)
 //   GreenhouseLogic (Estufa):          raízes (martelo) → ciclo das estações (símbolos) → luzes em ordem → Coração com cartão (COMUNHÃO)
 //   ArchiveLogic    (Arquivo):         mural a contar → labirinto no escuro → teclado na saída → 7 placas → cofre (TESTEMUNHO)
-// Os mecanismos (Wheel/Lever/Dial/Reader/Smashable/Tag/Decision/KeyButton) só avisam: puzzles.event(hall,nome,dados);
+//   HubLogic        (Pátio das Máquinas): energia (geradores + barramento) e freio (a Estufa) → elevador de carga
+//   ExhaustLogic    (Galeria do exaustor): registro de ar emperrado → porta pressurizada → escada do poço de serviço
+// Os mecanismos (Wheel/Lever/Dial/Reader/Smashable/Tag/Decision/KeyButton/ElevatorControl) só avisam: puzzles.event(hall,nome,dados);
 // a lógica responde com puzzles.allow(hall,nome,dados) e atualiza o cenário por room.refs.
+// Presença: enquanto o jogador está numa ala obrigatória, a massa fica contida abaixo dela. Uma sala-filha (room.parent,
+// ex.: a Estufa dentro do Pátio) não controla a presença: quem controla é a sala-mãe, que conta as zonas das filhas.
 // ============================================================================
 class HallPuzzle{
   constructor(game,room){
     this.g=game; this.room=room; this.id=room.id; this.kind=room.kind;
     this.active=false; this.solved=false; this.failed=false; this.timeRemaining=null; this.phase='idle'; this.t=0;
     this.requiredActions=[]; this.completedActions=[];
-    this.logic=room.kind==='foundry'?new FoundryLogic(this):room.kind==='greenhouse'?new GreenhouseLogic(this):new ArchiveLogic(this);
+    const L={foundry:FoundryLogic,greenhouse:GreenhouseLogic,hub:HubLogic,exhaust:ExhaustLogic}[room.kind]||ArchiveLogic;
+    this.logic=new L(this);
   }
   get refs(){ return this.room.refs; }
   msg(text,s=3){ this.g.ui.msg(text,s); }
@@ -25,10 +30,14 @@ class HallPuzzle{
   press(label){ if(this.logic.onKey) this.logic.onKey(label); }
   complete(){ if(this.solved) return; this.solved=true; this.step('lock'); this.score(1500); if(this.g.audio&&this.g.audio.chime) this.g.audio.chime(); }
   commit(route){ this.g.puzzles.commitRoute(route); }
+  // zonas que contam como "dentro" (a sala, os braços, o duto e as salas-filhas)
+  insideZones(){ const R=this.room, w=this.g.world, kids=(R.children||[]).map(id=>w.puzzleRooms[id]).filter(Boolean);
+    return [R.zoneRoom,...(R.zones||[]),R.zoneDuct,...kids.flatMap(k=>[k.zoneRoom,...(k.zones||[])])].filter(Boolean); }
   update(dt){
     this.t+=dt; const g=this.g, R=this.room, pos=g.player.position;
+    if(R.parent){ if(this.logic.update) this.logic.update(dt); return; }    // sala-filha: a mãe cuida da massa
     const inHall=inBox(pos,R.zoneRoom)&&(R.triggerZ==null||pos.z<R.triggerZ);
-    const inside=inBox(pos,R.zoneRoom)||(R.zones||[]).some(z=>inBox(pos,z))||(R.zoneDuct&&inBox(pos,R.zoneDuct));
+    const inside=this.insideZones().some(z=>inBox(pos,z));
     if(this.phase==='idle'){
       if(inHall&&!this.solved){ this.phase='inside'; g.mass.setHold(R.cap,Math.max(.6,(R.cap-g.mass.y)/3.5)); }
     } else if(this.phase==='inside'){
@@ -111,7 +120,9 @@ class GreenhouseLogic{
     } else if(name==='lever'&&d.id.startsWith('bed:')){
       const sym=d.id.slice(4), first=G.seasons[0], last=G.seasons[3]; this.seq.push(sym);
       const okSoFar=this.seq.length===1?sym===first:this.seq.length===2?sym===last:false;
-      if(okSoFar){ R.setLamp(sym,true); if(this.seq.length===2){ this.stage=3; p.step('lamps'); p.complete(); R.doors.exit.set(true); p.msg('A estufa respira. A passarela da galeria se abre.',5); } }
+      if(okSoFar){ R.setLamp(sym,true); if(this.seq.length===2){ this.stage=3; p.step('lamps'); p.complete();
+        if(R.doors.exit){ R.doors.exit.set(true); p.msg('A estufa respira. A passarela da galeria se abre.',5); }
+        else { p.msg('A estufa respira. Longe dali, no poço do elevador, as raízes afrouxam.',5); p.g.puzzles.event(p.room.parent,'brake',{}); } } }
       else this._wither();
     } else if(name==='reader'){ R.doors.heart.set(true); R.setHeart(true); p.step('heart'); p.score(300); p.msg('A câmara do Coração se abre.',4); }
     else if(name==='decide') p.commit('commune');
@@ -146,5 +157,78 @@ class ArchiveLogic{
       p.msg(`Placa recolhida: ${d.name} (${n}/7)`,3);
       if(n>=7){ R.doors.vault.set(true); p.step('names'); p.msg('Sete placas. O cofre do Registro se abre.',5); if(p.g.audio.chime) p.g.audio.chime(); }
     } else if(name==='decide') p.commit('witness');
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// PÁTIO DAS MÁQUINAS: dois objetivos destravam o elevador de carga.
+//   ENERGIA (Casa de Força): ligar geradores cuja soma dê a demanda do motor (placa junto ao elevador), sem dois
+//     vizinhos ligados, e fechar o barramento. Errado → desarma: tudo desliga e o painel trava alguns segundos.
+//   FREIO (Estufa): o ciclo completo faz as raízes soltarem o freio de segurança (evento 'brake' vindo da Estufa).
+//   ELEVADOR: com os dois, o painel da cabine leva o jogador (dentro da cabine) até 224 m.
+class HubLogic{
+  constructor(p){ this.p=p; this.power=false; this.brake=false; this.on=POWER.ratings.map(()=>false); this.lockUntil=0; p.requiredActions=['power','brake','elevator'];
+    const el=this.refs.elevator; if(el) el.onArrive=()=>{ p.msg(`Patamar de ${HUB.elevator.top} m. O braço devolve ao poço, acima da grade.`,4); if(p.g.audio.clank) p.g.audio.clank(); }; }
+  get refs(){ return this.p.refs; }
+  get locked(){ return this.p.t<this.lockUntil; }
+  load(){ return this.on.reduce((s,v,i)=>s+(v?POWER.ratings[i]:0),0); }
+  _show(state,col){ const R=this.refs; R.lamps.forEach((l,i)=>{ l.material=this.on[i]?MAT.glowAmber:MAT.darkLamp; }); if(R.display) R.display(this.load(),state,col); }
+  allow(name,d){
+    if(name==='lever'){
+      if(this.power) return 'Energia estável no motor. Melhor não mexer em mais nada.';
+      if(this.locked) return 'O barramento desarmou. O painel rearma em instantes.';
+      if(d.id==='bus'&&!d.on) return 'O barramento só abre sozinho, no desarme.';
+      return true;
+    }
+    if(name==='elevator'){
+      const el=this.refs.elevator, pl=this.p.g.player;
+      if(!el||el.state!=='bottom') return 'O elevador já subiu.';
+      if(!this.power&&!this.brake) return 'Nada acende. Sem energia, e o freio de segurança continua travado.';
+      if(!this.power) return 'Sem energia. A Casa de Força (leste do anel) está desligada.';
+      if(!this.brake) return 'O motor ronca, mas o freio de segurança não solta: as raízes ainda o seguram.';
+      if(!el.inCabin(pl)) return 'Entre na cabine antes de acionar.';
+      return true;
+    }
+    return true;
+  }
+  onEvent(name,d){
+    const p=this.p, R=this.refs;
+    if(name==='lever'&&d.id.startsWith('gen:')){ this.on[Number(d.id.slice(4))]=d.on; this._show(this.load()?'GERADORES PRONTOS':'DESLIGADO'); }
+    else if(name==='lever'&&d.id==='bus'){
+      const L=this.load(), adj=this.on.some((v,i)=>v&&this.on[i+1]);
+      if(L===POWER.demand&&!adj){
+        this.power=true; p.step('power'); p.score(600); this._show('ENERGIA NO MOTOR','#9bffa8');
+        R.setStatus('power',true); (R.powerLights||[]).forEach(l=>{ l.intensity=1.0; }); if(R.emergency) R.emergency.intensity=0;
+        p.msg(`O barramento fecha em ${L} MW. Lá no anel, o motor do elevador acorda.`,5); if(p.g.audio.chime) p.g.audio.chime();
+        this._check();
+      } else this._trip(adj?'Dois geradores vizinhos ligados: o cabo entre eles estoura e o barramento desarma.':`Carga de ${L} MW: não é o que o motor pede. O barramento desarma.`);
+    }
+    else if(name==='brake'&&!this.brake){ this.brake=true; p.step('brake'); p.score(400); R.releaseBrake(); R.setStatus('brake',true); this._check(); }
+    else if(name==='elevator'){
+      if(R.elevator.start()){ p.step('elevator'); p.complete(); p.msg('As portas fecham. A cabine estremece e começa a subir.',4); if(p.g.audio.motor) p.g.audio.motor(12); }
+    }
+  }
+  _check(){ if(this.power&&this.brake) this.p.msg('Energia e freio liberados: o elevador de carga (sul do anel) está pronto.',5); }
+  _trip(why){
+    const p=this.p, R=this.refs; p.shake(.6); p.msg(why+` Painel travado por ${POWER.lockout} s.`,4); if(p.g.audio.crash) p.g.audio.crash();
+    this.on=this.on.map(()=>false); R.gens.forEach(l=>l.setOn(false,false)); R.bus.setOn(false,false);
+    this.lockUntil=p.t+POWER.lockout; this._show('DESARMADO','#ff6a5a');
+  }
+  update(){ if(this._wasLocked&&!this.locked) this._show('REARMADO'); this._wasLocked=this.locked; }
+}
+
+// ---------------------------------------------------------------------------------------------
+// GALERIA DO EXAUSTOR: o registro de ar (emperrado: martelo) fecha o fluxo e destrava a porta pressurizada;
+// depois dela, a escada do poço de serviço leva ao braço de 174 m, acima do exaustor.
+class ExhaustLogic{
+  constructor(p){ this.p=p; p.requiredActions=['door']; }
+  get refs(){ return this.p.refs; }
+  allow(name,d){ if(name==='wheel') return !this.p.solved; return true; }
+  onEvent(name,d){
+    const p=this.p;
+    if(name==='wheel'&&d.id==='register'&&d.state===1&&!p.solved){
+      this.refs.door.set(true); p.step('door'); p.complete();
+      p.msg('O registro fecha com um baque. A porta pressurizada destrava: siga até a escada do poço de serviço.',5);
+    }
   }
 }

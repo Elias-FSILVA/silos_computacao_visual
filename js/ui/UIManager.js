@@ -87,7 +87,7 @@ class UIManager{
     [['#','n'],['Jogador',''],['Pontos','n'],['Tempo','n'],['Resultado','']].forEach(([s,c])=>{ const th=document.createElement('th'); th.textContent=s; if(c) th.className=c; head.appendChild(th); });
     list.forEach((e,i)=>{
       const r=t.insertRow(); if(i===highlight) r.className='me';
-      [[String(i+1),'n'],[e.name,''],[fmtInt(e.score),'n'],[fmtTime(e.time),'n'],[e.result==='finish'?('Saiu'+(e.ending&&ENDINGS[e.ending]?` · ${ENDINGS[e.ending].name}`:'')):e.result==='mass'?'Alcançado':'Caiu','']]
+      [[String(i+1),'n'],[e.name,''],[fmtInt(e.score),'n'],[fmtTime(e.time),'n'],[e.result==='finish'?('Saiu'+(e.ending&&ENDINGS[e.ending]?` · ${ENDINGS[e.ending].name}`:'')):e.result==='mass'?'Alcançado':e.result==='fan'?'Sugado':'Caiu','']]
         .forEach(([s,c])=>{ const td=r.insertCell(); td.textContent=s; if(c) td.className=c; });
     });
     body.appendChild(t);
@@ -96,7 +96,7 @@ class UIManager{
   showResult(r){
     const t=this.$('resT');
     const E=r.result==='finish'&&ENDINGS[r.ending||'escape'];
-    t.textContent=r.result==='finish'?(E?E.name:'Subida completa'):r.result==='mass'?'A massa te alcançou':'Você caiu';
+    t.textContent=r.result==='finish'?(E?E.name:'Subida completa'):r.result==='mass'?'A massa te alcançou':r.result==='fan'?'O exaustor te puxou':'Você caiu';
     const et=this.$('resEnd'); et.textContent=E?`FINAL · ${E.tag}\n\n${E.text}`:''; et.hidden=!E;
     t.className=r.result==='finish'?'win':'danger';
     this.$('resName').textContent=r.name; this.$('resTime').textContent=fmtTime(r.time);
@@ -113,12 +113,12 @@ class UIManager{
   // ---------- retícula contextual ----------
   setReticle(mode){
     if(this._ret===mode) return; this._ret=mode;
+    // interação disponível (F, ou clique no painel de senha): mão petrificada com a ponta do indicador no centro da mira (css/cursor.css)
+    if(mode==='pickup'||mode==='panel'){ this.$('ring').innerHTML='<span class="stone-hand" aria-hidden="true"></span>'; return; }
     const S='var(--sodium)', B='var(--bone)', OK='#9fd6a4', NO='var(--flesh)';
     const svg={
       dot:`<circle cx="12" cy="12" r="2.4" fill="${B}" opacity=".7"/>`,
       grab:`<circle cx="12" cy="12" r="7" fill="none" stroke="${S}" stroke-width="1.6"/>`,
-      pickup:`<circle cx="12" cy="12" r="6.5" fill="none" stroke="${B}" stroke-width="1.5"/><circle cx="12" cy="12" r="1.6" fill="${B}"/>`,
-      panel:`<path d="M8 6H5v12h3M16 6h3v12h-3" fill="none" stroke="${B}" stroke-width="1.6"/>`,
       'nail-ok':`<path d="M12 4v16M4 12h16" stroke="${OK}" stroke-width="1.7"/><circle cx="12" cy="12" r="2" fill="${OK}"/>`,
       'nail-bad':`<path d="M12 5v14M5 12h14" stroke="${NO}" stroke-width="1.4" opacity=".7"/><path d="M8 8l8 8" stroke="${NO}" stroke-width="1.6"/>`,
       impact:`<path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4" stroke="${B}" stroke-width="1.5"/><circle cx="12" cy="12" r="1.5" fill="${B}"/>`,

@@ -13,9 +13,14 @@
 // não cede, o mouse fica livre para mirar, mas a fadiga sobe aos poucos.
 // Modo VR (opcional): com `xr` (VRPlayer) ligado, mira e agarre saem dos controles, a puxada vem do braço
 // (pullBy) e a câmera é posicionada pelo rig; sem ele, tudo segue como no mouse e teclado.
+// Colisão: Collision.collideBody contra world.platforms (caixas, caixas giradas e setores anelares) + world.guard
+// (a parede do poço só se atravessa pelas aberturas). Vento: world.wind(pos) dá a velocidade do ar no peito; solto, o
+// corpo é acelerado na direção do fluxo (WIND_K); pendurado, o fluxo desloca o corpo, gasta a pegada e, forte demais
+// (WIND_TEAR), arranca as mãos da parede.
 // ============================================================================
 // PULL_GAIN: puxada por pixel de mouse (~130px levam de pendurado a puxado, descansado)
 const PULL_GAIN=.0075, PULL_MANTLE=.5, FATIGUE_CRIT=.85;
+const WIND_K=2.0, WIND_TEAR=24, WIND_DRAIN=.35;   // arrasto do ar (1/s) · força que arranca as mãos (m/s²) · pegada gasta por m/s² de vento
 const REDUCED_MOTION=(()=>{ try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } })();
 class Hand{
   constructor(name,side){ this.name=name; this.side=side; this.point=new V3(); this.normal=new V3(); this.reset(); }
@@ -35,6 +40,7 @@ class Player{
     this.hands=[this.leftHand,this.rightHand];
     this.position=new V3(); this.velocity=new V3(); this._prev=new V3();
     this.ray=new THREE.Raycaster(); this.listeners={}; this.xr=null;
+    this.windF=new V3(); this._colOpt={guard:(p,prev,v)=>{ if(this.world.guard) this.world.guard(p,prev,v); }};
     this.handModels=this.hands.map(h=>new HandModel(h.side)); this.handModels.forEach(hm=>scene.add(hm.root));
     this.reset();
   }
@@ -54,6 +60,7 @@ class Player{
     this.press=[null,null]; this.point=[false,false];   // gesto do indicador (painel); point: VR, mão perto do painel
     this.stats={slips:0,pillsUsed:0,pitonsUsed:0};
     this.viewmodelVisible=true;
+    this.windAir=null; this.windG=0; this.windLevel=0; this.windFan=null; this.windF.set(0,0,0);
   }
   // ---------- estado derivado ----------
   get stamina(){ return clamp(Math.min(this.leftHand.stamina,this.rightHand.stamina),0,this.maxStamina); }
@@ -132,8 +139,8 @@ class Player{
     return h||null;
   }
   _startMantle(led){
-    const pl=led.surface.userData.plat;
-    this.mantle={t:0,from:this.position.clone(),to:new V3(clamp(led.point.x,pl.minX+.3,pl.maxX-.3),pl.top,clamp(led.point.z,pl.minZ+.3,pl.maxZ-.3))};
+    const pl=led.surface.userData.plat, q=solidClampIn(pl,led.point.x,led.point.z,.3);   // ponto da borda (caixa, girada ou curva) recuado 30 cm
+    this.mantle={t:0,from:this.position.clone(),to:new V3(q.x,pl.top,q.z)};
     this.hands.forEach(h=>{ if(h.inContact){ h.stamina=Math.max(0,h.stamina-8); this._release(h); } h.isGrabbing=false; });
     this.emit('mantle');
   }
@@ -208,6 +215,7 @@ class Player{
     });
     this.hands.forEach(h=>{ if(h.isGrabbing&&!h.inContact) this._tryGrab(h); });
     this._prev.copy(this.position);
+    this._wind(); if(this.dead) return;
     const held=this.hands.filter(h=>h.inContact);
     if(this.mantle) this._mantle(dt);
     else if(held.length) this._climb(dt,input,held);
@@ -241,6 +249,14 @@ class Player{
     if(climbing&&!this.fatigueWarned&&this.pullFatigue>=FATIGUE_CRIT){ this.fatigueWarned=true; this.emit('armsFailing'); }
     if(this.fatigueWarned&&this.pullFatigue<.6) this.fatigueWarned=false;
   }
+  // vento: velocidade do ar no peito (world.wind) → força windF = WIND_K·ar; nas pás de um exaustor, morte
+  _wind(){
+    this.windAir=null; this.windG=0; this.windFan=null; this.windLevel=0; this.windF.set(0,0,0);
+    const w=this.world.wind?this.world.wind(this.position):null; if(!w) return;
+    if(w.kill){ this.die('fan'); return; }
+    this.windAir=w.air; this.windG=w.g; this.windFan=w.fan; this.windF.copy(w.air).multiplyScalar(WIND_K);
+    this.windLevel=this.windF.length()/WIND_TEAR;
+  }
   _mantle(dt){
     const m=this.mantle; m.t+=dt/.45; const k=Math.min(1,m.t), e=smooth(k);
     this.position.lerpVectors(m.from,m.to,e); this.position.y+=Math.sin(k*Math.PI)*.2;
@@ -252,16 +268,24 @@ class Player{
     const v=this.velocity;
     if(this.grounded){ const k=Math.min(1,dt*12); v.x+=(_mv.x*3.4-v.x)*k; v.z+=(_mv.z*3.4-v.z)*k; }
     else { v.x+=_mv.x*2.5*dt; v.z+=_mv.z*2.5*dt; v.x*=1-.15*dt; v.z*=1-.15*dt; }
+    // vento: acelera rumo à velocidade do ar ao longo do fluxo (o arrasto cresce com a força do fluxo: g)
+    const a=this.windAir;
+    if(a){ const u=a.length(); if(u>1e-4){ const nx=a.x/u, ny=a.y/u, nz=a.z/u, vn=v.x*nx+v.y*ny+v.z*nz, g=this.windG;
+      v.x+=WIND_K*(a.x-g*vn*nx)*dt; v.y+=WIND_K*(a.y-g*vn*ny)*dt; v.z+=WIND_K*(a.z-g*vn*nz)*dt; } }
     v.y-=G*dt;
     this.position.addScaledVector(v,dt);
     this._collide(true);
   }
   _climb(dt,input,held){
+    // fluxo forte demais: arranca as mãos (o corpo segue com o ar no quadro seguinte)
+    const wf=this.windF.length();
+    if(wf>WIND_TEAR){ held.forEach(h=>{ this._release(h); h.cooldown=.6; }); this.emit('windTear'); this._free(dt,input); return; }
     const eye=this.eyePos(_e), tgt=_t.set(0,0,0);
     this._pullUp(dt,held);
     for(const h of held) tgt.add(this._anchor(h,eye));
     tgt.divideScalar(held.length);
     if(held.length===1) tgt.y-=.12;
+    if(wf>0) tgt.addScaledVector(this.windF,1/(held.length===2?55:38));   // o fluxo desloca o corpo pendurado
     _r.set(Math.cos(this.yaw),0,-Math.sin(this.yaw));
     tgt.addScaledVector(_r,input.x*.32);
     const low=Math.min(...held.map(h=>h.stamina));
@@ -278,7 +302,7 @@ class Player{
     // pegada: custo base + esforço de puxar; com os braços no limite, a pegada escorrega depressa
     const base=held.length===2?3:(this.lockOff?6:9), crit=clamp((this.pullFatigue-FATIGUE_CRIT)/(1-FATIGUE_CRIT),0,1);
     for(const h of held){
-      let d=base+this.effort*3+crit*14; if(input.x) d+=1.5;
+      let d=base+this.effort*3+crit*14+wf*WIND_DRAIN; if(input.x) d+=1.5;
       h.stamina=Math.max(0,h.stamina-d*dt);
       if(h.stamina<=0){ h.exhausted=true; this._release(h); this.emit('exhausted',h); }
     }
@@ -311,25 +335,10 @@ class Player{
     held.forEach(h=>{ h.pull=this.pull; });
   }
   _collide(lethal){
-    const p=this.position, v=this.velocity, prev=this._prev; let landed=false, landVy=0;
-    const plats=this.world.platforms;
-    for(const b of plats){
-      const bottom=b.bottom!=null?b.bottom:b.top-.3;
-      if(p.x<b.minX-RAD||p.x>b.maxX+RAD||p.z<b.minZ-RAD||p.z>b.maxZ+RAD) continue;
-      if(v.y<=0&&prev.y>=b.top-.06&&p.y<=b.top){ landVy=Math.min(landVy,v.y); p.y=b.top; v.y=0; landed=true; }
-      else if(v.y>0&&prev.y+BODY_H<=bottom+.06&&p.y+BODY_H>bottom){ p.y=bottom-BODY_H; v.y=0; }
-    }
-    for(const b of plats){
-      const bottom=b.bottom!=null?b.bottom:b.top-.3;
-      if(p.y+BODY_H<=bottom+.01||p.y>=b.top-.01) continue;
-      const ox1=(b.maxX+RAD)-p.x, ox2=p.x-(b.minX-RAD), oz1=(b.maxZ+RAD)-p.z, oz2=p.z-(b.minZ-RAD);
-      if(ox1<=0||ox2<=0||oz1<=0||oz2<=0) continue;
-      const m=Math.min(ox1,ox2,oz1,oz2);
-      if(m===ox1){ p.x+=ox1; v.x=Math.max(v.x,0); } else if(m===ox2){ p.x-=ox2; v.x=Math.min(v.x,0); }
-      else if(m===oz1){ p.z+=oz1; v.z=Math.max(v.z,0); } else { p.z-=oz2; v.z=Math.min(v.z,0); }
-    }
-    // as paredes do poço agora são sólidos AABB em world.platforms; isto é só uma rede de segurança
-    p.x=clamp(p.x,-40,40); p.z=clamp(p.z,-40,40);
+    const p=this.position;
+    // sólidos (caixas, giradas e setores anelares) + a trava da parede curva do poço — ver js/world/Collision.js
+    const {landed,landVy}=collideBody(this.world.platforms,p,this.velocity,this._prev,this._colOpt);
+    p.x=clamp(p.x,-SILO_R,SILO_R); p.z=clamp(p.z,-SILO_R,SILO_R);   // rede de segurança: nada existe fora da casca do silo
     this.grounded=landed;
     if(landed&&landVy<-3) this.landDip=Math.min(.05,-landVy*.004);
     if(landed&&landVy<-7) this.emit('land',landVy);

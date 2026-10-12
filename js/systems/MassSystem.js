@@ -4,13 +4,14 @@
 // ============================================================================
 // a aceleração da massa foi calibrada para um poço de 120 m; mantém a mesma pressão proporcional em TOP m
 const MASS_RAMP=.0004*(120/TOP);
+// a massa ocupa o poço redondo: superfície em disco (anéis concêntricos para a ondulação) e coluna cilíndrica
 class MassSystem{
   constructor(scene){
-    this.geo=new THREE.PlaneGeometry(2*W,2*W,36,36); this.geo.rotateX(-Math.PI/2);
+    this.geo=new THREE.RingGeometry(.02,SHAFT_R+.02,48,14); this.geo.rotateX(-Math.PI/2);
     this.base=this.geo.attributes.position.array.slice();
-    const mat=new THREE.MeshStandardMaterial({color:0x3a0b0c,emissive:0x1c0303,roughness:.3,metalness:.1});
+    const mat=new THREE.MeshStandardMaterial({color:0x3a0b0c,emissive:0x1c0303,roughness:.3,metalness:.1,side:THREE.DoubleSide});
     this.mesh=new THREE.Mesh(this.geo,mat); scene.add(this.mesh);
-    this.column=new THREE.Mesh(new THREE.BoxGeometry(2*W,40,2*W),mat); scene.add(this.column);
+    this.column=new THREE.Mesh(new THREE.CylinderGeometry(SHAFT_R+.02,SHAFT_R+.02,40,48,1,true),mat); scene.add(this.column);
     this.light=new THREE.PointLight(0x9a1a10,1.4,10,2); scene.add(this.light);
     this.reset();
   }
@@ -37,10 +38,10 @@ class MassSystem{
   }
   reaches(player){ const p=player.position;
     if(this.inShaft(player)) return p.y+.1<this.y+.15;
-    if((this.safeZones||[]).some(z=>p.x>=z.minX&&p.x<=z.maxX&&p.z>=z.minZ&&p.z<=z.maxZ)) return false;
+    if((this.safeZones||[]).some(z=>inZone({x:p.x,y:clamp(p.y,z.minY,z.maxY),z:p.z},z))) return false;   // salas: só a planta conta
     return p.y+1.6<this.y; }
-  // a massa ocupa só o poço; salas laterais (puzzle, nichos) ficam fora dela
-  inShaft(player){ const p=player.position; return Math.abs(p.x)<W+.1&&Math.abs(p.z)<W+.1; }
+  // a massa ocupa só o poço (cilindro); alas, salas e nichos ficam fora dela
+  inShaft(player){ const p=player.position; return Math.hypot(p.x,p.z)<SHAFT_R+.1; }
   gap(player){ const g=player.position.y-this.y; return this.inShaft(player)?g:Math.max(g,10); }
   eta(player){ return this.active&&!this.hold&&this.speed>0?Math.max(0,this.gap(player)/this.speed):null; }
   visual(t){

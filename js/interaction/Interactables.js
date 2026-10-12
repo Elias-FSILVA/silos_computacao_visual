@@ -175,7 +175,8 @@ class Wheel extends Interactable{
   canInteract(ctx){ return this.jam>0?{prompt:`${this.label} emperrada — precisa de força`,reticle:'fragile'}:{prompt:`${this.label}: girar um passo`,reticle:'panel'}; }
   interact(ctx){
     if(this.jam>0){ ctx.ui.msg('Emperrada. Só cede à força.',1.8); _snd(ctx,'thud'); return; }
-    if(!_can(ctx,this.hall,'wheel',{id:this.id})){ ctx.ui.msg('A válvula não responde.',1.6); _snd(ctx,'thud'); return; }
+    const ok=_can(ctx,this.hall,'wheel',{id:this.id});
+    if(ok!==true){ ctx.ui.msg(typeof ok==='string'?ok:'A válvula não responde.',1.6); _snd(ctx,'thud'); return; }
     this.setState((this.state+1)%this.steps,false); _snd(ctx,'tang',1); ctx.player.addShake(.08);
     ctx.game.puzzles.event(this.hall,'wheel',{id:this.id,state:this.state});
   }
@@ -190,7 +191,8 @@ class Lever extends Interactable{
   canInteract(ctx){ if(this.jam>0) return {prompt:`${this.label} emperrada`,reticle:'fragile'}; return {prompt:`${this.label}: ${this.on?'desligar':'acionar'}`,reticle:'panel'}; }
   interact(ctx){
     if(this.jam>0){ ctx.ui.msg('Emperrada. Só cede à força.',1.8); _snd(ctx,'thud'); return; }
-    if(!_can(ctx,this.hall,'lever',{id:this.id,on:!this.on})){ ctx.ui.msg(this.denyMsg,1.8); _snd(ctx,'thud'); return; }
+    const ok=_can(ctx,this.hall,'lever',{id:this.id,on:!this.on});     // a lógica pode devolver o motivo (texto)
+    if(ok!==true){ ctx.ui.msg(typeof ok==='string'?ok:this.denyMsg,1.8); _snd(ctx,'thud'); return; }
     this.setOn(!this.on,false); _snd(ctx,'tang',2); ctx.player.addShake(.1);
     ctx.game.puzzles.event(this.hall,'lever',{id:this.id,on:this.on});
   }

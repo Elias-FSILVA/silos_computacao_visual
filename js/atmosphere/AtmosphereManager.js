@@ -65,8 +65,8 @@ class AtmosphereManager{
     if(type==='groan'){ this.audio.groan(); player.addShake(.5); }
     else if(type==='blackout'){ this.blackout=2.6; this.blackoutY=player.position.y; this.audio.buzz(); }
     else if(type==='shape'){
-      this.shapes++; const cx=Math.random()<.5?-3.3:3.3, cz=Math.random()<.5?-3.3:3.3;
-      this.shapeMesh.position.set(cx,player.position.y+EYE+16+Math.random()*5,cz);
+      this.shapes++; const a=Math.random()*TAU;    // vulto colado à parede curva, em qualquer ponto da circunferência
+      this.shapeMesh.position.set(Math.cos(a)*(SHAFT_R-.7),player.position.y+EYE+16+Math.random()*5,Math.sin(a)*(SHAFT_R-.7));
       this.shapeMesh.visible=true; this.shape={t:0,dur:2.2}; this.audio.whoosh();
     }
   }

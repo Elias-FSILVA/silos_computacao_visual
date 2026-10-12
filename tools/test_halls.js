@@ -1,4 +1,6 @@
-// Joga os três destinos com os mecanismos REAIS (Wheel, Lever, Dial, Reader, Smashable, Tag, Decision, KeyButton) e a lógica real.
+// Joga as alas obrigatórias com os mecanismos REAIS (Wheel, Lever, Dial, Reader, Smashable, Tag, Decision, KeyButton,
+// ElevatorControl) e a lógica real: Casa das Bombas, Galeria do exaustor, Pátio das Máquinas (Casa de Força + Estufa +
+// elevador) e o Arquivo.
 const log=console.log; console.log=()=>{};
 const {V3,world,vm}=require('./_load.js'); console.log=log;
 let fails=0; const out=(k,v)=>log(k.padEnd(66),v); const chk=(k,ok,x='')=>{ out(k,(ok?'OK ':'FALHOU ')+x); if(!ok) fails++; };
@@ -16,7 +18,8 @@ const objs=cls=>[...world.interactables,...world.walls].map(m=>m.userData.intera
 const byId=(cls,hall,id)=>objs(cls).find(o=>o.hall===hall&&o.id===id);
 const P=id=>G.puzzles.byId(id);
 const tick=(id,sec)=>{ for(let i=0;i<Math.round(sec/.1);i++){ P(id).update(.1); world.update(.1,G.player); } };
-const place=(room)=>{ const z=world.puzzleRooms[room].zoneRoom; G.player.position.set((z.minX+z.maxX)/2,z.minY+.2,(z.minZ+z.maxZ)/2); };
+const place=(room)=>{ const z=world.puzzleRooms[room].zoneRoom; if(z.arc){ const A=z.arc, p=polar((A.r0+A.r1)/2,A.a0+A.span/2,z.minY+.2); G.player.position.copy(p); return; }
+  G.player.position.set((z.minX+z.maxX)/2,z.minY+.2,(z.minZ+z.maxZ)/2); };
 
 // =========================== SOQUETES DE PREGO ===========================
 log('— Soquetes de prego —');
@@ -57,8 +60,47 @@ log('— Destino I · Casa das Bombas —');
   chk('ordem certa → bombas partem; galeria e Válvula-Mestra abrem',L.stage===3&&p.solved&&world.puzzleRooms.h1.refs.doors.exit.open&&world.puzzleRooms.h1.refs.doors.master.open);
   G.player.position.set(0,0,0); tick('h1',.3); chk('sair do salão libera a massa',mass.hold===null);
 }
+// =========================== GALERIA DO EXAUSTOR ===========================
+log('— Galeria do exaustor (150 m) —');
+{ const p=P('ex150'), R=world.puzzleRooms.ex150.refs, reg=R.register;
+  chk('porta pressurizada começa fechada (sólida)',R.door.open===false&&world.platforms.includes(R.door.pd));
+  place('ex150'); tick('ex150',.3); chk('entrar na galeria contém a massa abaixo (a escada é longa)',mass.hold===world.puzzleRooms.ex150.cap);
+  reg.interact(ctx()); chk('registro de ar emperrado não gira só com a mão',reg.state===0&&!R.door.open);
+  for(let i=0;i<EXHAUST.registerJam;i++) reg.useItem('hammer',ctx()); chk(`registro cede após ${EXHAUST.registerJam} marteladas`,reg.jam===0);
+  reg.interact(ctx()); chk('registro fechado → porta pressurizada abre (e sai das colisões)',R.door.open&&p.solved&&!world.platforms.includes(R.door.pd));
+  reg.interact(ctx()); chk('  depois de resolvido, o registro não reabre nada',R.door.open);
+  const z=world.puzzleRooms.ex150.zones[0]; G.player.position.set((z.minX+z.maxX)/2,z.minY+5,(z.minZ+z.maxZ)/2); tick('ex150',.2); chk('  no poço de serviço (escada) a massa continua contida',mass.hold!==null);
+  G.player.position.copy(polar(SHAFT_R-.8,Math.PI,EXHAUST.top)); tick('ex150',.2); chk('  de volta ao poço, acima do exaustor: massa liberada',mass.hold===null);
+  const rungs=world.grabbables.filter(m=>m.userData.rung); const ys=rungs.map(m=>m.position.y).sort((a,b)=>a-b); let gap=0; for(let i=1;i<ys.length;i++) gap=Math.max(gap,ys[i]-ys[i-1]);
+  chk('escada do poço de serviço: degraus de 150 m até o patamar de 174 m',rungs.length>50&&ys[0]<EXHAUST.H+.6&&ys[ys.length-1]>EXHAUST.top-1&&gap<=.4,`${rungs.length} degraus · maior vão ${gap.toFixed(2)} m`);
+}
+// =========================== PÁTIO DAS MÁQUINAS · energia ===========================
+log('— Pátio das Máquinas (200 m) · Casa de Força —');
+const HP=P('p200'), HL=HP.logic, HR=world.puzzleRooms.p200.refs, ctl=objs('ElevatorControl')[0], el=HR.elevator;
+const gen=i=>byId('Lever','p200','gen:'+i), bus=byId('Lever','p200','bus');
+const inCabin=()=>{ const c=el.pd; G.player.position.set((c.minX+c.maxX)/2,c.top,(c.minZ+c.maxZ)/2); };
+{ // unicidade: só UMA combinação de geradores soma a demanda sem vizinhos ligados
+  const ok=[]; for(let m=1;m<16;m++){ const on=[0,1,2,3].map(i=>!!(m>>i&1)); const L=on.reduce((s,v,i)=>s+(v?POWER.ratings[i]:0),0); if(L===POWER.demand&&!on.some((v,i)=>v&&on[i+1])) ok.push(on.map((v,i)=>v?'G'+(i+1):'').filter(Boolean).join('+')); }
+  const sums=[]; for(let m=1;m<16;m++){ const L=[0,1,2,3].reduce((s,i)=>s+(m>>i&1?POWER.ratings[i]:0),0); if(L===POWER.demand) sums.push(m); }
+  chk('Casa de Força: exatamente UMA combinação de geradores resolve (soma + vizinhos)',ok.length===1&&ok[0]==='G1+G4',ok.join(' | '));
+  chk('  e a regra dos vizinhos é necessária (sem ela, haveria outra soma igual)',sums.length>1);
+  place('p200'); tick('p200',.3); chk('entrar no anel do Pátio contém a massa abaixo',mass.hold===world.puzzleRooms.p200.cap);
+  inCabin(); msgs.length=0; ctl.interact(ctx()); chk('elevador sem energia e sem freio: não sobe, e diz o que falta',el.state==='bottom'&&/energia/i.test(msgs.at(-1)||'')&&/freio/i.test(msgs.at(-1)||''),msgs.at(-1));
+  gen(1).interact(ctx()); gen(2).interact(ctx()); chk('visor do barramento soma a carga ligada (G2+G3 = 9 MW)',HL.load()===9);
+  bus.interact(ctx()); chk('G2+G3: soma certa, mas vizinhos → desarme (tudo desliga)',!HL.power&&HL.on.every(v=>!v)&&!gen(1).on&&!bus.on&&/vizinhos/.test(msgs.at(-1)||''),msgs.at(-1));
+  gen(0).interact(ctx()); chk('  durante o desarme o painel fica travado (e explica)',!gen(0).on&&/desarmou/.test(msgs.at(-1)||''));
+  tick('p200',POWER.lockout+.5);
+  gen(3).interact(ctx()); chk('G4 está emperrado: só a mão não liga',!gen(3).on);
+  for(let i=0;i<POWER.jam[3];i++) gen(3).useItem('hammer',ctx()); chk(`  G4 cede após ${POWER.jam[3]} marteladas`,gen(3).jam===0);
+  gen(0).interact(ctx()); bus.interact(ctx()); chk('só G1 (3 MW): carga errada → desarme',!HL.power&&/3 MW/.test(msgs.at(-1)||''),msgs.at(-1));
+  tick('p200',POWER.lockout+.5);
+  gen(0).interact(ctx()); gen(3).interact(ctx()); bus.interact(ctx());
+  chk('G1+G4 (9 MW, sem vizinhos) + barramento → energia no motor',HL.power&&HP.completedActions.includes('power')&&bus.on);
+  gen(1).interact(ctx()); chk('  com a energia estável, os geradores ficam travados',!gen(1).on);
+  inCabin(); ctl.interact(ctx()); chk('elevador com energia, mas o freio travado pelas raízes: não sobe',el.state==='bottom'&&/freio/.test(msgs.at(-1)||''),msgs.at(-1));
+}
 // =========================== DESTINO II ===========================
-log('— Destino II · A Estufa —');
+log('— Destino II · A Estufa (setor oeste do Pátio) —');
 { const Gn=GREEN, p=P('h2'), L=p.logic, R=world.puzzleRooms.h2.refs; place('h2'); tick('h2',.3);
   chk('bancadas: os 4 canteiros incluem a 1ª e a última estação',[Gn.seasons[0],Gn.seasons[3]].every(s=>Gn.bedOrder.includes(s)));
   const dial=i=>byId('Dial','h2','d'+i), root=byId('Lever','h2','root');
@@ -76,10 +118,22 @@ log('— Destino II · A Estufa —');
   const bed=s=>byId('Lever','h2','bed:'+s), first=Gn.seasons[0], last=Gn.seasons[3];
   bed(last).interact(ctx()); chk('luz da última estação antes da primeira → murcha tudo',L.stage===2&&L.seq.length===0&&!bed(last).on);
   bed(Gn.seasons[1]).interact(ctx()); chk('luz de estação do meio → murcha',L.seq.length===0);
-  bed(first).interact(ctx()); bed(last).interact(ctx()); chk('primeira e depois última → estufa respira; galeria abre',L.stage===3&&p.solved&&R.doors.exit.open);
+  bed(first).interact(ctx()); bed(last).interact(ctx()); chk('primeira e depois última → estufa respira; as raízes soltam o freio do elevador',L.stage===3&&p.solved&&HL.brake&&HR.roots.every(m=>!m.parent));
+  chk('  a Estufa é parte do Pátio: dentro dela a massa segue contida pelo Pátio',mass.hold===world.puzzleRooms.p200.cap&&!R.doors.exit);
   // coração: precisa do cartão
   const rd=R.reader; chk('leitor recusa sem cartão',rd.canUseItem('card',ctx())&&!R.doors.heart.open);
   inv.add('card'); rd.useItem('card',ctx()); chk('cartão consumido, câmara do Coração abre',R.doors.heart.open&&!inv.has('card')||(inv.slots.every(s=>!s||s.id!=='card')));
+}
+// =========================== PÁTIO · elevador ===========================
+log('— Pátio das Máquinas · elevador de carga —');
+{ G.player.position.copy(polar(10,0,HUB.H)); ctl.interact(ctx()); chk('com energia e freio, mas fora da cabine: pede para entrar',el.state==='bottom'&&/cabine/.test(msgs.at(-1)||''));
+  inCabin(); ctl.interact(ctx()); chk('dentro da cabine: as portas fecham e o elevador parte',el.state==='closing'&&!el.doors.bottom.open&&HP.solved);
+  const pl=G.player; pl._prev=pl.position.clone(); let maxY=0; for(let i=0;i<400&&el.state!=='top';i++){ world.update(.05,pl); maxY=Math.max(maxY,pl.position.y); }
+  chk(`a cabine sobe até ${HUB.elevator.top} m levando o jogador junto`,el.state==='top'&&Math.abs(el.pd.top-HUB.elevator.top)<1e-6&&Math.abs(pl.position.y-HUB.elevator.top)<1e-6,`cabine ${el.pd.top.toFixed(2)} m · pés ${pl.position.y.toFixed(2)} m`);
+  chk('  chegando, a porta de cima abre e a de baixo segue fechada',el.doors.top.open&&!el.doors.bottom.open);
+  ctl.interact(ctx()); chk('  o elevador é de um sentido só',el.state==='top');
+  tick('p200',.2); chk('no patamar de 224 m a massa ainda está contida',mass.hold!==null);
+  pl.position.copy(polar(SHAFT_R-.9,HUB.elevator.theta,HUB.elevator.top)); tick('p200',.2); chk('saindo para o poço (acima do diafragma): massa liberada',mass.hold===null);
 }
 // =========================== DESTINO III ===========================
 log('— Destino III · O Arquivo —');

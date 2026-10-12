@@ -50,7 +50,7 @@ class CheckpointSystem{
     for(const cp of this.world.checkpoints){
       if(this.collected.has(cp.id)) continue;
       let inside;
-      if(cp.bounds){ const b=cp.bounds; inside=player.grounded&&Math.abs(p.y-b.top)<.2&&p.x>=b.minX-RAD&&p.x<=b.maxX+RAD&&p.z>=b.minZ-RAD&&p.z<=b.maxZ+RAD; }
+      if(cp.bounds){ const b=cp.bounds; inside=player.grounded&&Math.abs(p.y-b.top)<.2&&solidInXZ(b,p.x,p.z,RAD); }   // borda reta, girada ou curva
       else inside=cp.position.distanceTo(p)<=cp.radius;
       if(inside){ this.collected.add(cp.id); if(!cp.optional) this.current=cp; this.justCollected=cp; break; }
     }

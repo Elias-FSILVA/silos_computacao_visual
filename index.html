@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="css/hud.css">
 <link rel="stylesheet" href="css/inventory.css">
 <link rel="stylesheet" href="css/cinematic.css">
+<link rel="stylesheet" href="css/cursor.css">
 </head>
 <body>
 <div id="view"></div>
@@ -128,6 +129,7 @@
       <button class="mbtn" id="btnPauseSettings">Configurações</button>
       <button class="mbtn" id="btnPauseMenu">Abandonar e voltar ao menu</button>
     </div>
+    <p class="err" id="pauseErr" role="alert"></p>
   </div>
 </section>
 
@@ -168,12 +170,14 @@
 <script src="js/world/textures.js"></script>
 <script src="js/world/assets.js"></script>
 <script src="js/world/levelData.js"></script>
+<script src="js/world/Collision.js"></script>
 <script src="js/world/World.js"></script>
 <script src="js/world/Halls.js"></script>
 <script src="js/items/itemDefs.js"></script>
 <script src="js/items/Inventory.js"></script>
 <script src="js/fx/FxSystem.js"></script>
 <script src="js/interaction/Interactables.js"></script>
+<script src="js/world/Sectors.js"></script>
 <script src="js/interaction/InteractionSystem.js"></script>
 <script src="js/items/ItemSystem.js"></script>
 <script src="js/player/HandModel.js"></script>
