@@ -5,7 +5,7 @@
 const Settings={
   KEY:'silos.settings.v1',
   defaults:{ master:.8, music:.6, sfx:.8, brightness:1, fov:75, quality:'medium', sensitivity:1, invertY:false,
-    vrTurn:'30', vrVignette:true },   // VR: giro em passos de 30°/45° ou '0' = suave; vinheta de conforto ao andar
+    vrTurn:'30', vrVignette:true, devConsoleEnabled:false },   // VR: giro em passos de 30°/45° ou '0' = suave; vinheta de conforto ao andar
   data:null,
   load(){ let d={}; try{ d=JSON.parse((LS&&LS.getItem(this.KEY))||'{}')||{}; }catch(e){ d={}; }
     this.data=Object.assign({},this.defaults);

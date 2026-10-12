@@ -53,8 +53,8 @@ class VRPlayer{
     this.smooth=new V3(); this._rigLast=null; this._rigT=0;   // suavização de trancos da vista
     this.input={x:0,y:0}; this.motion=0; this.cineState=null;
     this.caster=new THREE.Raycaster();
-    this.nail={t:0,armed:true}; this.ham={prev:null,cd:0,armed:new WeakMap(),wall:null};
-    this.pill={t:0,armed:true}; this.keyHover=[null,null]; this.invHover=-1; this.invOpen=false;
+    this.nail=[{t:0,armed:true},{t:0,armed:true}]; this.ham=[0,1].map(()=>({prev:null,cd:0,armed:new WeakMap(),wall:null}));
+    this.pill=[{t:0,armed:true},{t:0,armed:true}]; this.keyHover=[null,null]; this.invHover=-1; this.invOpen=false;
     this.ctrl=[null,null];                 // 0 = esquerda, 1 = direita (mesma ordem de Player.hands)
     const xr=this.renderer.xr;
     this._all=[0,1].map(i=>{
@@ -105,8 +105,8 @@ class VRPlayer{
     this.panel.attach(this.camera); this.hud.attach(this.g.scene,this.camera);
     this.g.atmosphere.setLightCount(3);
     this.frames=0; this.heightOffset=this.floor?0:EYE; this.rigPitch=0;
-    this.nail={t:0,armed:true}; this.ham={prev:null,cd:0,armed:new WeakMap(),wall:null};
-    this.pill={t:0,armed:true}; this.keyHover=[null,null]; this.invHover=-1; this.invOpen=false; this.hud.setInventory(false);
+    this.nail=[{t:0,armed:true},{t:0,armed:true}]; this.ham=[0,1].map(()=>({prev:null,cd:0,armed:new WeakMap(),wall:null}));
+    this.pill=[{t:0,armed:true},{t:0,armed:true}]; this.keyHover=[null,null]; this.invHover=-1; this.invOpen=false; this.hud.setInventory(false);
     this.player.xr=this; this.recenter();
   }
   _onEnd(){
@@ -164,24 +164,25 @@ class VRPlayer{
     const [L,R]=this._readAll();
     for(let i=0;i<2;i++){ const st=i?R:L; if(!st) continue;
       if(st.d.grip) p.setGrab(i,true); else if(st.u.grip) p.setGrab(i,false); }
-    let mx=0, my=0, turning=0;
+    let mx=0, my=0, turning=0, jumpRequested=false;
     if(L){
       if(L.d.stick){ g.pause(); return; }
       if(Math.hypot(L.sx,L.sy)>VR_TUNE.deadzone){ mx=L.sx; my=-L.sy; }
       if(L.d.a) g.items.holster();
       if(L.d.b) this.toggleInventory();
       // gatilho esquerdo: aperta o número sob o indicador esquerdo; com hand tracking, a pinça pula
-      if(L.d.trigger){ if(this.keyHover[0]) this._pressKey(0); else if(L.tracked) p.jump(); }
+      if(L.d.trigger){ if(this.keyHover[0]) this._pressKey(0); else if(this.invOpen&&this.invHover>=0){ g.items.select(this.invHover); this._haptic(0,.3,20); } else if(g.items.equippedFor('left')) g.items.useHand('left',true); else if(L.tracked) jumpRequested=true; }
+      else if(L.u.trigger) g.items.useHand('left',false);
     }
     if(R){
       // gatilho direito: número do painel sob o indicador > item do inventário sob o indicador > usar/interagir
       if(R.d.trigger){
         if(this.keyHover[1]) this._pressKey(1);
         else if(this.invOpen&&this.invHover>=0){ g.items.select(this.invHover); this._haptic(1,.3,20); }
-        else if(g.ui.noteOpen||!g.items.equipped) g.interact(); else g.items.use(true);
+        else if(g.ui.noteOpen||!g.items.equippedFor('right')) g.interact(); else g.items.useHand('right',true);
       }
-      else if(R.u.trigger) g.items.use(false);
-      if(R.d.a) p.jump();
+      else if(R.u.trigger) g.items.useHand('right',false);
+      if(R.d.a) jumpRequested=true;
       if(R.d.b) g.items.cycle(1);
       turning=this._lookInput(R,dt,s.vrTurn);
     }
@@ -190,6 +191,8 @@ class VRPlayer{
     this.camera.getWorldDirection(_vd);
     if(Math.hypot(_vd.x,_vd.z)>.1) p.yaw=Math.atan2(-_vd.x,-_vd.z);
     p.pitch=Math.asin(clamp(_vd.y,-1,1));
+    // O salto usa analógico e olhar deste quadro, não os valores do quadro anterior.
+    if(jumpRequested) p.jump(this.input);
     // passos reais: o corpo acompanha a cabeça (só no chão e solto; pendurado, a cabeça só inclina)
     const off=this._headOffset(_vh); off.y=0;
     _vo.subVectors(off,this.anchor);
@@ -283,11 +286,14 @@ class VRPlayer{
   }
   // ---------- prego e martelo sem gatilho ----------
   _tools(dt){
-    const it=this.g.items, m=it.mesh, ok=!!m&&m.visible&&it.phase==='idle';
-    if(ok) m.updateWorldMatrix(true,false);
-    if(ok&&it.equipped==='nails') this._nailCheck(dt,m); else this.nail.t=0;
-    if(ok&&it.equipped==='hammer') this._hammerCheck(dt,m); else this.ham.prev=null;
-    if(ok&&it.equipped==='pills') this._pillCheck(dt,m); else this.pill.t=0;
+    const it=this.g.items;
+    for(let i=0;i<2;i++){
+      const hand=i===0?it.left:it, m=hand.mesh, ok=!!m&&m.visible&&hand.phase==='idle';
+      if(ok) m.updateWorldMatrix(true,false);
+      if(ok&&hand.equipped==='nails') this._nailCheck(dt,m,i); else this.nail[i].t=0;
+      if(ok&&hand.equipped==='hammer') this._hammerCheck(dt,m,i); else this.ham[i].prev=null;
+      if(ok&&hand.equipped==='pills') this._pillCheck(dt,m,i); else this.pill[i].t=0;
+    }
   }
   // ---------- inventário (Y) ----------
   toggleInventory(){ this.invOpen=!this.invOpen; this.invHover=-1; this.hud.setInventory(this.invOpen); this._haptic(0,.2,15); }
@@ -336,18 +342,18 @@ class VRPlayer{
   // ---------- pílula levada à boca ----------
   // frasco na mão: com a tampa a até 12 cm da boca (abaixo e à frente dos olhos) e virada para ela por
   // 0,3 s, dispara o mesmo consumo do botão (ItemSystem.consume). Para outra, é preciso afastar o frasco.
-  _pillCheck(dt,m){
-    const P=this.pill, cap=m.localToWorld(_ta.set(0,.05,0)), up=_tb.set(0,1,0).transformDirection(m.matrixWorld);
+  _pillCheck(dt,m,i=1){
+    const P=this.pill[i], cap=m.localToWorld(_ta.set(0,.05,0)), up=_tb.set(0,1,0).transformDirection(m.matrixWorld);
     const mouth=this.camera.localToWorld(_tc.set(0,-.08,-.06)), d=cap.distanceTo(mouth);
     if(d>.25) P.armed=true;
     if(!P.armed||d>.12||up.dot(_tv.subVectors(mouth,cap).normalize())<.2){ P.t=0; return; }
     P.t+=dt; if(P.t<VR_TUNE.pillDwell) return;
-    if(this.g.items.consume()){ P.armed=false; P.t=0; this._haptic(1,.4,60); }
+    if(this.g.items.consume(i===0?'left':'right')){ P.armed=false; P.t=0; this._haptic(i,.4,60); }
   }
   // prego na mão: com a ponta encostada numa superfície válida, alinhado com a parede por um instante,
   // dispara a mesma colocação do botão (ItemSystem.place). Para o próximo, é preciso afastar a ponta.
-  _nailCheck(dt,m){
-    const N=this.nail, tip=m.localToWorld(_ta.set(0,-.17,0)), back=m.localToWorld(_tb.set(0,.05,0));
+  _nailCheck(dt,m,i=1){
+    const N=this.nail[i], tip=m.localToWorld(_ta.set(0,-.17,0)), back=m.localToWorld(_tb.set(0,.05,0));
     _tv.subVectors(tip,back); const len=_tv.length(); if(len<1e-4) return; _tv.multiplyScalar(1/len);
     this.caster.set(back,_tv); this.caster.far=len+VR_TUNE.nailRearm+.02;
     const hit=this.caster.intersectObjects(this.g.world.raycastTargets,false).find(h=>h.object.userData.alive!==false);
@@ -357,13 +363,13 @@ class VRPlayer{
     const ctx=this.g.interaction.ctx(hit), obj=hit.object.userData.interactable, c=obj&&obj.canUseItem('nails',ctx);
     if(!c||!c.valid||-_tv.dot(ctx.normal)<VR_TUNE.nailAlign){ N.t=0; return; }
     N.t+=dt; if(N.t<VR_TUNE.nailDwell) return;
-    if(this.g.items.place({hit,obj,ctx,valid:true})){ N.armed=false; N.t=0; this._haptic(1,.5,40); }
+    if(this.g.items.place({hit,obj,ctx,valid:true},i===0?'left':'right')){ N.armed=false; N.t=0; this._haptic(i,.5,40); }
   }
   // martelo na mão: a cabeça do martelo cruzando a cabeça de um prego, rápido e indo contra a parede,
   // conta como uma pancada (ItemSystem.strike → NailAnchor.useItem, que avança o prego como no desktop).
   // Uma pancada por contato: o martelo precisa se afastar do prego e há um intervalo mínimo.
-  _hammerCheck(dt,m){
-    const H=this.ham, head=m.localToWorld(_ta.set(0,.27,0));
+  _hammerCheck(dt,m,i=1){
+    const H=this.ham[i], head=m.localToWorld(_ta.set(0,.27,0));
     H.cd=Math.max(0,H.cd-dt);
     if(!H.prev){ H.prev=head.clone(); return; }
     _tb.subVectors(head,H.prev); const k=1/Math.max(dt,1e-4), speed=_tb.length()*k;
@@ -376,7 +382,7 @@ class VRPlayer{
       if(wall instanceof BreakableWall&&!wall.broken&&!(H.wall&&H.wall.obj===wall)){
         const ctx=this.g.interaction.ctx(hit);
         if(-_tc.dot(ctx.normal)>.5){
-          this.g.items.strike({hit,obj:wall,ctx,valid:true}); this._haptic(1,1,70);
+          this.g.items.strike({hit,obj:wall,ctx,valid:true},i===0?'left':'right'); this._haptic(i,1,70);
           H.wall={obj:wall,point:hit.point.clone(),normal:ctx.normal.clone()}; H.cd=VR_TUNE.hammerCooldown;
           H.prev.copy(head); return;
         }
@@ -391,7 +397,7 @@ class VRPlayer{
       if(d>VR_TUNE.hammerRadius||H.armed.get(a)===false||H.cd>0) continue;
       if(speed<VR_TUNE.hammerSpeed||-_tb.dot(u.wallNormal)*k<VR_TUNE.hammerSpeed*.5) continue;   // só encostar não vale
       const hit={point:_vp.clone(),object:a,distance:0,face:{normal:new V3(0,1,0)}};
-      if(this.g.items.strike({hit,obj:nail,ctx:this.g.interaction.ctx(hit),valid:true})) this._haptic(1,.9,60);
+      if(this.g.items.strike({hit,obj:nail,ctx:this.g.interaction.ctx(hit),valid:true},i===0?'left':'right')) this._haptic(i,.9,60);
       H.armed.set(a,false); H.cd=VR_TUNE.hammerCooldown; break;
     }
     H.prev.copy(head);

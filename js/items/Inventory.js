@@ -19,7 +19,7 @@
 const INVENTORY_CONFIG={ slots:10, defaultStackLimit:10, defaultWeight:1 };
 
 // Teclas dos atalhos. Fonte única: Game.js (entrada) e UIManager.js (rótulos e layout) leem esta tabela.
-// A ordem define o lugar de cada atalho na mochila: 1 em cima, 2 à direita, 3 embaixo, 4 à esquerda.
+// Slots 1–2 pertencem à mão esquerda; 3–4 à direita. Cada mão pode ter até dois itens vinculados.
 const QUICK_KEYS=[
   {code:'Digit1',label:'1',place:'superior'},
   {code:'Digit2',label:'2',place:'direita'},

@@ -62,12 +62,12 @@ class VRHud{
   }
   updateInventory(items,hover){
     if(!this.inv.visible) return;
-    const inv=items.inv, key=inv.version+'|'+items.sel+'|'+hover+'|'+Object.keys(this.icons).length;
+    const inv=items.inv, key=inv.version+'|'+items.left.sel+'|'+items.sel+'|'+hover+'|'+Object.keys(this.icons).length;
     if(key===this.invKey) return; this.invKey=key;
     const x=this.invCanvas.getContext('2d'), W=512, H=160, sw=W/4;
     x.clearRect(0,0,W,H);
     inv.slots.forEach((s,i)=>{
-      const bx=i*sw+6, sel=items.sel===i, hov=hover===i;
+      const bx=i*sw+6, sel=items.isSelected(i), hov=hover===i;
       x.fillStyle=hov?'rgba(216,165,58,.55)':sel?'rgba(216,207,184,.28)':'rgba(8,7,5,.82)'; x.fillRect(bx,6,sw-12,H-12);
       x.strokeStyle=sel||hov?'#f0c870':'rgba(216,207,184,.35)'; x.lineWidth=sel?5:3; x.strokeRect(bx,6,sw-12,H-12);
       x.fillStyle='#7d7566'; x.font='500 24px "Barlow Condensed", sans-serif'; x.textAlign='left'; x.textBaseline='top'; x.fillText(String(i+1),bx+8,10);
