@@ -4,7 +4,7 @@
 //   active, solved, failed, timeRemaining, requiredActions, completedActions
 // O World só descreve a sala (world.puzzleDefs / world.puzzleRooms); a lógica vive aqui.
 // ============================================================================
-const inBox=(p,z)=>p.x>=z.minX&&p.x<=z.maxX&&p.z>=z.minZ&&p.z<=z.maxZ&&p.y>=z.minY&&p.y<=z.maxY;
+const inBox=(p,z)=>inZone(p,z);   // caixa ou setor anelar (anel do Pátio, galeria curva, ramais) — ver Collision.js
 
 class ContainmentPuzzle{
   constructor(game,room){

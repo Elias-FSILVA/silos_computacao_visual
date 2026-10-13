@@ -1,4 +1,4 @@
-SILOS — mapa de 400 m · três destinos · quatro finais
+SILOS — silo cilíndrico de 400 m · subida vertical + alas horizontais · três destinos · quatro finais
 =====================
 1) Instale o Node.js (versão LTS): https://nodejs.org
 2) Abra um terminal NESTA pasta (a que tem package.json) e rode, uma vez só:
@@ -11,20 +11,40 @@ MODO ESPECTADOR (câmera livre para programadores)
   - No menu principal: bloco "Ferramentas de desenvolvimento" → "Modo espectador", ou tecla F2.
   - Direto pelo endereço:  http://localhost:8080/?espectador   (clique na tela uma vez para capturar o mouse)
   - Dentro do modo: WASD mover · Espaço sobe · C desce · Shift x4 · roda do mouse = velocidade
-                    1-7 vistas prontas · X paredes transparentes · L luz total
+                    1-9 vistas prontas · X paredes transparentes · L luz total
                     M nomes das partes · R rota do labirinto · H ajuda · Esc volta ao menu
 
 Se o menu NÃO mostrar o bloco "Ferramentas de desenvolvimento" com "Versão do mapa: 400 m", você está vendo uma
 cópia antiga: substitua a pasta inteira pela deste zip e force o recarregamento (Ctrl+F5).
 
-OS TRÊS DESTINOS (salas grandes ligadas ao poço por braços; o mapa é uma árvore):
-  I   A Casa das Bombas  (100 m, leste)  · contenção  · final O SELO
-  II  A Estufa           (200 m, oeste)  · raiz        · final A RAIZ (comunhão)
-  III O Arquivo+Labirinto(300 m, norte)  · memória     · final O REGISTRO (testemunho)
-  Sem nenhuma decisão tomada: final FUGA. A PRIMEIRA decisão define a rota; as outras ficam inertes.
+O MAPA (um silo gigante: escala-se pelo POÇO redondo do centro, 12 m de diâmetro; as alas ficam no corpo do silo):
+  0–100 m     início (até a passarela anelar de 40 m) · Subida 1: rachadura, prego, cano, viga
+  100 m   I   A Casa das Bombas (leste) · puzzle → porta da galeria · final O SELO (contenção)
+  110–150 m   Subida 2: andaimes, tubo-ponte, passarelas, travessia lateral — perto do fim, o vento do exaustor já puxa
+  150 m       Galeria do exaustor: corredor curvo protegido → porta pressurizada (registro emperrado: martelo)
+              → ESCADA do poço de serviço até 174 m. O exaustor de 169 m fecha o poço; a "rota antiga" leva à zona de sucção.
+  174–200 m   Subida 2b: corda presa ao mezanino
+  200 m   II  Pátio das Máquinas: anel em volta do poço · Casa de Força (energia) + A Estufa (freio · final A RAIZ)
+              → ELEVADOR de carga até 224 m (só com os dois objetivos)
+  224–246 m   Subida 3a: rachaduras
+  246 m       Insuflador: pise no círculo da grade e o fluxo de ar leva até o mirante (252 m)
+  252–300 m   Subida 3b: escada danificada, vão que só se cruza com prego
+  300 m   III O Arquivo + Labirinto (norte) · código → duto · final O REGISTRO (testemunho)
+  310–400 m   Subida 4 (fuga) até a porta da superfície: tudo combinado
+  Acima de cada ala obrigatória o poço é FECHADO (diafragma de grade ou o próprio exaustor) e a parede vira chapa sem agarras e
+  sem prego: só se sobe pela ala. Sem nenhuma decisão tomada: final FUGA. A PRIMEIRA decisão define a rota; as outras ficam inertes.
 
-AJUSTE DA ESCALADA (js/world/levelData.js → CLIMB):
-  step (distância entre tijolos, 0,8 m) · blank (vão liso com soquete de prego, 2,4 m) · crumble (tijolos extras que desmoronam, por subida)
-  Se ainda achar difícil: diminua step (ex.: 0,7) ou blank. Soquete = anel âmbar na parede; use um prego nele e 3 marteladas.
+SUBIDAS (js/world/Climbs.js): cada subida é uma sequência de trechos curtos — tijolos, rachaduras, corda, cano, escada danificada,
+  vigas, tubo que atravessa o poço, passarelas, andaimes e saliências. Chapa de aço = não aceita prego. Luminária amarela = use a
+  ferramenta ali (soquete). Soquete = anel âmbar na parede; use um prego nele e 3 marteladas.
+  Tijolos (js/world/levelData.js → CLIMB): step (distância, 0,8 m) · crumble (tijolos extras que desmoronam, por subida).
+  Ventiladores: EXHAUST.fan e INSUF.fan (speed, range, p, radius).
+  Modelos do mapa: assets/models/map/otimizados (gerar de novo: node tools/otimizar_modelos.js <caminho do chrome.exe>).
 
-TESTES (sem navegador):  node tools/test_escalada.js (alcance real) · test_mundo.js · test_halls.js · test_espectador.js · test_final.js · test_scripts.js
+TESTES (sem navegador):  node tools/test_cilindro.js (geometria e colisão do cilindro) · test_ventiladores.js (vento, abrigo, sucção)
+  · test_mundo.js (trancas, alas, escada, elevador, insuflador) · test_rota.js (robô sobe a rota inteira com a física real: estamina)
+  · test_ritmo.js (trecho inicial intacto, trechos curtos, variedade, vãos de prego, ritmo lento)
+  · test_escalada.js (alcance real) · test_halls.js · test_espectador.js · test_final.js · test_scripts.js · test_ponteiro.js (captura do mouse, pausa e mochila)
+
+CURSOR DE INTERAÇÃO (mão petrificada): arte original em assets/ponteiro/cursor_silo.png.
+  node scripts/cursor.mjs [altura]  regenera cursor_silo_1x.png / _2x.png (padrão 40 px) e mostra o hotspot para css/cursor.css.

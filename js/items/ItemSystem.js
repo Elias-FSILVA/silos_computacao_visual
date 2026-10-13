@@ -7,20 +7,33 @@
 // ============================================================================
 const POSE_REST=new V3(.22,-.22,-.42), POSE_HIP=new V3(.32,-.62,-.22);
 const DUR={equipping:.55,holstering:.45,swing:.62,place:.5,consume:.6};
-const _itemIdle=new V3(), _itemTo=new V3();
+const _itemIdle=new V3(), _itemTo=new V3(), _itemRest=new V3(), _itemHip=new V3();
 class ItemSystem{
-  constructor(game){ this.g=game; this.inv=new Inventory(4); this.pivot=new THREE.Group(); this.mesh=null; this.reset(); }
+  constructor(game,handIndex=1,sharedInventory=null){
+    this.g=game; this.handIndex=handIndex; this.hand=game.player.hands[handIndex];
+    this.inv=sharedInventory||new Inventory(4); this.pivot=new THREE.Group(); this.mesh=null; this.reset();
+    if(handIndex===1){ this.left=new ItemSystem(game,0,this.inv); game.player.inventory=this.inv; }
+  }
   get player(){ return this.g.player; }
   reset(){
-    this.inv.reset(); this.sel=-1; this.equipped=null; this.phase='empty'; this.t=0; this.pending=null; this.useHeld=false; this.next=-1; this.hinted=false;
+    if(this.handIndex===1) this.inv.reset();
+    this.sel=-1; this.equipped=null; this.phase='empty'; this.t=0; this.pending=null; this.useHeld=false; this.next=-1; this.hinted=false;
     this._mount(null);
-    this.pose={pos:POSE_REST.clone(),roll:0,visible:false,wrist:new V3(),base:HandModel.BASE_FLAT,grip:'relaxed',grip2:null,blend:0,squeeze:0,tremor:0};
-    this.player.itemPose=this.pose; this.player.rightHand.occupied=false; this.player.inventory=this.inv;
+    this.pose={pos:new V3(this.handIndex===0?-POSE_REST.x:POSE_REST.x,POSE_REST.y,POSE_REST.z),roll:0,visible:false,wrist:new V3(),base:HandModel.BASE_FLAT,grip:'relaxed',grip2:null,blend:0,squeeze:0,tremor:0};
+    this.player.itemPoses=this.player.itemPoses||[]; this.player.itemPoses[this.handIndex]=this.pose; this.player[this.handIndex===0?'leftHand':'rightHand'].occupied=false;
+    if(this.handIndex===1&&this.left) this.left.reset();
   }
   get activeItem(){ return (this.phase==='idle'||this.phase==='swing'||this.phase==='place')?this.equipped:null; }
+  get activeItems(){ return [this.left,this].map(h=>h.activeItem); }
+  handForQuick(k){ return k>=0&&k<2?'left':k>=2&&k<4?'right':null; }
+  equippedFor(side){ return (side==='left'?this.left:this).equipped; }
+  phaseFor(side){ return (side==='left'?this.left:this).phase; }
+  isSelected(i){ const s=this.inv.slots[i]; if(!s) return false; const k=this.inv.bindingOf(s.id), owner=k>=0&&k<2?this.left:this; return owner.sel===i&&!!owner.equipped; }
+  useHand(side,down){ (side==='left'?this.left:this).use(down); }
+  holsterHand(side){ (side==='left'?this.left:this).holster(); }
   _mount(id){
     if(this.mesh){ this.pivot.remove(this.mesh); this.mesh=null; }
-    const hand=this.player.handModels[1].socket; if(this.pivot.parent!==hand) hand.add(this.pivot);
+    const hand=this.player.handModels[this.handIndex].socket; if(this.pivot.parent!==hand) hand.add(this.pivot);
     if(!id) return;
     const d=ITEM_DEFS[id]; this.mesh=d.make(); this.mesh.position.set(...d.item.p); this.mesh.rotation.set(...d.item.r);
     if(d.item.s) this.mesh.scale.setScalar(d.item.s);
@@ -28,24 +41,26 @@ class ItemSystem{
   }
   onPickup(id,count){
     if(!this.hinted&&this.inv.has('hammer')&&this.inv.has('nails')){ this.hinted=true;
-      this.g.ui.msg(this.g.vr.active?'Y abre o inventário: toque num item com o indicador direito e aperte o gatilho. B troca, X guarda.'
-        :'Tab abre a mochila: arraste os itens para os atalhos 1 a 4. Botão direito usa. X guarda.',5); }
+      this.g.ui.msg(this.g.vr.active?'Y abre o inventário: toque num item com o indicador e use os atalhos para atribuir à mão. Cada gatilho usa o item daquela mão.'
+        :'Tab abre a mochila: atalhos 1–2 equipam a mão esquerda; 3–4, a direita. Cada botão do mouse usa o item da mão correspondente; clique esquerdo agarra quando vazia.',5); }
   }
   select(i){
+    if(this.handIndex===1){ const k=this.inv.bindingOf(this.inv.slots[i]?.id); if(k>=0&&k<2) return this.left.select(i); }
     const p=this.player; if(p.dead) return;
     const slot=this.inv.slots[i]; if(!slot) return;
     if(this.sel===i&&this.equipped){ if(this.phase==='idle') this.holster(); return; }
     if(this.phase!=='idle'&&this.phase!=='empty'){ this.next=i; return; }
-    if(p.rightHand.inContact){ this.g.ui.msg('A mão direita está segurando.',1.4); return; }
+    if(this.hand.inContact){ this.g.ui.msg(`A mão ${this.handIndex===0?'esquerda':'direita'} está segurando.`,1.4); return; }
     if(this.equipped){ this.next=i; this.holster(); return; }
     this._equip(i);
   }
   // atalhos 1–4: resolve o item vinculado e entrega ao select() existente (equipar, trocar ou guardar)
   selectQuick(k){
+    const owner=k<2?this.left:this;
     const inv=this.inv, i=inv.boundSlot(k); if(i<0) return false;
     const s=inv.slots[i], d=ITEM_DEFS[s.id];
-    if(d.stack&&s.count<=0&&this.sel!==i){ this.g.audio.deny(); this.g.ui.msg(`Esgotado: ${d.name.toLowerCase()}.`,1.3); return false; }
-    this.select(i); return true;
+    if(d.stack&&s.count<=0&&owner.sel!==i){ this.g.audio.deny(); this.g.ui.msg(`Esgotado: ${d.name.toLowerCase()}.`,1.3); return false; }
+    owner.select(i); return true;
   }
   cycle(dir){
     const filled=this.inv.slots.map((s,i)=>s?i:-1).filter(i=>i>=0); if(!filled.length) return;
@@ -54,10 +69,11 @@ class ItemSystem{
   }
   _equip(i){
     this.sel=i; this.equipped=this.inv.slots[i].id; this.phase='equipping'; this.t=0; this.next=-1;
-    const p=this.player; p.rightHand.occupied=true; p.rightHand.isGrabbing=false; this._mount(this.equipped); this.g.audio.equip();
+    const p=this.player; this.hand.occupied=true; this.hand.isGrabbing=false; this._mount(this.equipped); this.g.audio.equip();
   }
   holster(){ if(!this.equipped||this.phase==='holstering') return; this.phase='holstering'; this.t=0; this.g.audio.holster(); }
-  use(down){ this.useHeld=down; if(down) this._tryUse(); }
+  holsterAll(){ this.holster(); if(this.left) this.left.holster(); }
+  use(down){ this.useHeld=down; if(down) this._tryUse(); if(this.handIndex===1&&this.left) this.left.useHeld=down; }
   quick(id){ // pílula sem precisar equipar (tecla Q)
     if(id!=='pills') return;
     if(this.inv.count('pills')<=0){ this.g.ui.msg('Nenhuma pílula.',1.3); return; }
@@ -96,34 +112,36 @@ class ItemSystem{
     if(this.landed) tg.obj.useItem('hammer',tg.ctx);
   }
   // VR: prego encostado na parede (detectado pelo VRPlayer) — mesma colocação do botão, sem o clique
-  place(tg){
-    if(this.phase!=='idle'||this.equipped!=='nails'||!tg||!tg.valid||this.inv.count('nails')<=0) return false;
-    this.pending=tg; this._start('place'); return true;
+  place(tg,side='right'){
+    const hand=side==='left'?this.left:this;
+    if(hand.phase!=='idle'||hand.equipped!=='nails'||!tg||!tg.valid||this.inv.count('nails')<=0) return false;
+    hand.pending=tg; hand._start('place'); return true;
   }
   // VR: frasco levado à boca (detectado pelo VRPlayer) — mesmo consumo do botão: animação, uma pílula, cura das mãos
-  consume(){ if(this.phase!=='idle'||this.equipped!=='pills'||this.inv.count('pills')<=0) return false; this._start('consume'); return true; }
+  consume(side='right'){ const hand=side==='left'?this.left:this; if(hand.phase!=='idle'||hand.equipped!=='pills'||this.inv.count('pills')<=0) return false; hand._start('consume'); return true; }
   // VR: pancada física do martelo (num prego ou numa parede quebrável, detectada pelo VRPlayer) — mesmo efeito do golpe, sem a animação
-  strike(tg){ if(this.phase!=='idle'||this.equipped!=='hammer') return false; this._hammerHit(tg); return this.landed; }
-  update(dt){
+  strike(tg,side='right'){ const hand=side==='left'?this.left:this; if(hand.phase!=='idle'||hand.equipped!=='hammer') return false; hand._hammerHit(tg); return hand.landed; }
+  update(dt){ if(this.handIndex===1&&this.left) this.left._updateLocal(dt); this._updateLocal(dt); }
+  _updateLocal(dt){
     if(this.phase==='empty'){ this.pose.visible=false; return; }
     if(this.player.dead){ return; }
-    this.t+=dt; const id=this.equipped, d=ITEM_DEFS[id], idle=_itemIdle.set(...d.held), P=this.pose; let k;
+    this.t+=dt; const id=this.equipped, d=ITEM_DEFS[id], idle=_itemIdle.set(...d.held), rest=this.handIndex===0?_itemRest.set(-POSE_REST.x,POSE_REST.y,POSE_REST.z):_itemRest.copy(POSE_REST), hip=this.handIndex===0?_itemHip.set(-POSE_HIP.x,POSE_HIP.y,POSE_HIP.z):_itemHip.copy(POSE_HIP); if(this.handIndex===0) idle.x=-idle.x; const P=this.pose; let k;
     P.roll=0; P.wrist.set(0,0,0); P.base=d.base; P.grip=d.grip; P.grip2=null; P.blend=0; P.squeeze=0; P.tremor=0;
     switch(this.phase){
       case 'equipping': {
         // pegar: a mão desce aberta até o cinto, fecha no item e sobe com ele
         k=Math.min(1,this.t/DUR.equipping);
-        if(k<.4){ const e=smooth(k/.4); P.pos.lerpVectors(POSE_REST,POSE_HIP,e); P.visible=false; P.grip='open'; P.base=HandModel.BASE_FLAT; P.wrist.set(-.6*e,0,0); }
-        else if(k<.55){ P.pos.copy(POSE_HIP); P.visible=true; P.squeeze=.25; P.wrist.set(-.6,0,0); }
-        else { const e=smooth((k-.55)/.45); P.pos.lerpVectors(POSE_HIP,idle,e); P.visible=true; P.wrist.set(lerp(-.6,0,e)+Math.sin(e*Math.PI)*.35,0,0); }
+        if(k<.4){ const e=smooth(k/.4); P.pos.lerpVectors(rest,hip,e); P.visible=false; P.grip='open'; P.base=HandModel.BASE_FLAT; P.wrist.set(-.6*e,0,0); }
+        else if(k<.55){ P.pos.copy(hip); P.visible=true; P.squeeze=.25; P.wrist.set(-.6,0,0); }
+        else { const e=smooth((k-.55)/.45); P.pos.lerpVectors(hip,idle,e); P.visible=true; P.wrist.set(lerp(-.6,0,e)+Math.sin(e*Math.PI)*.35,0,0); }
         if(k>=1) this.phase='idle';
         break; }
       case 'holstering': {
         // guardar: desce com o item, solta no cinto e volta vazia
         k=Math.min(1,this.t/DUR.holstering);
-        if(k<.55){ const e=smooth(k/.55); P.pos.lerpVectors(idle,POSE_HIP,e); P.visible=true; P.wrist.set(-.6*e,0,0); }
-        else { const e=smooth((k-.55)/.45); P.pos.lerpVectors(POSE_HIP,POSE_REST,e); P.visible=false; P.grip='open'; P.base=HandModel.BASE_FLAT; P.wrist.set(-.6*(1-e),0,0); }
-        if(k>=1){ this.phase='empty'; this.equipped=null; this.sel=-1; this._mount(null); this.player.rightHand.occupied=false; P.visible=false;
+        if(k<.55){ const e=smooth(k/.55); P.pos.lerpVectors(idle,hip,e); P.visible=true; P.wrist.set(-.6*e,0,0); }
+        else { const e=smooth((k-.55)/.45); P.pos.lerpVectors(hip,rest,e); P.visible=false; P.grip='open'; P.base=HandModel.BASE_FLAT; P.wrist.set(-.6*(1-e),0,0); }
+        if(k>=1){ this.phase='empty'; this.equipped=null; this.sel=-1; this._mount(null); this.hand.occupied=false; P.visible=false;
           if(this.next>=0){ const n=this.next; this.next=-1; this.select(n); } }
         break; }
       case 'swing': {

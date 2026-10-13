@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="css/hud.css">
 <link rel="stylesheet" href="css/inventory.css">
 <link rel="stylesheet" href="css/cinematic.css">
+<link rel="stylesheet" href="css/cursor.css">
 </head>
 <body>
 <div id="view"></div>
@@ -52,7 +53,7 @@
 <section class="screen" id="menu" aria-label="Menu principal">
   <div class="col">
     <h1 class="title">Silos</h1>
-    <p class="tag">Inspirado em White Knuckle. Mouse e teclado, ou VR no Meta Quest.</p>
+    <br>
     <div class="list">
       <button class="mbtn primary" id="btnStart">Começar</button>
       <button class="mbtn" id="btnStartVR" hidden>Começar em VR</button>
@@ -67,13 +68,6 @@
     </div>
     <p class="note-small">Botões esquerdo e direito do mouse seguram com cada mão; agarrado, arraste o mouse para baixo para puxar o corpo. Tab abre a mochila: organize os itens no círculo e arraste-os para os atalhos 1 a 4. Apertar o número do atalho coloca o item na mão direita (apertar de novo guarda), e o botão direito usa. X guarda o item, Q toma uma pílula, F interage, Espaço pula ou sobe numa borda.</p>
     <p class="note-small" id="vrNote" hidden>VR (Meta Quest): grip agarra com cada mão; segurando, desça o braço para puxar o corpo. Analógico esquerdo anda; o direito gira e, para cima ou para baixo, inclina a vista (clique nele nivela). A pula ou sobe, gatilho direito usa o item ou interage, B troca o item, X guarda, Y abre o inventário no pulso (toque no item com o indicador direito e aperte o gatilho), clique no analógico esquerdo pausa. Prego encostado na parede se fixa sozinho; depois, bata nele com o martelo. O martelo também quebra paredes rachadas. Pílula: leve o frasco à boca. Painel de senha: ponha o indicador na frente do número e aperte o gatilho daquela mão. Com hand tracking: feche a mão para agarrar, pinça direita interage, pinça esquerda pula.</p>
-    <div class="devbox">
-      <p class="dev-title">Ferramentas de desenvolvimento</p>
-      <button class="mbtn dev" id="btnSpectate">Modo espectador (câmera livre no mapa)</button>
-      <p class="dev-note">Voe por todo o mapa de 400 m, com paredes transparentes, nomes de cada parte e régua de altura. Não precisa de nome.<br>
-        Atalho: <b>F2</b> neste menu · ou abra o endereço com <b>?espectador</b> no final.</p>
-      <p class="dev-ver">Versão do mapa: 400 m · 3 puzzles · espectador v2</p>
-    </div>
   </div>
 </section>
 
@@ -89,10 +83,13 @@
       <label class="row">Brilho <input type="range" min="0.6" max="1.6" step="0.05" data-key="brightness"><output></output></label>
       <label class="row">Campo de visão <input type="range" min="60" max="100" step="1" data-key="fov"><output></output></label>
       <label class="row">Qualidade <select data-key="quality"><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select><span></span></label>
+      <label class="row">Distância de visão <select data-key="viewDistance"><option value="near">Curta</option><option value="normal">Normal</option><option value="far">Longa</option></select><span></span></label>
     </fieldset>
     <fieldset class="set"><legend>Jogo</legend>
       <label class="row">Sensibilidade <input type="range" min="0.3" max="2.5" step="0.05" data-key="sensitivity"><output></output></label>
       <label class="row">Inverter eixo Y <input type="checkbox" data-key="invertY"><span></span></label>
+      <label class="row">Console do desenvolvedor <input type="checkbox" data-key="devConsoleEnabled"><span></span></label>
+      <p class="dev-setting-note">Ative para abrir o console durante o jogo com <kbd>~</kbd> (tecla abaixo de Esc). Feche com <kbd>Esc</kbd>.</p>
     </fieldset>
     <fieldset class="set"><legend>VR (Meta Quest)</legend>
       <label class="row">Giro <select data-key="vrTurn"><option value="30">Em passos de 30°</option><option value="45">Em passos de 45°</option><option value="0">Suave</option></select><span></span></label>
@@ -128,6 +125,7 @@
       <button class="mbtn" id="btnPauseSettings">Configurações</button>
       <button class="mbtn" id="btnPauseMenu">Abandonar e voltar ao menu</button>
     </div>
+    <p class="err" id="pauseErr" role="alert"></p>
   </div>
 </section>
 
@@ -152,6 +150,14 @@
   </div>
 </section>
 
+<section id="devConsole" class="dev-console-overlay" role="dialog" aria-label="Console do desenvolvedor" aria-modal="false" hidden>
+  <header class="dev-console-header"><span>Console do desenvolvedor</span><button id="devConsoleClose" type="button" aria-label="Fechar console">×</button></header>
+  <pre id="devConsoleOutput" class="dev-console-output" role="log" aria-live="polite">Digite “help” para ver os comandos.</pre>
+  <form id="devConsoleForm" class="dev-console-form" autocomplete="off">
+    <label class="sr" for="devConsoleInput">Comando</label><span class="dev-prompt" aria-hidden="true">&gt;</span>
+    <input id="devConsoleInput" type="text" spellcheck="false" placeholder="help" aria-label="Digite um comando">
+  </form>
+</section>
 <div id="cine" hidden><div id="cineFade"></div><div id="cineText"></div><div id="cineSkip">Espaço para pular</div></div>
 
 <!-- bibliotecas instaladas pelo npm (rode "npm install" uma vez; "npm run dev" abre o jogo) -->
@@ -163,20 +169,28 @@
 <script src="js/core/models.js"></script>
 <script src="js/core/modelDefs.js"></script>
 <script src="js/core/settings.js"></script>
+<script src="js/core/renderConfig.js"></script>
 <script src="js/core/ranking.js"></script>
 <script src="js/atmosphere/AudioManager.js"></script>
 <script src="js/world/textures.js"></script>
 <script src="js/world/assets.js"></script>
 <script src="js/world/levelData.js"></script>
+<script src="js/world/Collision.js"></script>
 <script src="js/world/World.js"></script>
 <script src="js/world/Halls.js"></script>
 <script src="js/items/itemDefs.js"></script>
 <script src="js/items/Inventory.js"></script>
 <script src="js/fx/FxSystem.js"></script>
 <script src="js/interaction/Interactables.js"></script>
+<script src="js/world/Sectors.js"></script>
+<script src="js/world/Climbs.js"></script>
+<script src="js/world/SectorManager.js"></script>
 <script src="js/interaction/InteractionSystem.js"></script>
 <script src="js/items/ItemSystem.js"></script>
 <script src="js/player/HandModel.js"></script>
+<script src="js/player/perkDefs.js"></script>
+<script src="js/player/PlayerAttributes.js"></script>
+<script src="js/player/PlayerStats.js"></script>
 <script src="js/player/Player.js"></script>
 <script src="js/ui/VRPanel.js"></script>
 <script src="js/ui/VRMenu.js"></script>
@@ -190,6 +204,8 @@
 <script src="js/ui/UIManager.js"></script>
 <script src="js/ui/IntroCinematic.js"></script>
 <script src="js/systems/SpectatorMode.js"></script>
+<script src="js/ui/DevConsole.js"></script>
+<script src="js/ui/PerfOverlay.js"></script>
 <script src="js/Game.js"></script>
 <script src="js/main.js"></script>
 </body>

@@ -10,6 +10,8 @@ class Game{
     r.toneMapping=THREE.LinearToneMapping; r.toneMappingExposure=1; r.xr.enabled=true;
     document.getElementById('view').appendChild(r.domElement);
     this.scene=new THREE.Scene(); this.scene.background=new THREE.Color(0x050403);
+    this.scene.matrixAutoUpdate=false;   // a cena nunca se move: sem forçar a recomposição das matrizes do mapa todo quadro
+    // far definitivo vem do perfil (applyRenderProfile): o plano distante fica dentro da neblina opaca
     this.camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.03,200); this.camera.rotation.order='YXZ';
     this.scene.add(this.camera);
     const head=new THREE.PointLight(0xb8ae98,.45,7,2); this.camera.add(head);
@@ -23,32 +25,68 @@ class Game{
     this.puzzles=new PuzzleSystem(this);
     this.timer=new TimerSystem(); this.score=new ScoreSystem(); this.checkpoints=new CheckpointSystem(this.world); this.ranking=new Ranking();
     this.atmosphere=new AtmosphereManager(this.scene,r,this.audio);
+    // janela vertical de renderização, setores, batching/instancing/LOD e pool de luzes (só o desenho; colisão intacta)
+    this.sectors=this.world.sectors=new SectorManager(this);
+    if(/[?&]nobatch\b/.test(location.search)) this.sectors.batched=false;     // comparação A/B (tools/perf_bench.js)
+    if(/[?&]nosectors\b/.test(location.search)) this.sectors.enabled=false;
+    this.perf=new PerfOverlay(this);
     this.ui=new UIManager();
     this.vr=new VRPlayer(this);
     this.puzzles.reset(); this._zones();
     this.cinematic=new IntroCinematic(this);
     this.spectator=new SpectatorMode(this);
     this.state='menu'; this.keys={}; this.playerName=''; this.result=null; this.saved=false; this.savedIndex=-1;
+    this.devCommandHistory=[]; this.devHistoryIndex=0; this.devHistoryDraft='';
+    this.devConsoleReturnState=null; this._devConsoleWasPlaying=false;
     this.gameBtn={}; this._lockGuard=0;   // gameBtn: botões do mouse pressionados DURANTE a partida (cliques na interface não contam)
+    this._lockReq=0; this._resuming=false;   // pedido de Pointer Lock pendente (instante) · retomada aguardando a captura
     this.settingsReturn='menu'; this.wasLocked=false; this.menuT=0; this.vt=0;
     this._wire(); this.applySettings();
     try{ const n=LS&&LS.getItem('silos.lastName'); if(n) this.ui.$('nameIn').value=n; }catch(e){}
     this.ui.show('menu'); this.ui.setHUD(false);
     if(/[?&]espectador\b/.test(location.search)) this.spectator.enter();   // link direto: .../index.html?espectador
+    if(/[?&]diag\b/.test(location.search)) this.perf.toggle(true);         // modo de diagnóstico (também F3)
     // setAnimationLoop: igual ao requestAnimationFrame no monitor, e o único jeito de desenhar no headset
     this.last=performance.now(); r.setAnimationLoop(t=>this._loop(t));
   }
   // ---------- configurações ----------
   applySettings(){
     const s=this.settings.data;
-    this.camera.fov=s.fov; this.camera.aspect=innerWidth/innerHeight; this.camera.updateProjectionMatrix();
-    const pr={low:.6,medium:1,high:Math.min(window.devicePixelRatio||1,2)}[s.quality]||1;
+    this.camera.fov=s.fov; this.camera.aspect=innerWidth/innerHeight;
+    const p=this.applyRenderProfile();
+    const pr=Math.min(p.pixelRatio?p.pixelRatio[s.quality]||1:1,window.devicePixelRatio||1);
     if(!this.renderer.xr.isPresenting){ this.renderer.setPixelRatio(pr); this.renderer.setSize(innerWidth,innerHeight); }
     this.renderer.domElement.style.filter=`brightness(${s.brightness})`;
-    this.atmosphere.setLightCount(s.quality==='low'?3:5);
     applyTextureQuality(this.renderer,s.quality);   // filtragem anisotrópica das paredes (assets.js)
     this.audio.apply(s);
   }
+  // perfil de renderização (js/core/renderConfig.js): PC ou VR, qualidade e distância de visão → câmera, neblina, luzes e setores
+  applyRenderProfile(){
+    // ?perfil=vr: usa o perfil do VR na tela do PC (comparar custos no mesmo hardware; tools/perf_bench.js --query perfil=vr)
+    const vr=(this.vr&&this.vr.active)||/[?&]perfil=vr\b/.test(location.search);
+    const p=this.renderProfile=RenderProfile.resolve(this.settings.data,vr);
+    if(!(this.spectator&&this.spectator.active)){ this.camera.far=p.far; }
+    this.camera.updateProjectionMatrix();
+    this.atmosphere.setProfile(p); this.sectors.setProfile(p);
+    return p;
+  }
+  // ---------- console do desenvolvedor ----------
+  openDevConsole(){
+    if(!this.settings.data.devConsoleEnabled||this.vr.active||this.ui.$('devConsole').hidden===false) return;
+    if(!['play','paused','menu'].includes(this.state)) return;
+    this.devConsoleReturnState=this.state; this._devConsoleWasPlaying=this.state==='play';
+    if(this._devConsoleWasPlaying){ this.state='console'; this.timer.pause(); this._lockGuard=performance.now()+500; this.unlock(); }
+    this.keys={}; this.ui.$('devConsole').hidden=false; this.ui.$('devConsoleInput').focus();
+  }
+  closeDevConsole(){
+    const panel=this.ui.$('devConsole'); if(panel.hidden) return;
+    panel.hidden=true;
+    if(this._devConsoleWasPlaying){ this.state='play'; this.timer.resume(); this._lockGuard=performance.now()+500; this.lock(); }
+    else this.state=this.devConsoleReturnState||this.state;
+    this.devConsoleReturnState=null; this._devConsoleWasPlaying=false;
+  }
+  toggleDevConsole(){ if(this.ui.$('devConsole').hidden) this.openDevConsole(); else this.closeDevConsole(); }
+  clearDevConsoleOutput(){ this.ui.$('devConsoleOutput').textContent=''; }
   // ---------- fluxo ----------
   tryStart(vr){
     const v=this.ui.validateName(this.ui.$('nameIn').value);
@@ -71,7 +109,7 @@ class Game{
   beginPlay(){
     this.state='play'; this.timer.start(); this.ui.hideScreens(); this.ui.setHUD(true); this.vr.closeMenu();
     this.audio.setHum(1); this.lock();
-    this.ui.msg(this.vr.active?'Leve a mão até uma saliência e aperte o grip para agarrar. Puxe o braço para baixo para subir.'
+    this.ui.msg(this._startTip=this.vr.active?'Leve a mão até uma saliência e aperte o grip para agarrar. Puxe o braço para baixo para subir.'
       :'Olhe para uma saliência e segure o botão do mouse para agarrar.',5);
   }
   retry(){ this.audio.init(); this.resetRun(); if(this.vr.active) this.vr.recenter(); this.ui.hideScreens(); this.beginPlay(); }
@@ -79,14 +117,38 @@ class Game{
     this.state='menu'; this.unlock(); this.resetRun(); this.ui.clearMsg(); this.ui.setHUD(false); this.ui.show('menu');
     this.audio.setRumble(.03); this.audio.setTension(0);
   }
+  returnFromSpectator(previousState){
+    if(previousState==='play'){
+      this.state='play'; this.ui.hideScreens(); this.ui.setHUD(true); this.player.viewmodelVisible=true; this.player.updateViewmodel();
+      this.timer.resume(); this.lock(); return;
+    }
+    if(previousState==='paused'){
+      this.state='paused'; this.ui.setHUD(true); this.ui.show('pause'); return;
+    }
+    if(previousState==='menu'){
+      this.state='menu'; this.ui.setHUD(false); this.ui.show('menu'); return;
+    }
+    this.toMenu();
+  }
   pause(){
     if(this.state!=='play') return;
-    this.state='paused'; this.timer.pause(); this.player.releaseAll(); this.items.use(false); this.keys={};
+    this.state='paused'; this._resuming=false; this.timer.pause(); this.player.releaseAll(); this.items.use(false); this.keys={};
     this.ui.setPack(false);
-    this.unlock(); this.ui.clearMsg(); this.ui.show('pause'); this.audio.setRumble(.02); this.pausedAt=performance.now();
+    this.unlock(); this.ui.clearMsg(); this.ui.$('pauseErr').textContent=''; this.ui.show('pause'); this.audio.setRumble(.02); this.pausedAt=performance.now();
     if(this.vr.active) this.vr.showPause();
   }
-  resume(){ if(this.state!=='paused') return; this.ui.hideScreens(); this.vr.closeMenu(); this.state='play'; this.timer.resume(); this.lock(); }
+  // Desktop: a partida só volta quando o navegador CONFIRMA a captura do mouse (pointerlockchange → _resumeNow);
+  // se ele recusar (pointerlockerror → _lockFailed), continua pausada e a tela diz o que fazer.
+  // Em VR, sem suporte a Pointer Lock ou com o mouse já capturado, volta direto.
+  resume(){
+    if(this.state!=='paused') return;
+    if(this.vr.busy||!this.canLock()||this.locked()){ this._resumeNow(); return; }
+    this._resuming=true; this.lock();
+  }
+  _resumeNow(){
+    this._resuming=false; this.ui.hideScreens(); this.vr.closeMenu(); this.state='play'; this.timer.resume();
+    if(this.timer.time<1&&this._startTip) this.ui.msg(this._startTip,5);   // a captura falhou logo no início: a dica de como agarrar volta
+  }
   // ---------- inventário (mochila circular) ----------
   // Abrir congela a partida (nenhum sistema com tempo roda no estado 'inventory'), solta o mouse para a interface
   // e NÃO solta as mãos: a escalada continua exatamente como estava ao fechar.
@@ -115,6 +177,7 @@ class Game{
     if(this.state!=='play') return;
     this.state='ending'; this.result=result; this.timer.finish();
     const breakdown=this.score.finalize(result,this.timer.time,this.player);
+    this.player.attributes.clearPerks();
     this.player.releaseAll(); this.unlock(); this.ui.hideNote(); this.ui.setPack(false); this.ui.clearMsg();
     this.audio.siren(false);
     if(result==='finish') this.audio.chime(); else this.audio.boom();
@@ -131,10 +194,25 @@ class Game{
     this.ui.$('resSaved').textContent=this.savedIndex>=0?`Posição ${this.savedIndex+1} no ranking.`:'Fora do top 20.';
   }
   showRanking(from){ this.rankReturn=from; this.ui.renderRanking(this.ranking.top(10),from==='result'?this.savedIndex:-1); this.ui.show('ranking'); }
-  // ---------- ponteiro ----------
-  lock(){ const el=this.renderer.domElement; if(!el.requestPointerLock||this.vr.busy) return;
-    try{ const p=el.requestPointerLock(); if(p&&p.catch) p.catch(()=>{}); }catch(e){} }
+  // ---------- ponteiro (Pointer Lock) ----------
+  // Único lugar que pede e solta a captura. "Capturado" só vale com a confirmação do navegador (locked());
+  // a recusa chega como pointerlockerror e cai em _lockFailed. _lockReq evita pedidos duplicados enquanto um está pendente.
+  canLock(){ return !!this.renderer.domElement.requestPointerLock; }
+  locked(){ return document.pointerLockElement===this.renderer.domElement; }
+  lock(){
+    if(!this.canLock()||this.vr.busy||this.locked()||(this._lockReq&&performance.now()-this._lockReq<1000)) return;
+    this._lockReq=performance.now();
+    try{ const p=this.renderer.domElement.requestPointerLock(); if(p&&p.catch) p.catch(()=>{}); }catch(e){ this._lockFailed(); }
+  }
   unlock(){ try{ if(document.pointerLockElement) document.exitPointerLock(); }catch(e){} }
+  // Recusa (sem gesto do usuário, Esc apertado há pouco, janela sem foco…): nunca se joga com o cursor solto.
+  // A partida pausa (ou continua pausada) com o aviso; o botão Continuar é a ação explícita para tentar de novo.
+  _lockFailed(){
+    this._lockReq=0; if(this.locked()) return;
+    if(this.state==='play'&&!this.vr.busy) this.pause();
+    if(this.state!=='paused') return;
+    this._resuming=false; this.ui.$('pauseErr').textContent='O navegador não capturou o mouse. Clique em Continuar para jogar.';
+  }
   // ---------- VR ----------
   // menu do sistema do Quest aberto (botão Meta): pausa; ao voltar, o menu de pausa em VR está lá
   onVRVisibility(vis){ if(vis!=='visible'&&this.state==='play') this.pause(); }
@@ -167,7 +245,27 @@ class Game{
     $('btnPauseSettings').onclick=()=>{ this.settingsReturn='pause'; this.ui.show('settings'); };
     $('btnSetBack').onclick=()=>this.ui.show(this.settingsReturn);
     $('btnRanking').onclick=()=>this.showRanking('menu');
-    $('btnSpectate').onclick=()=>this.spectator.enter();
+    const devInput=$('devConsoleInput'),devOutput=$('devConsoleOutput');
+    const runDevCommand=()=>{
+      const raw=devInput.value.trim(); if(!raw) return;
+      this.devCommandHistory.push(raw); if(this.devCommandHistory.length>50) this.devCommandHistory.shift();
+      this.devHistoryIndex=this.devCommandHistory.length; this.devHistoryDraft='';
+      const result=DevConsole.execute(raw,this);
+      devOutput.textContent+=`\n> ${raw}\n${result}`;
+      const lines=devOutput.textContent.split('\n'); if(lines.length>80) devOutput.textContent=lines.slice(-80).join('\n');
+      devOutput.scrollTop=devOutput.scrollHeight; devInput.value='';
+    };
+    $('devConsoleForm').addEventListener('submit',e=>{e.preventDefault();runDevCommand();});
+    $('devConsoleClose').onclick=()=>this.closeDevConsole();
+    devInput.addEventListener('keydown',e=>{
+      if(e.key==='ArrowUp'){
+        e.preventDefault(); if(this.devHistoryIndex===this.devCommandHistory.length) this.devHistoryDraft=devInput.value;
+        this.devHistoryIndex=Math.max(0,this.devHistoryIndex-1); devInput.value=this.devCommandHistory[this.devHistoryIndex]||'';
+      }else if(e.key==='ArrowDown'){
+        e.preventDefault(); this.devHistoryIndex=Math.min(this.devCommandHistory.length,this.devHistoryIndex+1);
+        devInput.value=this.devHistoryIndex===this.devCommandHistory.length?this.devHistoryDraft:(this.devCommandHistory[this.devHistoryIndex]||'');
+      }
+    });
     $('btnResRanking').onclick=()=>this.showRanking('result');
     $('btnRankBack').onclick=()=>this.ui.show(this.rankReturn||'menu');
     $('btnQuit').onclick=()=>this.ui.show('quit');
@@ -186,36 +284,51 @@ class Game{
     // em VR a janela perde o foco e o ponteiro ao entrar no headset: isso não é pausa
     addEventListener('blur',()=>{ this.keys={}; if(this.state==='play'&&!this.vr.busy) this.pause(); });
     document.addEventListener('pointerlockchange',()=>{
-      const locked=document.pointerLockElement===this.renderer.domElement;
+      const locked=this.locked(); if(locked) this._lockReq=0;
+      if(locked&&this.state==='paused'&&this._resuming) this._resumeNow();          // retomada: só agora, com a captura confirmada
+      else if(locked&&this.state!=='play'&&this.state!=='spectate') this.unlock();   // confirmação atrasada (ex.: Tab duas vezes): menus e mochila precisam do cursor
       // abrir/fechar a mochila troca o Pointer Lock de propósito: isso nunca é um pedido de pausa
       if(!locked&&this.wasLocked&&this.state==='play'&&!this.vr.busy&&performance.now()>this._lockGuard) this.pause();
       if(!locked&&this.wasLocked&&this.state==='spectate') this.spectator.exit();
       this.wasLocked=locked;
     });
-    addEventListener('mousemove',e=>{ if(this.state==='play') this.player.look(e.movementX||0,e.movementY||0,this.settings.data); else if(this.state==='spectate'&&document.pointerLockElement) this.spectator.look(e.movementX||0,e.movementY||0); });
+    document.addEventListener('pointerlockerror',()=>this._lockFailed());
+    // a câmera só segue o mouse capturado: com o cursor solto (captura pendente) o movimento é do cursor, não da vista
+    addEventListener('mousemove',e=>{
+      if(this.state==='play'){ if(this.locked()||this.vr.busy||!this.canLock()) this.player.look(e.movementX||0,e.movementY||0,this.settings.data); }
+      else if(this.state==='spectate'&&this.locked()) this.spectator.look(e.movementX||0,e.movementY||0);
+    });
     this.renderer.domElement.addEventListener('mousedown',e=>{
-      if(this.state==='spectate'){ if(!document.pointerLockElement) this.lock(); return; }
+      if(this.state==='spectate'){ if(!this.locked()) this.lock(); return; }
       if(this.state!=='play') return;
-      if(!document.pointerLockElement) this.lock();
+      if(!this.locked()&&this.canLock()&&!this.vr.busy){ this.lock(); return; }   // clique com o cursor solto só recaptura: não agarra nem usa item
       if(e.button===0&&this.interaction.keypadAimed()){ this.interact(0); return; }   // painel de senha: clique aperta o número
       this.gameBtn[e.button]=true;
-      if(e.button===0) this.player.setGrab(0,true);
-      else if(e.button===2){ if(this.items.equipped) this.items.use(true); else this.player.setGrab(1,true); }
+      if(e.button===0){ if(this.items.equippedFor('left')) this.items.useHand('left',true); else this.player.setGrab(0,true); }
+      else if(e.button===2){ if(this.items.equippedFor('right')) this.items.useHand('right',true); else this.player.setGrab(1,true); }
     });
     addEventListener('mouseup',e=>{
       // só solta o que um clique de partida segurou: cliques e arrastos na mochila não soltam as mãos
       if(!this.gameBtn[e.button]) return;
       this.gameBtn[e.button]=false;
-      if(e.button===0) this.player.setGrab(0,false); else if(e.button===2){ this.items.use(false); this.player.setGrab(1,false); }
+      if(e.button===0){ if(this.items.equippedFor('left')) this.items.useHand('left',false); else this.player.setGrab(0,false); }
+      else if(e.button===2){ if(this.items.equippedFor('right')) this.items.useHand('right',false); else this.player.setGrab(1,false); }
     });
     addEventListener('wheel',e=>{ if(this.state==='play'&&Math.abs(e.deltaY)>4) this.items.cycle(e.deltaY>0?1:-1); else if(this.state==='spectate'&&Math.abs(e.deltaY)>4) this.spectator.wheel(e.deltaY); },{passive:true});
     addEventListener('keydown',e=>{
+      if(e.code==='Backquote'&&this.settings.data.devConsoleEnabled&&!this.vr.active){ e.preventDefault(); this.toggleDevConsole(); return; }
+      if(!this.ui.$('devConsole').hidden){
+        if(e.code==='Escape'){ e.preventDefault(); this.closeDevConsole(); }
+        return;
+      }
       if(e.code==='F2'&&this.state==='menu'&&!this.ui.$('menu').hidden){ e.preventDefault(); this.spectator.enter(); return; }   // atalho do modo espectador
+      if(e.code==='F3'){ e.preventDefault(); if(!e.repeat) this.perf.toggle(); return; }                                         // diagnóstico de desempenho
       const typing=e.target&&e.target.tagName==='INPUT'&&e.target.type==='text';
       if(typing) return;
       if(this.state==='intro'){ if(['Space','Escape','Enter'].includes(e.code)){ e.preventDefault(); this.cinematic.skip(); } return; }
       if(this.state==='inventory'){ this._inventoryKey(e); return; }
-      if(this.state==='paused'&&(e.code==='Escape'||e.code==='KeyP')&&!this.ui.$('pause').hidden){ if(performance.now()-(this.pausedAt||0)>350) this.resume(); return; }
+      // Esc/P retomam (Esc não conta como gesto para o navegador: se ele recusar a captura, a pausa avisa); repetição do teclado não alterna
+      if(this.state==='paused'&&(e.code==='Escape'||e.code==='KeyP')&&!this.ui.$('pause').hidden){ if(!e.repeat&&performance.now()-(this.pausedAt||0)>350) this.resume(); return; }
       if(this.state==='spectate'){ this.keys[e.code]=true; this.spectator.key(e); return; }
       if(this.state!=='play') return;
       this.keys[e.code]=true;
@@ -224,10 +337,10 @@ class Game{
       if(e.repeat) return;
       if(qk>=0){ this.items.selectQuick(qk); return; }
       switch(e.code){
-        case 'Space': this.player.jump(); break;
+        case 'Space': this.player.jump({x:(this.keys.KeyD?1:0)-(this.keys.KeyA?1:0),y:(this.keys.KeyW?1:0)-(this.keys.KeyS?1:0)}); break;
         case 'KeyF': this.interact(); break;
         case 'KeyQ': this.items.quick('pills'); break;
-        case 'KeyX': this.items.holster(); break;
+        case 'KeyX': this.items.holsterAll(); break;
         case 'Tab': this.openInventory(); break;   // alterna: a mochila é interativa e precisa do mouse solto
         case 'Escape': case 'KeyP': this.pause(); break;
       }
@@ -248,13 +361,14 @@ class Game{
     p.on('mantle',()=>a.noise(.15,500,.28));
     p.on('land',v=>a.land(v));
     p.on('nailPop',()=>{ ui.msg('O prego solto escapou da parede.',1.8); a.noise(.1,2600,.15); });
+    p.on('windTear',()=>{ ui.msg('O vento arrancou suas mãos da parede.',2); a.whoosh(); });
     this.world.onCrumble=o=>{ if(o.userData.type==='nail') this.player.emit('nailPop'); else a.crack(); };
     this.world.onSecretRevealed=()=>{ this.score.onSecret(300); };
     this.world.onMazeEvent=ev=>{ if(ev==='countdown'){ ui.msg('A tela começou a falhar. Memorize a rota.',3); a.buzz(); } else if(ev==='dark'){ ui.msg('A tela apagou. Agora é de memória.',3); a.buzz(); } };
   }
   // ---------- loop ----------
   _loop(now){
-    const dt=Math.min(.05,(now-this.last)/1000); this.last=now; this.vt+=dt;
+    const dt=Math.min(.05,(now-this.last)/1000), t0=performance.now(); this.last=now; this.vt+=dt;
     try{
       if(this.state==='play') this._play(dt);
       else if(this.state==='intro'){ this.cinematic.update(dt); this._ambient(dt,false); }
@@ -265,10 +379,20 @@ class Game{
       this.mass.visual(this.vt);
       this.ui.tick(dt);
       if(this.vr.active){ if(this.state!=='play') this.vr.idle(dt); this.vr.updatePanel(this.ui); }
+      this.sectors.update(dt);   // depois de mover câmera/jogador: a janela segue os olhos deste quadro
       this.renderer.render(this.scene,this.camera);
+      this.perf.frame(performance.now()-t0);
     }catch(err){ console.error(err); }
   }
-  _ambient(dt,playing){ this.fx.update(dt); this.atmosphere.update(dt,{player:this.player,world:this.world,mass:this.mass,state:this.getUIState(),playing}); }
+  _ambient(dt,playing){ this.fx.update(dt); this.audio.setWind(0); this.atmosphere.update(dt,{player:this.player,world:this.world,mass:this.mass,state:this.getUIState(),playing}); }
+  // vento dos ventiladores: som, poeira levada pelo fluxo e um aviso na primeira vez que ele pega o jogador
+  _windFx(dt){
+    const p=this.player, lvl=p.windLevel||0, a=p.windAir;
+    this.audio.setWind(lvl);
+    if(a&&Math.random()<dt*(6+lvl*40)){ const q=p.position, r=()=>(Math.random()-.5)*2.4; this.fx.spawn('air',new V3(q.x+r(),q.y+.3+Math.random()*2.2,q.z+r()),a,1); }
+    if(lvl>.3&&!this._windWarned){ this._windWarned=true; this.ui.msg(p.windFan&&p.windFan.mode==='pull'?'O ar puxa você para cima, na direção do exaustor.':'O fluxo de ar empurra você para cima.',3); }
+    if(lvl<.05) this._windWarned=false;
+  }
   _menuCam(dt){
     if(this.vr.active){ this.vr.place(); return; }
     this.menuT+=dt; const sp=this.world.spawnPoint, c=this.camera;
@@ -281,6 +405,7 @@ class Game{
     if(this.vr.active){ this.vr.update(dt); if(this.state!=='play') return; input=this.vr.input; }
     this.world.update(dt,this.player);
     this.player.update(dt,input);
+    this._windFx(dt);
     this.items.update(dt); this.fx.update(dt);
     this.timer.update(dt);
     this.puzzles.update(dt);

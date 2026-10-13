@@ -216,6 +216,9 @@ const TEX={}, MAT={}, GEO={}, FINISH={}, UVSCALE_MATS=new Set();
   MAT.socketUsed=new THREE.MeshBasicMaterial({color:0x55c46a});
   [MAT.foundry,MAT.paperWall].forEach(m=>UVSCALE_MATS.add(m));
   MAT.crack=new THREE.MeshBasicMaterial({color:0x1a1814});
+  // rachadura profunda (Climbs.js): o fundo da fenda quase preto e as bordas lascadas, mais claras, que pegam a luz
+  MAT.crackDeep=new THREE.MeshBasicMaterial({color:0x0b0a09,side:THREE.DoubleSide});
+  MAT.crackLip=new THREE.MeshStandardMaterial({color:0x4a4640,roughness:1,side:THREE.DoubleSide});
   MAT.bolt=new THREE.MeshStandardMaterial({color:0x6b5a44,roughness:.6,metalness:.6});
   MAT.grate=new THREE.MeshStandardMaterial({map:TEX.grate,alphaTest:.5,side:THREE.DoubleSide,metalness:.5,roughness:.6});
   MAT.rust=new THREE.MeshStandardMaterial({color:0x8a4a22,roughness:.7,metalness:.4});

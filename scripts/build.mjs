@@ -19,7 +19,10 @@ const THREE_FILES = [
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
-for (const dir of ['css', 'js', 'assets']) cpSync(join(root, dir), join(out, dir), { recursive: true });
+// os .glb originais do mapa não vão para o deploy quando existe a cópia otimizada (assets/models/map/otimizados)
+const mapDir = join(root, 'assets/models/map');
+const skip = src => dirname(src) === mapDir && src.endsWith('.glb') && existsSync(join(mapDir, 'otimizados', src.slice(mapDir.length + 1)));
+for (const dir of ['css', 'js', 'assets']) cpSync(join(root, dir), join(out, dir), { recursive: true, filter: src => !skip(src) });
 
 for (const f of THREE_FILES) {
   const src = join(root, 'node_modules/three', f);

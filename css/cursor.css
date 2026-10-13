@@ -1,0 +1,21 @@
+/* ---------- cursor de interação: mão petrificada ---------- */
+/* Sprites gerados por scripts/cursor.mjs (1x 24×40, 2x 48×80); hotspot 8 0 = ponta do indicador.
+   Se mudar o tamanho no script, atualize aqui o hotspot e as medidas de .stone-hand. */
+
+/* Mouse livre (menus, mochila): só onde há algo para clicar, no lugar do cursor:pointer/grab de screens.css e
+   inventory.css (mesma especificidade ou maior, carregado depois). O resto da tela mantém o cursor do sistema.
+   Com o Pointer Lock ativo o navegador esconde qualquer cursor: nada a fazer aqui.
+   Primeiro a imagem simples (todos os navegadores); o image-set, quando suportado, escolhe o 2x em telas densas. */
+.mbtn:not(:disabled), #packWrap .ps, #packWrap .ps.store, #packWrap .pclr, #packClose{
+  cursor:url("../assets/ponteiro/cursor_silo_1x.png") 8 0, pointer;
+  cursor:image-set(url("../assets/ponteiro/cursor_silo_1x.png") 1x, url("../assets/ponteiro/cursor_silo_2x.png") 2x) 8 0, pointer;
+}
+
+/* Mouse capturado: a retícula (UIManager.setReticle) troca o anel pela mão quando há interação disponível
+   (modos pickup e panel). A ponta do indicador fica no centro de #ring (12,12), que é o centro da tela,
+   onde o raio de mira sai. Está dentro do #hud (pointer-events:none): não recebe cliques nem afeta a mira. */
+#ring{ position:relative; }
+#ring .stone-hand{ position:absolute; left:4px; top:12px; width:24px; height:40px;
+  background:url("../assets/ponteiro/cursor_silo_1x.png") 0 0/100% 100% no-repeat;
+  background-image:image-set(url("../assets/ponteiro/cursor_silo_1x.png") 1x, url("../assets/ponteiro/cursor_silo_2x.png") 2x);
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.8)); }

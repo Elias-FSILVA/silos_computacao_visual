@@ -25,6 +25,10 @@ class AudioManager{
     this.humG=c.createGain(); this.humG.gain.value=0;
     [[58,'sine'],[117,'triangle']].forEach(([f,t])=>{ const o=c.createOscillator(); o.type=t; o.frequency.value=f; o.connect(this.humG); o.start(); });
     this.humG.connect(this.sfx);
+    // vento dos ventiladores (efeitos): ruído branco filtrado, volume e brilho seguem a força do fluxo
+    const ws=c.createBufferSource(); ws.buffer=this.white; ws.loop=true;
+    this.windF=c.createBiquadFilter(); this.windF.type='bandpass'; this.windF.frequency.value=380; this.windF.Q.value=.6;
+    this.windG=c.createGain(); this.windG.gain.value=0; ws.connect(this.windF).connect(this.windG).connect(this.sfx); ws.start();
     // drone (música)
     this.droneF=c.createBiquadFilter(); this.droneF.type='lowpass'; this.droneF.frequency.value=260;
     this.droneG=c.createGain(); this.droneG.gain.value=.05;
@@ -41,6 +45,7 @@ class AudioManager{
   rumbleBurst(d){ if(!this.ctx) return; const t=this.now; this.burstUntil=t+d;
     this.rumbleG.gain.cancelScheduledValues(t); this.rumbleG.gain.setTargetAtTime(.95,t,.25); this.rumbleG.gain.setTargetAtTime(.04,t+d*.7,.4); }
   setHum(x){ if(this.ctx) this.humG.gain.setTargetAtTime(.012*x,this.now,.4); }
+  setWind(x){ if(!this.ctx) return; x=clamp(x,0,1.2); this.windG.gain.setTargetAtTime(.22*x,this.now,.25); this.windF.frequency.setTargetAtTime(300+x*900,this.now,.3); }
   setTension(x){ if(!this.ctx) return; this.droneF.frequency.setTargetAtTime(260+x*700,this.now,.5); this.droneG.gain.setTargetAtTime(.05+x*.06,this.now,.5); }
   noise(dur,freq,vol,type='bandpass',q=1,delay=0){
     if(!this.ctx) return; const c=this.ctx, t=c.currentTime+delay, s=c.createBufferSource(); s.buffer=this.white;

@@ -1,11 +1,12 @@
 'use strict';
 // ============================================================================
-// js/world/Halls.js — os três DESTINOS (salas grandes), ramais opcionais e portas animadas.
-// Estende World.prototype (World.js). Cada salão fica numa parede diferente do poço, formando uma árvore:
-//   tronco (poço) → braço de entrada (H) → SALÃO (14 m de pé-direito, galeria a H+10) → braço de saída (H+10) → poço.
-// Coordenadas locais do salão: u = distância a partir do eixo do poço para fora · v = lateral · y = altura.
+// js/world/Halls.js — os três DESTINOS (salas grandes), ramais opcionais (câmaras curvas) e portas animadas.
+// Estende World.prototype (World.js). As salas grandes ficam no corpo do silo, numa direção cardeal a partir do poço:
+//   poço (cilindro) → braço radial de entrada (H) → SALÃO (14 m de pé-direito, galeria a H+10) → braço de saída (H+10) → poço.
+// A Estufa é um setor do Pátio das Máquinas (Sectors.js): entra-se pelo anel, e o ciclo completo solta o freio do elevador.
+// Coordenadas locais (referencial World._fr(θ)): u = distância ao eixo do poço · v = lateral · y = altura.
 // ============================================================================
-class Door{   // porta deslizante que bloqueia (AABB em world.platforms) enquanto fechada
+class Door{   // porta deslizante que bloqueia (sólido em world.platforms) enquanto fechada; abre subindo
   constructor(world,mesh,pd,dy,dur=1.2){ this.world=world; this.mesh=mesh; this.pd=pd; this.y0=mesh.position.y; this.dy=dy; this.open=false; this.k=0; this.dur=dur; this.moving=false; }
   set(open,instant){
     if(open===this.open&&!this.moving) return; this.open=open;
@@ -18,22 +19,11 @@ class Door{   // porta deslizante que bloqueia (AABB em world.platforms) enquant
 }
 
 Object.assign(World.prototype,{
-  // ---------- referencial local ----------
-  _fr(axis,s){
-    return { axis,s,
-      p:(u,y,v)=>axis==='x'?new V3(s*u,y,v):new V3(v,y,s*u),
-      box:(u0,u1,v0,v1)=>axis==='x'?[Math.min(s*u0,s*u1),Math.max(s*u0,s*u1),v0,v1]:[v0,v1,Math.min(s*u0,s*u1),Math.max(s*u0,s*u1)],
-      yaw:(du,dv)=>{ const dx=axis==='x'?s*du:dv, dz=axis==='x'?dv:s*du; return Math.atan2(dx,dz); },   // faz o +z do objeto olhar para a direção local (du,dv)
-      n:(nu,nv)=>axis==='x'?new V3(s*nu,0,nv):new V3(nv,0,s*nu)                                          // normal local → mundo
-    };
-  },
-  _fb(fr,u0,u1,v0,v1,y0,y1,mat,o={}){ const [x0,x1,z0,z1]=fr.box(u0,u1,v0,v1); return this._box(x0,x1,y0,y1,z0,z1,mat,o); },
-  _fblock(fr,u0,u1,v0,v1,bottom,top,o){ const [x0,x1,z0,z1]=fr.box(u0,u1,v0,v1); return this._block(x0,x1,z0,z1,bottom,top,o); },
-  _fmesh(fr,geo,mat,u,y,v,yawDu,yawDv,parent){ const m=new THREE.Mesh(geo,mat); m.position.copy(fr.p(u,y,v)); if(yawDu!=null) m.rotation.y=fr.yaw(yawDu,yawDv); (parent||this.root).add(m); return m; },
-  // agarra num ponto qualquer, com normal local (nu,nv)
+  // (o referencial local _fr(θ) e as caixas _fb/_fblock/_fmesh ficam em World.js: valem para qualquer direção)
+  // agarra num ponto qualquer, com normal local (nu,nv) — o eixo longo do tijolo fica sempre deitado na parede
   _fhold(fr,u,y,v,nu,nv,crumble){
-    const n=fr.n(nu,nv), p=fr.p(u,y,v), m=new THREE.Mesh(Math.abs(n.x)>.5?GEO.holdX:GEO.holdZ,crumble?MAT.crumble:MAT.holdBrick);
-    m.position.set(p.x+n.x*.1,y,p.z+n.z*.1); if(Math.abs(n.x)>.5) m.rotation.x=this.rand(-.25,.25); else m.rotation.z=this.rand(-.25,.25);
+    const n=fr.n(nu,nv), p=fr.p(u,y,v), m=new THREE.Mesh(GEO.holdX,crumble?MAT.crumble:MAT.holdBrick);
+    m.position.set(p.x+n.x*.1,y,p.z+n.z*.1); m.rotation.order='YXZ'; m.rotation.set(this.rand(-.25,.25),-Math.atan2(n.z,n.x),0);
     m.userData={grab:true,type:'hold',crumble:!!crumble,alive:true,wallNormal:n}; this.root.add(m); this.grabbables.push(m); return m;
   },
   // soquete de prego numa parede do salão (wall ∈ far|near|left|right, t = coordenada ao longo da parede)
@@ -83,61 +73,66 @@ Object.assign(World.prototype,{
   _lampBar(fr,u,y,v,len,mat,alongV=true){ const m=this._fmesh(fr,new THREE.BoxGeometry(alongV?.1:len,.08,alongV?len:.1),mat,u,y,v); m.userData={type:'lamp'}; return m; },
 
   // =====================================================================================
-  // Casca comum de um salão: braços de entrada/saída, paredes (com recortes), teto, galeria em anel e linha de escalada.
+  // Casca comum de um salão (direção cardeal cfg.theta): braços de entrada/saída até a parede curva do poço, paredes
+  // (com recortes), teto, galeria em anel e linha de escalada. Com cfg.hub o salão é um setor do Pátio das Máquinas:
+  // sem braços nem galeria — só uma porta na parede próxima, que dá para o anel.
   // Retorna o objeto de descrição do salão (zonas, referências para a lógica do puzzle).
   // =====================================================================================
   _hallShell(cfg,mats){
-    const G=HALL_GEO, fr=this._fr(cfg.axis,cfg.s), H=cfg.H, m=cfg.m, t=G.t, V=G.V, climbV=cfg.climbV||0;
-    const uN=4.5+G.arm, uF=uN+G.D, vin=1.8*m, vout=-1.8*m, aw=G.armW/2, ah=G.armH;
-    const g={fr,H,m,uN,uF,V,vin,vout,h:G.h,mats};
+    const G=HALL_GEO, fr=this._fr(cfg.theta), H=cfg.H, m=cfg.m, t=G.t, V=G.V, climbV=cfg.climbV||0, hub=!!cfg.hub;
+    const uN=4.5+G.arm, uF=uN+G.D, vin=1.8*m, vout=-1.8*m, aw=G.armW/2, ah=G.armH, gy=G.gallY;
+    const g={fr,H,m,uN,uF,V,vin,vout,h:G.h,mats,hub};
     const W1=mats.wall, FL=mats.floor, CE=mats.ceil||mats.wall, sf=SURFACE.concrete;
-    // chão do salão e do braço de entrada
-    this._fb(fr,uN-t,uF+t,-V-t,V+t,H-.3,H,FL,{kind:'floor',interactable:sf});
-    this._fb(fr,4.0,uN,vin-aw-t,vin+aw+t,H-.3,H,FL,{kind:'floor'});
-    // braço de entrada: paredes laterais e teto
-    this._fb(fr,4.5,uN,vin-aw-t,vin-aw,H,H+ah+t,W1,{interactable:sf}); this._fb(fr,4.5,uN,vin+aw,vin+aw+t,H,H+ah+t,W1,{interactable:sf});
-    this._fb(fr,4.5,uN,vin-aw-t,vin+aw+t,H+ah,H+ah+t,CE,{cut:true});
-    // braço de saída (nível da galeria)
-    const gy=G.gallY;
-    this._fb(fr,4.0,uN,vout-aw-t,vout+aw+t,H+gy-.3,H+gy,FL,{kind:'floor'});
-    this._fb(fr,4.5,uN,vout-aw-t,vout-aw,H+gy,H+gy+ah+t,W1,{interactable:sf}); this._fb(fr,4.5,uN,vout+aw,vout+aw+t,H+gy,H+gy+ah+t,W1,{interactable:sf});
-    this._fb(fr,4.5,uN,vout-aw-t,vout+aw+t,H+gy+ah,H+gy+ah+t,CE,{cut:true});
-    // parede próxima (com as duas aberturas dos braços), parede do fundo, laterais e teto
-    this._fwall(fr,uN-t,uN,-V-t,V+t,H,H+G.h+t,[{v0:vin-aw,v1:vin+aw,y0:H,y1:H+ah},{v0:vout-aw,v1:vout+aw,y0:H+gy,y1:H+gy+ah}],W1,{interactable:sf,cut:true});
+    // onde uma parede de braço (faixa lateral [p,q]) encontra a face interna do poço, sem invadir: |v| mais perto do eixo
+    const uw=(p,q)=>{ const v=p<=0&&q>=0?0:Math.min(Math.abs(p),Math.abs(q)); return Math.sqrt(Math.max(0,SHAFT_R*SHAFT_R-v*v))-.02; };
+    const arm=(vc,y)=>{
+      this._fb(fr,SHAFT_R,uN,vc-aw-t,vc+aw+t,y-.3,y-.005,FL,{kind:'floor',flat:true});
+      this._fb(fr,uw(vc-aw-t,vc-aw),uN,vc-aw-t,vc-aw,y,y+ah+t,W1,{interactable:sf}); this._fb(fr,uw(vc+aw,vc+aw+t),uN,vc+aw,vc+aw+t,y,y+ah+t,W1,{interactable:sf});
+      this._fb(fr,uw(vc-aw-t,vc+aw+t),uN,vc-aw-t,vc+aw+t,y+ah,y+ah+t,CE,{cut:true});
+    };
+    // chão do salão
+    this._fb(fr,uN-t,uF+t,-V-t,V+t,H-.3,H,FL,{kind:'floor',interactable:sf,flat:true});
+    const holes=[{v0:vin-aw,v1:vin+aw,y0:H,y1:H+ah}];
+    if(!hub){ arm(vin,H); arm(vout,H+gy); holes.push({v0:vout-aw,v1:vout+aw,y0:H+gy,y1:H+gy+ah}); }
+    // parede próxima (com as aberturas), parede do fundo, laterais e teto
+    this._fwall(fr,uN-t,uN,-V-t,V+t,H,H+G.h+t,holes,W1,{interactable:sf,cut:true});
     this._fb(fr,uF,uF+t,-V-t,V+t,H,H+G.h+t,W1,{interactable:sf,cut:true});
     this._fb(fr,uN,uF,-V-t,-V,H,H+G.h+t,W1,{interactable:sf,cut:true}); this._fb(fr,uN,uF,V,V+t,H,H+G.h+t,W1,{interactable:sf,cut:true});
     this._fb(fr,uN-t,uF+t,-V-t,V+t,H+G.h,H+G.h+t,CE,{cut:true});
+    g.zoneRoom=(()=>{ const [x0,x1,z0,z1]=fr.box(uN+.5,uF+t,-V-t,V+t); return {minX:x0,maxX:x1,minZ:z0,maxZ:z1,minY:H-.2,maxY:H+G.h+t}; })();
+    if(hub){ g.zones=[]; return g; }
     // galeria em anel (H+gallY): perto, fundo, laterais. Blocos agarráveis (dá para subir por qualquer lado, mantle)
     const gw=G.gallery, gm=mats.gall||MAT.metal, T=H+gy;
-    this._fblock(fr,uN,uN+gw,-V,V,T-.3,T,{mat:gm,type:'ledge',kind:'gallery'});
-    this._fblock(fr,uF-gw,uF,-V,V,T-.3,T,{mat:gm,type:'ledge',kind:'gallery'});
-    this._fblock(fr,uN+gw,uF-gw,-V,-V+gw,T-.3,T,{mat:gm,type:'ledge',kind:'gallery'});
-    this._fblock(fr,uN+gw,uF-gw,V-gw,V,T-.3,T,{mat:gm,type:'ledge',kind:'gallery'});
+    this._fblock(fr,uN,uN+gw,-V,V,T-.3,T,{mat:gm,type:'ledge',kind:'gallery',flat:true});
+    this._fblock(fr,uF-gw,uF,-V,V,T-.3,T,{mat:gm,type:'ledge',kind:'gallery',flat:true});
+    this._fblock(fr,uN+gw,uF-gw,-V,-V+gw,T-.3,T,{mat:gm,type:'ledge',kind:'gallery',flat:true});
+    this._fblock(fr,uN+gw,uF-gw,V-gw,V,T-.3,T,{mat:gm,type:'ledge',kind:'gallery',flat:true});
     // guarda-corpo (colisão) no lado interno, com um vão de 5 m no centro do fundo (por onde se chega subindo)
     const rail=(u0,u1,v0,v1)=>this._fb(fr,u0,u1,v0,v1,T,T+1.0,gm,{kind:'rail',ray:false});
     rail(uN+gw-.08,uN+gw,-V+gw,V-gw);
     rail(uN+gw,uF-gw,-V+gw-.08,-V+gw); rail(uN+gw,uF-gw,V-gw,V-gw+.08);
     rail(uF-gw,uF-gw+.08,-V+gw,-2.6+climbV); rail(uF-gw,uF-gw+.08,2.6+climbV,V-gw);
-    // zonas seguras e gatilhos
-    g.zoneRoom=(()=>{ const [x0,x1,z0,z1]=fr.box(uN+.5,uF+t,-V-t,V+t); return {minX:x0,maxX:x1,minZ:z0,maxZ:z1,minY:H-.2,maxY:H+G.h+t}; })();
-    g.zones=[ (()=>{ const [x0,x1,z0,z1]=fr.box(4.5,uN+.5,vin-aw-t,vin+aw+t); return {minX:x0,maxX:x1,minZ:z0,maxZ:z1,minY:H-.2,maxY:H+ah+t}; })(),
-              (()=>{ const [x0,x1,z0,z1]=fr.box(4.5,uN+.5,vout-aw-t,vout+aw+t); return {minX:x0,maxX:x1,minZ:z0,maxZ:z1,minY:H+gy-.2,maxY:H+gy+ah+t}; })() ];
+    // zonas seguras dos braços
+    g.zones=[ (()=>{ const [x0,x1,z0,z1]=fr.box(SHAFT_R+SHELL_T-.2,uN+.5,vin-aw-t,vin+aw+t); return {minX:x0,maxX:x1,minZ:z0,maxZ:z1,minY:H-.2,maxY:H+ah+t}; })(),
+              (()=>{ const [x0,x1,z0,z1]=fr.box(SHAFT_R+SHELL_T-.2,uN+.5,vout-aw-t,vout+aw+t); return {minX:x0,maxX:x1,minZ:z0,maxZ:z1,minY:H+gy-.2,maxY:H+gy+ah+t}; })() ];
     return g;
   },
-  // ---------- ramais opcionais (salas pequenas ligadas aos descansos do poço) ----------
-  _wing(wall,c,T,spec){
-    const fr=this._fr(wall.axis,wall.s), id=spec.id, w=1.0;
-    this.openings.push({id:id+'_in',axis:wall.axis,s:wall.s,lat0:c-w,lat1:c+w,y0:T,y1:T+2.6});
-    const C=FINISH[spec.finish]||MAT.concrete, sf=SURFACE.concrete, L=7, RW=4.2, RL=9, rh=3.6, t=.3, u1=4.5+L, u2=u1+RL;
-    this._fb(fr,4.0,u2+t,c-RW-t,c+RW+t,T-.3,T,C,{kind:'floor'});
-    this._fb(fr,4.5,u1,c-w-t,c-w,T,T+2.9,C,{interactable:sf}); this._fb(fr,4.5,u1,c+w,c+w+t,T,T+2.9,C,{interactable:sf}); this._fb(fr,4.5,u1,c-w-t,c+w+t,T+2.6,T+2.9,C,{cut:true});
-    this._fwall(fr,u1-t,u1,c-RW-t,c+RW+t,T,T+rh+t,[{v0:c-w,v1:c+w,y0:T,y1:T+2.6}],C,{interactable:sf});
-    this._fb(fr,u1,u2,c-RW-t,c-RW,T,T+rh+t,C,{interactable:sf}); this._fb(fr,u1,u2,c+RW,c+RW+t,T,T+rh+t,C,{interactable:sf});
-    this._fb(fr,u2,u2+t,c-RW-t,c+RW+t,T,T+rh+t,C,{interactable:sf}); this._fb(fr,u1-t,u2+t,c-RW-t,c+RW+t,T+rh,T+rh+t,C,{cut:true});
-    const [x0,x1,z0,z1]=fr.box(4.5,u2,c-RW-t,c+RW+t);
-    this.puzzleRooms[id]={id,zoneRoom:{minX:x0,maxX:x1,minZ:z0,maxZ:z1,minY:T-.2,maxY:T+rh+t}};
-    if(spec.dress) spec.dress(fr,{u1,u2,c,T,RW,rh});
-    return {fr,u1,u2,c,T};
+  // ---------- ramais opcionais: câmaras curvas atrás dos descansos do poço ----------
+  // Um setor anelar logo atrás da parede do poço (r de 6,5 a 15 m, ±0,44 rad em volta do descanso): a parede interna é a
+  // própria parede do poço (com a porta), a externa acompanha a circunferência, as laterais são radiais.
+  _wingA(c,T,spec){
+    const id=spec.id, w=2.0, half=.44, r0=SHAFT_R+SHELL_T, r1=r0+8.5, t=.3, rh=3.6, C=FINISH[spec.finish]||MAT.concrete, sf=SURFACE.concrete;
+    this.openings.push(this._opening({id:id+'_in',a:c,w,y0:T,y1:T+2.6}));
+    const a0=c-half, span=2*half, ta=t/r0, A=(r,s,e)=>({r0:r,r1:s,a0:e[0],span:e[1]}), full=[a0-ta,span+2*ta];
+    this._arc(A(SHAFT_R+.02,r1+t,full),T-.3,T-.003,C,{kind:'floor',flat:true,interactable:sf});
+    this._arc(A(r0-.3,r1+t,full),T+rh,T+rh+t,C,{cut:true,interactable:sf});
+    this._arc(A(r1,r1+t,full),T,T+rh,C,{interactable:sf});
+    this._arc(A(r0-.3,r1,[a0-ta,ta]),T,T+rh,C,{interactable:sf}); this._arc(A(r0-.3,r1,[a0+span,ta]),T,T+rh,C,{interactable:sf});
+    const zarc={cx:0,cz:0,r0:r0-.2,r1:r1+t,a0:full[0],span:full[1]};
+    this.puzzleRooms[id]={id,zoneRoom:{...arcBounds(zarc),minY:T-.2,maxY:T+rh+t,arc:zarc}};
+    const fr=this._fr(c);
+    if(spec.dress) spec.dress(fr,{u1:r0,u2:r1,T,half,rh});
+    return {fr,u1:r0,u2:r1,c,T};
   }
 });
 
@@ -290,9 +285,10 @@ Object.assign(World.prototype,{
     const sf=SURFACE.concrete, MS=MAT.moss, refs={dials:[],beds:{},lights:[],doors:{},levers:{}};
     // luz: esporos verdes (a estufa nunca fica totalmente escura)
     [[20,-3],[33,4],[26.5,0]].forEach(([u,v],i)=>{ const L=new THREE.PointLight(0x74e08a,i===2?1.3:.95,i===2?24:17,1.5); L.position.copy(P(u,H+(i===2?10:7.5),v)); this.root.add(L); refs.lights.push(L); });
-    // ---- ETAPA A · barreira de raízes na boca do braço de entrada: só cede ao martelo ----
-    const barrier=this._smashBox(fr,g.uN-1.5,g.uN-.5,g.vin-1.2,g.vin+1.2,H,H+2.6,MAT.vine,{hall,id:'roots',hits:G.barrierHits,fx:'dust'});
-    for(let i=0;i<7;i++){ const m=this._fmesh(fr,new THREE.CylinderGeometry(.07,.09,2.6,6),MAT.vine,g.uN-1.7+this.rand(-.1,.1),H+1.3,g.vin+(i-3)*.34); m.rotation.z=this.rand(-.2,.2); }
+    // ---- ETAPA A · barreira de raízes logo depois da porta (no Pátio) ou na boca do braço: só cede ao martelo ----
+    const bu=g.hub?g.uN+.1:g.uN-1.5;
+    const barrier=this._smashBox(fr,bu,bu+1,g.vin-1.2,g.vin+1.2,H,H+2.6,MAT.vine,{hall,id:'roots',hits:G.barrierHits,fx:'dust'});
+    for(let i=0;i<7;i++){ const m=this._fmesh(fr,new THREE.CylinderGeometry(.07,.09,2.6,6),MAT.vine,bu+(g.hub?1.15:-.2)+this.rand(-.1,.1),H+1.3,g.vin+(i-3)*.34); m.rotation.z=this.rand(-.2,.2); }
     // ---- A Grande Árvore (centro): coluna sólida, galhos e folhas brilhantes ----
     this._fb(fr,25.7,27.3,-.8,.8,H,H+HALL_GEO.h,MAT.vine,{interactable:null});
     for(let i=0;i<5;i++){ const b=this._fmesh(fr,new THREE.BoxGeometry(.35,.3,5.5),MAT.vine,26.5+Math.cos(i*1.26)*2.4,H+9.5+i*.5,Math.sin(i*1.26)*2.4); b.rotation.y=-i*1.26; b.rotation.x=.25; }
@@ -344,9 +340,11 @@ Object.assign(World.prototype,{
     const hh=new THREE.Mesh(new THREE.BoxGeometry(1.4,1.6,1.4),IMAT.hidden); hh.position.copy(heart.position); this.root.add(hh);
     const dec=new Decision({hall,id:'commune',route:'commune',label:'Pôr a mão no Coração',text:T.decide}); hh.userData={type:'heart',interactable:dec}; heart.userData={type:'heart',interactable:dec}; this._addHit(hh); this._addHit(heart);
     { const q=P(36.0,H,3.6); this.note(q.x,q.y,q.z,T.last); }
-    // ---- porta da galeria e linha de escalada até lá ----
-    refs.doors.exit=this._door(fr,uN-.2,g.vout,2.4,2.6,H+HALL_GEO.gallY,MAT.door,'v');
-    this._fpath(fr,g,'far',-6.5,H+.6,-6.5,H+8.6,{blank:CLIMB.blank,blankAt:.5,crumble:.08});
+    // ---- saída: sozinha, a Estufa tinha porta de galeria; no Pátio, o ciclo completo solta o freio do elevador ----
+    if(!g.hub){
+      refs.doors.exit=this._door(fr,uN-.2,g.vout,2.4,2.6,H+HALL_GEO.gallY,MAT.door,'v');
+      this._fpath(fr,g,'far',-6.5,H+.6,-6.5,H+8.6,{blank:CLIMB.blank,blankAt:.5,crumble:.08});
+    }
     refs.setLamp=(sym,on)=>{ const b=refs.beds[sym]; if(b) b.lamp.material=on?MAT.glowGreen:MAT.darkLamp; };
     refs.setHeart=(on)=>{ refs.heartLight.intensity=on?1.1:0; };
     g.id=hall; g.kind='greenhouse'; g.refs=refs; g.cfg=cfg; g.barrier=barrier;
@@ -361,11 +359,13 @@ Object.assign(World.prototype,{
 Object.assign(World.prototype,{
   _tagMesh(pos,glow){ const m=new THREE.Mesh(new THREE.BoxGeometry(.34,.46,.05),glow?MAT.glowBlue:MAT.paper); m.position.copy(pos); m.rotation.y=this.rand(0,6.28); m.rotation.x=-.25; this.root.add(m); return m; },
   _archiveProps(M,I){
-    const H=M.H, fr=this._fr('z',-1), hall=M.id, T=ARCHIVE_TEXT, A=ARCHIVE, C=MAT.archive, sf=SURFACE.concrete, refs={doors:{},tags:[],lights:[]};
-    const V3p=(x,y,z)=>new V3(x,y,z), halfW=I.halfW, zA=I.zA, zG=I.zG, zF=I.zF, t=M.wall;
+    const H=M.H, fr=this._fr(-Math.PI/2), hall=M.id, T=ARCHIVE_TEXT, A=ARCHIVE, C=MAT.archive, sf=SURFACE.concrete, refs={doors:{},tags:[],lights:[]};
+    const halfW=I.halfW, zA=I.zA, zG=I.zG, zF=I.zF, t=M.wall;
+    // a sala de leitura foi desenhada com a frente da sala em z = −4,5; o braço até o poço redondo a empurrou para zA
+    const dz=zA+4.5, Z=z=>z+dz, U=u=>u-dz, V3p=(x,y,z)=>new V3(x,y,Z(z));     // (no referencial norte, u = −z)
     // luz da sala de leitura: alcance curto para o labirinto continuar escuro
-    [[-4,-7.2],[5,-7.2]].forEach(([x,z])=>{ const L=new THREE.PointLight(0xffd9a0,1.0,8,1.7); L.position.set(x,H+5.2,z); this.root.add(L); refs.lights.push(L);
-      const lb=new THREE.Mesh(new THREE.BoxGeometry(1.6,.08,.18),MAT.glowAmber); lb.position.set(x,H+6.4,z); this.root.add(lb); });
+    [[-4,-7.2],[5,-7.2]].forEach(([x,z])=>{ const L=new THREE.PointLight(0xffd9a0,1.0,8,1.7); L.position.set(x,H+5.2,Z(z)); this.root.add(L); refs.lights.push(L);
+      const lb=new THREE.Mesh(new THREE.BoxGeometry(1.6,.08,.18),MAT.glowAmber); lb.position.set(x,H+6.4,Z(z)); this.root.add(lb); });
     // ---- mural na parede direita: contar ○ △ □ (há símbolos no alto e distratores ◇ ✚ ✶) ----
     const R=mulberry(2024), cells=[]; for(let r=0;r<5;r++) for(let c=0;c<4;c++) cells.push({r,c});
     for(let i=cells.length-1;i>0;i--){ const j=Math.floor(R()*(i+1)); [cells[i],cells[j]]=[cells[j],cells[i]]; }
@@ -375,33 +375,33 @@ Object.assign(World.prototype,{
     const distract=['diamond','cross','star','diamond','star','cross'], placed=[];
     targets.forEach((sym,i)=>placed.push({sym,cell:order[i]})); distract.forEach((sym,i)=>placed.push({sym,cell:order[targets.length+i]}));
     I.muralSymbols=placed.map(p=>({sym:p.sym,row:p.cell.r}));
-    this._fsign(fr,7.4,H+3.9,halfW-.06,0,-1,5.4,5.6,(g,cw,ch)=>{ g.fillStyle='#b8a888'; g.fillRect(0,0,cw,ch); for(let i=0;i<500;i++){ g.fillStyle=`rgba(${110+R()*40|0},${90+R()*30|0},60,${R()*.12})`; g.fillRect(R()*cw,R()*ch,3+R()*20,2); }
+    this._fsign(fr,U(7.4),H+3.9,halfW-.06,0,-1,5.4,5.6,(g,cw,ch)=>{ g.fillStyle='#b8a888'; g.fillRect(0,0,cw,ch); for(let i=0;i<500;i++){ g.fillStyle=`rgba(${110+R()*40|0},${90+R()*30|0},60,${R()*.12})`; g.fillRect(R()*cw,R()*ch,3+R()*20,2); }
       g.strokeStyle='#3a2a1c'; g.lineWidth=10; g.strokeRect(10,10,cw-20,ch-20);
       placed.forEach(p=>{ const x=(p.cell.c+.5)*cw/4+(R()-.5)*50, y=(p.cell.r+.5)*ch/5+(R()-.5)*34; g.fillStyle=['circle','triangle','square'].includes(p.sym)?'#4a1612':'#4a3a1c'; drawSymbol(g,p.sym,x,y,40); }); },1024,1024);
-    { const q=V3p(10.2,H,-4.9); this.note(q.x,q.y,q.z,T.mural); this.box(-2.2,H,-5.6,{nails:3}); }
+    { const q=V3p(10.2,H,-4.9); this.note(q.x,q.y,q.z,T.mural); this.box(-2.2,H,Z(-5.6),{nails:3}); }
     // ---- mesa de leitura com gaveta (placa de ÍCARO) ----
-    this._fb(fr,6.4,8.0,-6.0,-4.2,H,H+.9,C,{interactable:null});
+    this._fb(fr,U(6.4),U(8.0),-6.0,-4.2,H,H+.9,C,{interactable:null});
     { const q=V3p(-5.1,H+.9,-7.2); this.note(q.x,q.y,q.z,T.desk); }
     const drawerPos=V3p(-5.1,H+1.05,-7.2);
-    const drawer=this._smashBox(fr,6.4,6.55,-5.9,-4.3,H+.15,H+.8,MAT.metal,{hall,id:'drawer',hits:2,onBreak:()=>{ const tg=this._tagMesh(drawerPos,true); const tt=new Tag(tg,{hall,id:'t5',name:A.names[5]}); tg.userData={type:'tag',interactable:tt}; this._addHit(tg); refs.tags.push(tt); }});
+    const drawer=this._smashBox(fr,U(6.4),U(6.55),-5.9,-4.3,H+.15,H+.8,MAT.metal,{hall,id:'drawer',hits:2,onBreak:()=>{ const tg=this._tagMesh(drawerPos,true); const tt=new Tag(tg,{hall,id:'t5',name:A.names[5]}); tg.userData={type:'tag',interactable:tt}; this._addHit(tg); refs.tags.push(tt); }});
     // ---- estante alta: a 7ª placa (nome do jogador). Sobe-se por uma linha de agarras na lateral ----
-    this._fb(fr,6.4,8.4,-10.8,-9.4,H,H+5.0,C,{interactable:sf});
-    this._fblock(fr,6.4,8.4,-10.8,-9.4,H+4.7,H+5.0,{mat:MAT.metal,type:'ledge',kind:'shelf'});
-    for(let k=0;k<4;k++) this._fhold(fr,7.4+(k%2?.25:-.25),H+.7+k*.75,-9.4,0,1,false);
-    this._fhold(fr,7.4,H+3.6,-9.4,0,1,false);
+    this._fb(fr,U(6.4),U(8.4),-10.8,-9.4,H,H+5.0,C,{interactable:sf});
+    this._fblock(fr,U(6.4),U(8.4),-10.8,-9.4,H+4.7,H+5.0,{mat:MAT.metal,type:'ledge',kind:'shelf',flat:true});
+    for(let k=0;k<4;k++) this._fhold(fr,U(7.4)+(k%2?.25:-.25),H+.7+k*.75,-9.4,0,1,false);
+    this._fhold(fr,U(7.4),H+3.6,-9.4,0,1,false);
     const t7=this._tagMesh(V3p(-10.1,H+5.12,-7.4),true), tag7=new Tag(t7,{hall,id:'t6',name:(ctx)=>String((ctx&&ctx.game&&(ctx.game.playerName||ctx.game.name))||'VOCÊ').toUpperCase()});
     t7.userData={type:'tag',interactable:tag7}; this._addHit(t7); refs.tags.push(tag7);
     // estantes decorativas
-    [[-12.9,-10.6],[-6.1,-5.0]].forEach(([za,zb2])=>this._fb(fr,-zb2,-za,-10.8,-9.9,H,H+3.4,C,{interactable:sf}));
+    [[-12.9,-10.6],[-6.1,-5.0]].forEach(([za,zb2])=>this._fb(fr,U(-zb2),U(-za),-10.8,-9.9,H,H+3.4,C,{interactable:sf}));
     // ---- cofre do registro (canto direito da frente) ----
-    const vx0=7.4, vz0=-13.35, vz1=-10.4;
-    this._fb(fr,-vz1,-vz1+.25,vx0-.15,halfW,H,H+3.4,C,{interactable:sf});                                  // parede de trás do cofre (z=-10.4)
-    this._fb(fr,-vz1,11.2,vx0-.3,vx0,H,H+3.4,C,{interactable:sf}); this._fb(fr,12.6,-vz0,vx0-.3,vx0,H,H+3.4,C,{interactable:sf}); this._fb(fr,11.2,12.6,vx0-.3,vx0,H+2.6,H+3.4,C,{interactable:sf});
+    const vx0=7.4, vz0=Z(-13.35), vz1=Z(-10.4);
+    this._fb(fr,-vz1,-vz1+.25,vx0-.15,halfW,H,H+3.4,C,{interactable:sf});                                  // parede de trás do cofre
+    this._fb(fr,-vz1,U(11.2),vx0-.3,vx0,H,H+3.4,C,{interactable:sf}); this._fb(fr,U(12.6),-vz0,vx0-.3,vx0,H,H+3.4,C,{interactable:sf}); this._fb(fr,U(11.2),U(12.6),vx0-.3,vx0,H+2.6,H+3.4,C,{interactable:sf});
     this._fb(fr,-vz1,-vz0,vx0-.3,halfW,H+3.4,H+3.65,MAT.metal,{cut:true});
-    const vault=this._door(fr,11.9,vx0-.15,1.4,2.6,H,MAT.door,'u'); refs.doors.vault=vault;
-    this._lbl(fr,11.9,H+3.0,vx0-.32,0,-1,1.8,.5,'COFRE','#c28aff');
-    this._fb(fr,12.0,12.8,9.0,9.9,H,H+1.0,MAT.metal,{interactable:null});
-    const lh=new THREE.Mesh(new THREE.BoxGeometry(1.0,1.2,1.0),IMAT.hidden); lh.position.set(9.45,H+1.1,-12.4); this.root.add(lh);
+    const vault=this._door(fr,U(11.9),vx0-.15,1.4,2.6,H,MAT.door,'u'); refs.doors.vault=vault;
+    this._lbl(fr,U(11.9),H+3.0,vx0-.32,0,-1,1.8,.5,'COFRE','#c28aff');
+    this._fb(fr,U(12.0),U(12.8),9.0,9.9,H,H+1.0,MAT.metal,{interactable:null});
+    const lh=new THREE.Mesh(new THREE.BoxGeometry(1.0,1.2,1.0),IMAT.hidden); lh.position.set(9.45,H+1.1,Z(-12.4)); this.root.add(lh);
     const dec=new Decision({hall,id:'witness',route:'witness',label:'Levar os sete nomes para a superfície',text:T.decide}); lh.userData={type:'lectern',interactable:dec}; this._addHit(lh);
     { const q=V3p(9.7,H+1.0,-12.6); this.note(q.x,q.y,q.z,T.vault); const q2=V3p(9.2,H+1.0,-12.2); this.note(q2.x,q2.y,q2.z,T.last); }
     // ---- saída do labirinto: porta (grade) + teclado de 3 dígitos com visor ----
@@ -419,7 +419,7 @@ Object.assign(World.prototype,{
     for(let c=0;c<M.cols;c++) for(let r=0;r<M.rows;r++){ let o=0; if(c<M.cols-1&&!g.E[c][r]) o++; if(c>0&&!g.E[c-1][r]) o++; if(r<M.rows-1&&!g.N[c][r]) o++; if(r>0&&!g.N[c][r-1]) o++; if(o===1&&!onRoute.has(c+','+r)) dead.push([c,r]); }
     dead.sort((a,b)=>(b[1]-a[1])||(a[0]-b[0]));
     I.deadTags=dead.slice(0,A.deadEnds);
-    I.deadTags.forEach(([c,r],i)=>{ const x=(I.xb(c)+I.xb(c+1))/2, z=(I.zb(r)+I.zb(r+1))/2; const tg=this._tagMesh(V3p(x,H+.5,z),true), tt=new Tag(tg,{hall,id:'t'+i,name:A.names[i]});
+    I.deadTags.forEach(([c,r],i)=>{ const x=(I.xb(c)+I.xb(c+1))/2, z=(I.zb(r)+I.zb(r+1))/2; const tg=this._tagMesh(new V3(x,H+.5,z),true), tt=new Tag(tg,{hall,id:'t'+i,name:A.names[i]});
       tg.userData={type:'tag',interactable:tt}; this._addHit(tg); refs.tags.push(tt); });
     I.code=String(A.counts.circle)+A.counts.triangle+A.counts.square;
     return refs;
@@ -430,27 +430,29 @@ Object.assign(World.prototype,{
 // RAMAIS opcionais: cada um conta um pedaço da história e antecipa os três caminhos
 // ============================================================================
 Object.assign(World.prototype,{
+  // A câmara é um setor (abre em leque): no referencial do ramal, a lateral livre a uma distância u do eixo é u·tan(half).
   _dressWing(w,fr,I){
-    const {u1,u2,c,T,RW}=I, uc=(u1+u2)/2, P=(u,y,v)=>fr.p(u,y,v), A=MAT.archive, M=MAT.metal;
+    const {u1,u2,T,half}=I, uc=(u1+u2)/2, tn=Math.tan(half), lim=(u,m=.4)=>u*tn-m, P=(u,y,v)=>fr.p(u,y,v), A=MAT.archive, M=MAT.metal;
     const note=(u,y,v,text)=>{ const q=P(u,y,v); this.note(q.x,q.y,q.z,text); };
     const loot=(u,v,l)=>{ const q=P(u,T,v); this.box(q.x,q.y,q.z,l); };
-    if(w.id==='w1'){        // dormitório: 7 beliches, 6 arrumados
-      for(let i=0;i<3;i++) for(const sg of [-1,1]){ const u=u1+1.6+i*2.7, v=c+sg*(RW-.7); this._fb(fr,u-.95,u+.95,v-.45,v+.45,T,T+.5,A,{interactable:null}); this._fb(fr,u-.95,u-.7,v-.45,v+.45,T+.5,T+.8,MAT.paperWall,{interactable:null}); }
-      note(u1+4.3,T+.5,c+(RW-.7),w.text); loot(u2-1.1,c-.5,{nails:2});
-    } else if(w.id==='w2'){ // refeitório: mesa posta para sete
-      this._fb(fr,uc-2.6,uc+2.6,c-.75,c+.75,T,T+.85,A,{interactable:null});
-      for(let i=0;i<6;i++){ const u=uc-2.2+i*.88; this._fmesh(fr,new THREE.BoxGeometry(.28,.04,.28),MAT.paperWall,u,T+.87,c+(i%2?.35:-.35)); }
-      this._fb(fr,uc-2.6,uc+2.6,c-1.4,c-1.05,T,T+.45,A,{interactable:null}); this._fb(fr,uc-2.6,uc+2.6,c+1.05,c+1.4,T,T+.45,A,{interactable:null});
-      note(uc,T+.86,c,w.text); loot(u2-1,c+RW-.8,{pills:1});
+    if(w.id==='w1'){        // dormitório: 7 beliches, 6 arrumados, acompanhando as paredes radiais
+      for(let i=0;i<3;i++){ const u=u1+2.1+i*2.4, v=lim(u-.95)-.5;
+        for(const sg of [-1,1]){ this._fb(fr,u-.95,u+.95,sg*v-.45,sg*v+.45,T,T+.5,A,{interactable:null}); this._fb(fr,u-.95,u-.7,sg*v-.45,sg*v+.45,T+.5,T+.8,MAT.paperWall,{interactable:null}); } }
+      { const u=u1+4.5; note(u,T+.5,lim(u-.95)-.5,w.text); } loot(u2-1.1,-.5,{nails:2});
+    } else if(w.id==='w2'){ // refeitório: mesa posta para sete, no eixo da câmara
+      this._fb(fr,uc-2.6,uc+2.6,-.75,.75,T,T+.85,A,{interactable:null});
+      for(let i=0;i<6;i++){ const u=uc-2.2+i*.88; this._fmesh(fr,new THREE.BoxGeometry(.28,.04,.28),MAT.paperWall,u,T+.87,i%2?.35:-.35); }
+      this._fb(fr,uc-2.6,uc+2.6,-1.4,-1.05,T,T+.45,A,{interactable:null}); this._fb(fr,uc-2.6,uc+2.6,1.05,1.4,T,T+.45,A,{interactable:null});
+      note(uc,T+.86,0,w.text); loot(u2-1,lim(u2-1)-.6,{pills:1});
     } else if(w.id==='w3'){ // sala do rádio
-      this._fb(fr,u2-1.6,u2-.4,c-2.0,c+2.0,T,T+.9,A,{interactable:null});
-      this._fmesh(fr,new THREE.BoxGeometry(.8,.45,.35),M,u2-1.0,T+1.12,c); this._fmesh(fr,new THREE.BoxGeometry(.3,.12,.04),MAT.glowAmber,u2-1.0,T+1.2,c-.2);
-      this._fb(fr,uc-.2,uc+.4,c-.2,c+.4,T,T+.5,A,{interactable:null}); note(u2-1.0,T+.9,c+1.3,w.text); loot(u1+1,c-RW+.9,{nails:2});
+      this._fb(fr,u2-1.6,u2-.4,-2.0,2.0,T,T+.9,A,{interactable:null});
+      this._fmesh(fr,new THREE.BoxGeometry(.8,.45,.35),M,u2-1.0,T+1.12,0,0,1); this._fmesh(fr,new THREE.BoxGeometry(.3,.12,.04),MAT.glowAmber,u2-1.0,T+1.2,-.2,0,1);
+      this._fb(fr,uc-.2,uc+.4,-.2,.4,T,T+.5,A,{interactable:null}); note(u2-1.0,T+.9,1.3,w.text); loot(u1+1.5,-(lim(u1+1.5)-.6),{nails:2});
     } else {                // capela
-      this._fb(fr,u2-1.4,u2-.5,c-1.8,c+1.8,T,T+1.0,A,{interactable:null});
-      for(let i=0;i<5;i++) this._fmesh(fr,new THREE.BoxGeometry(.07,.28,.07),MAT.glowAmber,u2-.95,T+1.15,c-1.4+i*.7);
-      for(let i=0;i<3;i++) this._fb(fr,uc-1.6+i*1.6,uc-1.0+i*1.6,c-.4,c+.4,T,T+.45,A,{interactable:null});
-      note(u2-.95,T+1.0,c,w.text); loot(u1+1,c+RW-.8,{pills:1,nails:2});
+      this._fb(fr,u2-1.4,u2-.5,-1.8,1.8,T,T+1.0,A,{interactable:null});
+      for(let i=0;i<5;i++) this._fmesh(fr,new THREE.BoxGeometry(.07,.28,.07),MAT.glowAmber,u2-.95,T+1.15,-1.4+i*.7);
+      for(let i=0;i<3;i++) this._fb(fr,uc-1.6+i*1.6,uc-1.0+i*1.6,-.4,.4,T,T+.45,A,{interactable:null});
+      note(u2-.95,T+1.0,0,w.text); loot(u1+1.5,lim(u1+1.5)-.6,{pills:1,nails:2});
     }
   }
 });

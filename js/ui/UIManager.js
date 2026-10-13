@@ -87,7 +87,7 @@ class UIManager{
     [['#','n'],['Jogador',''],['Pontos','n'],['Tempo','n'],['Resultado','']].forEach(([s,c])=>{ const th=document.createElement('th'); th.textContent=s; if(c) th.className=c; head.appendChild(th); });
     list.forEach((e,i)=>{
       const r=t.insertRow(); if(i===highlight) r.className='me';
-      [[String(i+1),'n'],[e.name,''],[fmtInt(e.score),'n'],[fmtTime(e.time),'n'],[e.result==='finish'?('Saiu'+(e.ending&&ENDINGS[e.ending]?` · ${ENDINGS[e.ending].name}`:'')):e.result==='mass'?'Alcançado':'Caiu','']]
+      [[String(i+1),'n'],[e.name,''],[fmtInt(e.score),'n'],[fmtTime(e.time),'n'],[e.result==='finish'?('Saiu'+(e.ending&&ENDINGS[e.ending]?` · ${ENDINGS[e.ending].name}`:'')):e.result==='mass'?'Alcançado':e.result==='fan'?'Sugado':'Caiu','']]
         .forEach(([s,c])=>{ const td=r.insertCell(); td.textContent=s; if(c) td.className=c; });
     });
     body.appendChild(t);
@@ -96,7 +96,7 @@ class UIManager{
   showResult(r){
     const t=this.$('resT');
     const E=r.result==='finish'&&ENDINGS[r.ending||'escape'];
-    t.textContent=r.result==='finish'?(E?E.name:'Subida completa'):r.result==='mass'?'A massa te alcançou':'Você caiu';
+    t.textContent=r.result==='finish'?(E?E.name:'Subida completa'):r.result==='mass'?'A massa te alcançou':r.result==='fan'?'O exaustor te puxou':'Você caiu';
     const et=this.$('resEnd'); et.textContent=E?`FINAL · ${E.tag}\n\n${E.text}`:''; et.hidden=!E;
     t.className=r.result==='finish'?'win':'danger';
     this.$('resName').textContent=r.name; this.$('resTime').textContent=fmtTime(r.time);
@@ -113,12 +113,12 @@ class UIManager{
   // ---------- retícula contextual ----------
   setReticle(mode){
     if(this._ret===mode) return; this._ret=mode;
+    // interação disponível (F, ou clique no painel de senha): mão petrificada com a ponta do indicador no centro da mira (css/cursor.css)
+    if(mode==='pickup'||mode==='panel'){ this.$('ring').innerHTML='<span class="stone-hand" aria-hidden="true"></span>'; return; }
     const S='var(--sodium)', B='var(--bone)', OK='#9fd6a4', NO='var(--flesh)';
     const svg={
       dot:`<circle cx="12" cy="12" r="2.4" fill="${B}" opacity=".7"/>`,
       grab:`<circle cx="12" cy="12" r="7" fill="none" stroke="${S}" stroke-width="1.6"/>`,
-      pickup:`<circle cx="12" cy="12" r="6.5" fill="none" stroke="${B}" stroke-width="1.5"/><circle cx="12" cy="12" r="1.6" fill="${B}"/>`,
-      panel:`<path d="M8 6H5v12h3M16 6h3v12h-3" fill="none" stroke="${B}" stroke-width="1.6"/>`,
       'nail-ok':`<path d="M12 4v16M4 12h16" stroke="${OK}" stroke-width="1.7"/><circle cx="12" cy="12" r="2" fill="${OK}"/>`,
       'nail-bad':`<path d="M12 5v14M5 12h14" stroke="${NO}" stroke-width="1.4" opacity=".7"/><path d="M8 8l8 8" stroke="${NO}" stroke-width="1.6"/>`,
       impact:`<path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4" stroke="${B}" stroke-width="1.5"/><circle cx="12" cy="12" r="1.5" fill="${B}"/>`,
@@ -132,17 +132,18 @@ class UIManager{
   //  empty · eq (na mão) · out (pilha esgotada) · lock (mão direita agarrada: select() recusaria) · ready
   slotInfo(items,player,i){
     const s=items.inv.slots[i]; if(!s) return {k:'empty',label:'Vazio'};
-    if(items.sel===i&&items.equipped){
-      const ph=items.phase;
-      return {k:'eq',label:ph==='equipping'?'Pegando':ph==='holstering'?'Guardando':'Na mão'};
+    if(items.isSelected(i)){
+      const k=items.inv.bindingOf(s.id), side=k>=0&&k<2?'left':'right', ph=items.phaseFor(side);
+      return {k:'eq',label:ph==='equipping'?'Pegando':ph==='holstering'?'Guardando':`Na mão ${side==='left'?'esquerda':'direita'}`};
     }
     if(ITEM_DEFS[s.id].stack&&s.count<=0) return {k:'out',label:'Esgotado'};
-    if(player.rightHand.inContact) return {k:'lock',label:'Mão ocupada'};
+    const k=items.inv.bindingOf(s.id), hand=k>=0&&k<2?player.leftHand:player.rightHand;
+    if(hand.inContact) return {k:'lock',label:'Mão ocupada'};
     return {k:'ready',label:'Guardado'};
   }
   _slotKey(items,player){
     const inv=items.inv;
-    return inv.version+'|'+inv.binds.join(',')+'|'+items.sel+'|'+items.phase+'|'+(player.rightHand.inContact?1:0)+'|'+inv.slots.map(s=>s?s.id+s.count:'-').join(',');
+    return inv.version+'|'+inv.binds.join(',')+'|'+items.left.sel+'|'+items.sel+'|'+items.left.phase+'|'+items.phase+'|'+(player.leftHand.inContact?1:0)+(player.rightHand.inContact?1:0)+'|'+inv.slots.map(s=>s?s.id+s.count:'-').join(',');
   }
   // ---------- hotbar de atalhos (1–4) ----------
   renderInventory(items,player){
@@ -154,19 +155,19 @@ class UIManager{
       const i=inv.boundSlot(k), s=i>=0?inv.slots[i]:null, st=s?this.slotInfo(items,player,i):{k:'empty',label:'Vazio'}, L=QUICK_KEYS[k].label;
       const d=document.createElement('div');
       d.className='slot'+(s?'':' empty')+(st.k==='eq'?' sel':'')+(st.k==='out'?' out':'')+(st.k==='lock'?' lock':'');
-      d.dataset.k=k; d.setAttribute('role','listitem');
+      d.dataset.k=k; d.dataset.hand=k<2?'left':'right'; d.classList.add(k<2?'left-hand':'right-hand'); d.setAttribute('role','listitem');
       const kk=document.createElement('span'); kk.className='k'; kk.textContent=L; d.appendChild(kk);
       if(s){
         const def=ITEM_DEFS[s.id];
         d.insertAdjacentHTML('beforeend',iconSvg(s.id));
         if(def.stack){ const c=document.createElement('span'); c.className='c'+(s.count<=0?' zero':''); c.textContent='×'+s.count; d.appendChild(c); }
         d.title=def.name;
-        d.setAttribute('aria-label',`Atalho ${L}: ${def.name}${def.stack?`, ${s.count}`:''}, ${st.label}`);
-      } else d.setAttribute('aria-label',`Atalho ${L}: vazio`);
+        d.setAttribute('aria-label',`Atalho ${L}, mão ${k<2?'esquerda':'direita'}: ${def.name}${def.stack?`, ${s.count}`:''}, ${st.label}`);
+      } else d.setAttribute('aria-label',`Atalho ${L}, mão ${k<2?'esquerda':'direita'}: vazio`);
       bar.appendChild(d);
     }
-    const sel=items.sel>=0&&inv.slots[items.sel];
-    this.$('slotName').textContent=sel?(ITEM_DEFS[sel.id].stack?`${ITEM_DEFS[sel.id].name} restantes: ${sel.count}`:ITEM_DEFS[sel.id].name):'';
+    const left=items.left.equipped, right=items.equipped;
+    this.$('slotName').textContent=[left&&`E: ${ITEM_DEFS[left].name}`,right&&`D: ${ITEM_DEFS[right].name}`].filter(Boolean).join('  ·  ');
   }
   // pulso ao pegar um item: acontece no atalho a que ele está vinculado (se houver)
   slotPulse(i){
@@ -345,8 +346,10 @@ class UIManager{
       } else o.el.setAttribute('aria-label',`Atalho ${L} (${P}): vazio`);
     });
     // painel de detalhe: item selecionado ou resumo de ocupação (ex.: "6 / 10 espaços")
-    const R=player.rightHand, keys=this._keysText(inv), selSlot=pk.sel>=0?inv.slots[pk.sel]:null;
-    pk.hh.textContent=(R.occupied&&items.equipped)?'Na mão: '+ITEM_DEFS[items.equipped].name:R.inContact?'Mão direita agarrada':'Mão direita livre';
+    const L=player.leftHand, R=player.rightHand, keys=this._keysText(inv), selSlot=pk.sel>=0?inv.slots[pk.sel]:null;
+    const leftText=items.left.equipped?`Esquerda: ${ITEM_DEFS[items.left.equipped].name}`:L.inContact?'Esquerda agarrada':'Esquerda livre';
+    const rightText=items.equipped?`Direita: ${ITEM_DEFS[items.equipped].name}`:R.inContact?'Direita agarrada':'Direita livre';
+    pk.hh.textContent=`${leftText} · ${rightText}`;
     if(selSlot){
       const def=ITEM_DEFS[selSlot.id], st=this.slotInfo(items,player,pk.sel), bk=inv.binds.indexOf(selSlot.id);
       pk.hn.textContent=def.name;
@@ -504,11 +507,11 @@ class UIManager{
   }
   // avisa leitores de tela quando o que está na mão direita muda (sem repetir a cada quadro)
   _announce(items){
-    const eq=items.equipped||'';
+    const eq=`${items.left.equipped||''}|${items.equipped||''}`;
     if(this._live===eq) return;
     const first=this._live===undefined; this._live=eq;
     if(first) return;
-    this._say(eq?`${ITEM_DEFS[eq].name} equipado`:'Item guardado');
+    this._say(`${items.left.equipped?ITEM_DEFS[items.left.equipped].name:'Mão esquerda livre'} · ${items.equipped?ITEM_DEFS[items.equipped].name:'mão direita livre'}`);
   }
   // ---------- HUD ----------
   updateHUD(gs,player,look,items){

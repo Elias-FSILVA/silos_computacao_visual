@@ -1,24 +1,56 @@
 'use strict';
 // ============================================================================
-// js/world/World.js — geometria do poço (400 m), superfícies agarráveis e contratos de nível
-// Contrato público: world.platforms [{minX,maxX,minZ,maxZ,top, bottom?, climbable?, kind?}]
+// js/world/World.js — o silo: poço cilíndrico de 400 m, superfícies agarráveis e contratos de nível
+// Contrato público: world.platforms (sólidos: caixa, caixa girada ou setor anelar — ver Collision.js)
 //                   world.checkpoints [{id,label,bonus,optional,position,radius,bounds?}]
 //                   world.finish {position,radius}   world.spawnPoint (pés)
-// Extras opcionais: world.raycastTargets, world.lamps, world.interactables, addPiton(), touch(), update()
-//   world.puzzleDefs / world.puzzleRooms  → lidos por PuzzleSystem e Game._zones()
-//   world.onCrumble, world.onSecretRevealed, world.onMazeEvent('countdown'|'dark')  → ganchos opcionais do Game
+// Extras: world.raycastTargets, world.lamps, world.interactables, guard() (parede do poço), wind() (ventiladores),
+//   touch(), update(); world.puzzleDefs / world.puzzleRooms → PuzzleSystem e Game._zones();
+//   world.onCrumble, world.onSecretRevealed, world.onMazeEvent('countdown'|'dark') → ganchos opcionais do Game
 //
-// Layout vertical (ver levelData.js):  S1 0–100 · P1 100 · S2 110–200 · P2 200 · S3 210–300 · P3 300 (labirinto) · S4 310–400 (fuga)
+// O poço é um CILINDRO de raio SHAFT_R: a parede é feita de setores anelares (uma faixa por trecho de altura e por
+// quadrante, recortada nas aberturas), as agarras ficam na superfície curva com a normal apontando para o eixo, e a
+// os trechos de subida depois da passarela ficam em Climbs.js. Coordenadas polares: θ = atan2(z, x) (leste 0, sul π/2, oeste π, norte −π/2).
+// Layout vertical: ver o cabeçalho de levelData.js.
 // ============================================================================
 
-// Anel de paredes do poço. a→b = sentido anti-horário (dir=+1); horário (dir=-1) percorre b→a.
-// Os cantos se encaixam: o fim de uma parede é o início da próxima (lat ±3.55 = canto).
-const RING=[
-  {axis:'x',s: 1,a:-3.55,b: 3.55},   // W0  parede +x  (lat = z)
-  {axis:'z',s: 1,a: 3.55,b:-3.55},   // W1  parede +z  (lat = x)
-  {axis:'x',s:-1,a: 3.55,b:-3.55},   // W2  parede -x  (lat = z)
-  {axis:'z',s:-1,a:-3.55,b: 3.55}    // W3  parede -z  (lat = x)  ← parede das salas de puzzle
-];
+// ---------- malha de um setor anelar (casca grossa) ----------
+// faces curvas interna/externa, topo, base e as duas faces radiais. UV de mundo: faces curvas → (arco, y);
+// topo/base → (x, −z); faces radiais → (r, y) — o desenho continua entre setores vizinhos, como o worldUV das caixas.
+// A orientação de cada triângulo é conferida contra a normal desejada (o raycast usa a face para pregos e martelo).
+const ARC_TILE=new Map([[MAT.liner,[2.4,2.4]],[MAT.grate,[8,8]],[MAT.foundry,[4.5,4]],[MAT.paperWall,[2,2]],[MAT.metal,[2,2]]]);
+const arcTile=mat=>(mat.userData&&mat.userData.tile)||ARC_TILE.get(mat)||[2,2];
+function arcGeometry(A,y0,y1,tile,segs=72){
+  const {cx,cz,r0,r1,a0,span}=A, full=span>=TAU-1e-6, n=Math.max(1,Math.ceil(span/(TAU/segs))), ym=(y0+y1)/2;
+  const tu=tile[0], tv=tile[1]||tile[0], ou=tile[2]||0, ov=tile[3]||0, P=[],N=[],U=[];
+  const put=q=>{ P.push(q[0]-cx,q[1]-ym,q[2]-cz); N.push(q[3],q[4],q[5]); U.push(q[6]/tu+ou,q[7]/tv+ov); };
+  const quad=(a,b,c,d)=>{
+    const e1x=b[0]-a[0],e1y=b[1]-a[1],e1z=b[2]-a[2], e2x=c[0]-a[0],e2y=c[1]-a[1],e2z=c[2]-a[2];
+    const nx=e1y*e2z-e1z*e2y, ny=e1z*e2x-e1x*e2z, nz=e1x*e2y-e1y*e2x;
+    if(nx*a[3]+ny*a[4]+nz*a[5]>=0){ put(a); put(b); put(c); put(a); put(c); put(d); } else { put(a); put(c); put(b); put(a); put(d); put(c); }
+  };
+  const wall=(r,t,y,sg)=>{ const c=Math.cos(t), s=Math.sin(t); return [cx+r*c,y,cz+r*s,sg*c,0,sg*s,r*t,y]; };
+  const flat=(r,t,y,ny)=>{ const x=cx+r*Math.cos(t), z=cz+r*Math.sin(t); return [x,y,z,0,ny,0,x,-z]; };
+  for(let i=0;i<n;i++){
+    const t0=a0+span*i/n, t1=a0+span*(i+1)/n;
+    if(r0>1e-4) quad(wall(r0,t0,y0,-1),wall(r0,t1,y0,-1),wall(r0,t1,y1,-1),wall(r0,t0,y1,-1));
+    quad(wall(r1,t0,y0,1),wall(r1,t1,y0,1),wall(r1,t1,y1,1),wall(r1,t0,y1,1));
+    quad(flat(r0,t0,y1,1),flat(r1,t0,y1,1),flat(r1,t1,y1,1),flat(r0,t1,y1,1));
+    quad(flat(r0,t0,y0,-1),flat(r1,t0,y0,-1),flat(r1,t1,y0,-1),flat(r0,t1,y0,-1));
+  }
+  if(!full){
+    const end=(t,sg)=>{ const nx=sg*Math.sin(t), nz=-sg*Math.cos(t), q=(r,y)=>[cx+r*Math.cos(t),y,cz+r*Math.sin(t),nx,0,nz,r,y];
+      quad(q(r0,y0),q(r1,y0),q(r1,y1),q(r0,y1)); };
+    end(a0,1); end(a0+span,-1);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(P,3)); g.setAttribute('normal',new THREE.Float32BufferAttribute(N,3)); g.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));
+  return g;
+}
+// ângulo de um ponto do trecho inicial desenhado à mão (0–40 m): as quatro "paredes" antigas viraram quadrantes do
+// cilindro; lat em metros a partir do centro de cada quadrante (±4 m ↔ ±45°, os cantos antigos coincidem)
+const SCATTER_SKIP=2470;     // posição da sequência de sorteio em que as agarras soltas começavam (ver _scatter)
+const wallA=(w,lat)=>w==='E'?lat*Math.PI/16:w==='S'?Math.PI/2-lat*Math.PI/16:w==='W'?Math.PI-lat*Math.PI/16:-Math.PI/2+lat*Math.PI/16;
 
 // ---------- labirinto: gerador (backtracker com viés de linha reta) + solucionador ----------
 // E[c][r] = parede a leste da célula; N[c][r] = parede ao norte (norte = mais fundo na sala, -z)
@@ -47,101 +79,216 @@ function mazeSolve(m,c0,c1){
 }
 
 class World{
-  constructor(scene){ this.scene=scene; this.W=W; this.TOP=TOP; this.root=null; this.onCrumble=null; this.onSecretRevealed=null; this.onMazeEvent=null; this.build(); }
+  constructor(scene){ this.scene=scene; this.TOP=TOP; this.root=null; this.onCrumble=null; this.onSecretRevealed=null; this.onMazeEvent=null; this.build(); }
   reset(){
     if(this.root){ this.scene.remove(this.root);
-      this.root.traverse(o=>{ if(o.geometry&&!o.geometry.userData.shared) o.geometry.dispose(); }); }
+      this.root.traverse(o=>{ if(o.geometry&&!o.geometry.userData.shared) o.geometry.dispose(); });
+      this._trashMaterials(this.root); }
     this.build();
+  }
+  // materiais e texturas criados só para esta construção do mapa (placas, telas, teclados, lâmpadas): vão para this.trash,
+  // que o SectorManager libera alguns segundos depois — quando o mapa novo já usa os mesmos programas de shader, que assim
+  // não são destruídos e recompilados. Os compartilhados (MAT, IMAT, TEX, modelos glTF, LOD) ficam.
+  _trashMaterials(root){
+    const keepM=new Set([...Object.values(MAT),...Object.values(IMAT),...ALT.values()]), keepT=new Set(Object.values(TEX)), out=new Set();
+    if(typeof Models!=='undefined'&&Models.ready) Models.ready.forEach(r=>r.scene.traverse(o=>{ if(o.material) [].concat(o.material).forEach(m=>keepM.add(m)); }));
+    if(typeof SectorManager!=='undefined'&&SectorManager._avg) SectorManager._avg.forEach(m=>keepM.add(m));
+    root.traverse(o=>{ [].concat(o.material||[]).forEach(m=>{ if(!m||keepM.has(m)) return; out.add(m);
+      for(const k of ['map','normalMap','emissiveMap','alphaMap']) if(m[k]&&m[k].isTexture&&!keepT.has(m[k])) out.add(m[k]); }); });
+    this.trash=(this.trash||[]).concat([...out]);
   }
   rand(a,b){ return a+(b-a)*this.R(); }
   build(){
     this.R=mulberry(1987);
     this.root=new THREE.Group(); this.scene.add(this.root);
     this.platforms=[]; this.checkpoints=[]; this.walls=[]; this.grabbables=[]; this.interactables=[]; this.lamps=[]; this.crumbling=[];
-    this.animated=[]; this.secrets=[]; this.puzzleRooms={}; this.puzzleDefs=[];
+    this.animated=[]; this.movers=[]; this.fans=[]; this.secrets=[]; this.puzzleRooms={}; this.puzzleDefs=[];
     this.maze=null; this.mazeScr=null; this._cam=null; this.cutaway=[]; this._routeGuide=null; this._labels=null;
-    this.openings=OPENINGS.map(o=>({...o})); this.sockets=[]; this.halls=[]; this.route=null; this.finishLight=null; this.finishDoor=null;
+    this.openings=OPENINGS.map(o=>this._opening(o)); this.shellSegs=[]; this.smooth=[]; this.sockets=[]; this.halls=[]; this.route=null; this.finishLight=null; this.finishDoor=null;
     this.spawnPoint=new V3(0,0,0); this.spawnYaw=-Math.PI/2;
     this._layout(); this._shell(); this._scatter(); this._lamps();
     this.raycastTargets=[...this.walls,...this.grabbables,...this.interactables];
   }
+  // ---------- aberturas (polares) ----------
+  _opening(o){
+    if(o.theta!=null) return {...o,a0:o.theta+Math.asin(clamp(o.v0/SHAFT_R,-1,1)),a1:o.theta+Math.asin(clamp(o.v1/SHAFT_R,-1,1))};
+    return {...o,a0:o.a-o.w/(2*SHAFT_R),a1:o.a+o.w/(2*SHAFT_R)};
+  }
+  _op(id){ return this.openings.find(o=>o.id===id); }
+  _opA(id){ const o=this._op(id); return (o.a0+o.a1)/2; }
+  // referencial local de uma direção θ: u = distância ao eixo do poço, v = lateral (sentido de θ crescente).
+  // Direções cardeais dão sólidos alinhados (caixas); as demais, caixas giradas.
+  _fr(theta){
+    const c0=Math.cos(theta), s0=Math.sin(theta), rc=Math.round(c0), rs=Math.round(s0), aligned=Math.abs(c0-rc)<1e-9&&Math.abs(s0-rs)<1e-9;
+    const C=aligned?rc:c0, S=aligned?rs:s0;
+    return {theta,c:C,s:S,aligned,
+      p:(u,y,v)=>new V3(u*C-v*S,y,u*S+v*C),
+      box:(u0,u1,v0,v1)=>{ const xs=[u0*C-v0*S,u1*C-v0*S,u0*C-v1*S,u1*C-v1*S], zs=[u0*S+v0*C,u1*S+v0*C,u0*S+v1*C,u1*S+v1*C]; return [Math.min(...xs),Math.max(...xs),Math.min(...zs),Math.max(...zs)]; },
+      yaw:(du,dv)=>Math.atan2(du*C-dv*S,du*S+dv*C),      // faz o +z do objeto olhar para a direção local (du,dv)
+      n:(nu,nv)=>new V3(nu*C-nv*S,0,nu*S+nv*C)           // normal local → mundo
+    };
+  }
   // ---------- primitivas ----------
-  _box(minX,maxX,minY,maxY,minZ,maxZ,mat,o={}){
-    const w=maxX-minX,h=maxY-minY,d=maxZ-minZ, geo=new THREE.BoxGeometry(w,h,d);
-    if(mat.userData&&mat.userData.tile) worldUV(geo,(minX+maxX)/2,(minY+maxY)/2,(minZ+maxZ)/2,mat.userData.tile); else if(UVSCALE_MATS.has(mat)) scaleUV(geo,w,h,d);
-    const m=new THREE.Mesh(geo,mat); m.position.set((minX+maxX)/2,(minY+maxY)/2,(minZ+maxZ)/2);
+  _solidData(m,pd,mat,o){
     const nail=mat===MAT.concrete||!!(mat.userData&&mat.userData.nailable);   // concreto, tijolo e pedra: aceitam prego
     m.userData={type:o.type||'wall',interactable:o.interactable===undefined?(nail?SURFACE.concrete:null):o.interactable};
     (o.parent||this.root).add(m);
     if(o.cut) this.cutaway.push(m);                  // candidatos a 'parede fantasma' no modo espectador
     if(o.ray!==false) this.walls.push(m);
-    if(o.solid!==false){ const pd={minX,maxX,minZ,maxZ,top:maxY,bottom:minY,kind:o.kind||'wall'}; this.platforms.push(pd); m.userData.solid=pd; }
+    if(o.solid!==false){ pd.kind=o.kind||'wall'; if(o.flat) pd.flat=true; if(o.porous) pd.porous=true; this.platforms.push(pd); m.userData.solid=pd; }
     return m;
   }
-  // caixa descrita por (lat, out) ao longo de uma parede do poço
-  _boxLO(axis,la,lb,oa,ob,y0,y1,mat,o){
-    const l0=Math.min(la,lb),l1=Math.max(la,lb),o0=Math.min(oa,ob),o1=Math.max(oa,ob);
-    return axis==='x'?this._box(o0,o1,y0,y1,l0,l1,mat,o):this._box(l0,l1,y0,y1,o0,o1,mat,o);
+  _box(minX,maxX,minY,maxY,minZ,maxZ,mat,o={}){
+    const w=maxX-minX,h=maxY-minY,d=maxZ-minZ, geo=new THREE.BoxGeometry(w,h,d);
+    if(mat.userData&&mat.userData.tile) worldUV(geo,(minX+maxX)/2,(minY+maxY)/2,(minZ+maxZ)/2,mat.userData.tile); else if(UVSCALE_MATS.has(mat)) scaleUV(geo,w,h,d);
+    const m=new THREE.Mesh(geo,mat); m.position.set((minX+maxX)/2,(minY+maxY)/2,(minZ+maxZ)/2);
+    return this._solidData(m,{minX,maxX,minZ,maxZ,top:maxY,bottom:minY},mat,o);
   }
-  // paredes do poço. Entre soleira e duto de cada puzzle (LOCK_BANDS) a parede vira CHAPA DE CONTENÇÃO:
-  // sem prego (interactable nulo) e sem agarras — a única passagem para cima é pela sala.
-  // Fora delas, o acabamento segue as fases de SHELL_FINISH (concreto, tijolo, pedra), com uma cinta de concreto entre fases.
+  // caixa girada: centro (cx,cz), meias medidas hx (eixo local x = direção yaw) e hz
+  _obox(cx,cz,hx,hz,yaw,y0,y1,mat,o={}){
+    const geo=new THREE.BoxGeometry(2*hx,y1-y0,2*hz);
+    if(mat.userData&&mat.userData.tile) worldUV(geo,0,(y0+y1)/2,0,mat.userData.tile); else if(UVSCALE_MATS.has(mat)) scaleUV(geo,2*hx,y1-y0,2*hz);
+    const m=new THREE.Mesh(geo,mat); m.position.set(cx,(y0+y1)/2,cz); m.rotation.y=-yaw;
+    const O={cx,cz,c:Math.cos(yaw),s:Math.sin(yaw),hx,hz};
+    return this._solidData(m,{...obbBounds(O),top:y1,bottom:y0,obb:O},mat,o);
+  }
+  // setor anelar: A = {cx,cz,r0,r1,a0,span}; centro padrão = eixo do poço
+  _arc(A,y0,y1,mat,o={}){
+    const arc={cx:A.cx||0,cz:A.cz||0,r0:Math.max(0,A.r0),r1:A.r1,a0:A.a0,span:Math.min(TAU,A.span)};
+    const m=new THREE.Mesh(arcGeometry(arc,y0,y1,arcTile(mat),o.segs),mat); m.position.set(arc.cx,(y0+y1)/2,arc.cz);
+    return this._solidData(m,{...arcBounds(arc),top:y1,bottom:y0,arc},mat,o);
+  }
+  // sólido agarrável (borda, viga, passarela): mantle por cima. Forma: caixa (x/z), girada (o.obb) ou anel (o.arc)
+  _grabSolid(m,pd,o){
+    const grab=o.grab!==false; pd.climbable=grab; pd.kind=o.kind||o.type; if(o.flat) pd.flat=true; if(o.porous) pd.porous=true;
+    m.userData={grab,type:o.type,alive:true,plat:pd,solid:pd};
+    this.root.add(m); (grab?this.grabbables:this.walls).push(m); this.platforms.push(pd);
+    if(o.label){ const c=pd.arc?polar((pd.arc.r0+pd.arc.r1)/2,pd.arc.a0+pd.arc.span/2,pd.top).add(new V3(pd.arc.cx,0,pd.arc.cz)):new V3((pd.minX+pd.maxX)/2,pd.top,(pd.minZ+pd.maxZ)/2);
+      const rad=pd.arc?Math.max(pd.arc.span*(pd.arc.r0+pd.arc.r1)/2,pd.arc.r1-pd.arc.r0)/2:Math.max(pd.maxX-pd.minX,pd.maxZ-pd.minZ)/2;
+      this.checkpoints.push({id:o.id,label:o.label,bonus:500,optional:false,position:c,radius:rad,bounds:pd}); }
+    return pd;
+  }
+  _block(minX,maxX,minZ,maxZ,bottom,top,o){
+    const geo=new THREE.BoxGeometry(maxX-minX,top-bottom,maxZ-minZ), m=new THREE.Mesh(geo,o.mat);
+    m.position.set((minX+maxX)/2,(top+bottom)/2,(minZ+maxZ)/2);
+    if(o.mat.userData&&o.mat.userData.tile) worldUV(geo,m.position.x,m.position.y,m.position.z,o.mat.userData.tile);
+    return this._grabSolid(m,{minX,maxX,minZ,maxZ,top,bottom},o);
+  }
+  _oblock(cx,cz,hx,hz,yaw,bottom,top,o){
+    const geo=new THREE.BoxGeometry(2*hx,top-bottom,2*hz), m=new THREE.Mesh(geo,o.mat); m.position.set(cx,(top+bottom)/2,cz); m.rotation.y=-yaw;
+    if(o.mat.userData&&o.mat.userData.tile) worldUV(geo,0,m.position.y,0,o.mat.userData.tile);
+    const O={cx,cz,c:Math.cos(yaw),s:Math.sin(yaw),hx,hz};
+    return this._grabSolid(m,{...obbBounds(O),top,bottom,obb:O},o);
+  }
+  _arcBlock(A,bottom,top,o){
+    const arc={cx:A.cx||0,cz:A.cz||0,r0:Math.max(0,A.r0),r1:A.r1,a0:A.a0,span:Math.min(TAU,A.span)};
+    const m=new THREE.Mesh(arcGeometry(arc,bottom,top,arcTile(o.mat),o.segs),o.mat); m.position.set(arc.cx,(top+bottom)/2,arc.cz);
+    return this._grabSolid(m,{...arcBounds(arc),top,bottom,arc},o);
+  }
+  // caixas descritas num referencial local (fr = _fr(θ)): alinhadas nas direções cardeais, giradas nas demais
+  _fb(fr,u0,u1,v0,v1,y0,y1,mat,o={}){
+    if(fr.aligned){ const [x0,x1,z0,z1]=fr.box(u0,u1,v0,v1); return this._box(x0,x1,y0,y1,z0,z1,mat,o); }
+    const c=fr.p((u0+u1)/2,0,(v0+v1)/2); return this._obox(c.x,c.z,Math.abs(u1-u0)/2,Math.abs(v1-v0)/2,fr.theta,y0,y1,mat,o);
+  }
+  _fblock(fr,u0,u1,v0,v1,bottom,top,o){
+    if(fr.aligned){ const [x0,x1,z0,z1]=fr.box(u0,u1,v0,v1); return this._block(x0,x1,z0,z1,bottom,top,o); }
+    const c=fr.p((u0+u1)/2,0,(v0+v1)/2); return this._oblock(c.x,c.z,Math.abs(u1-u0)/2,Math.abs(v1-v0)/2,fr.theta,bottom,top,o);
+  }
+  _fmesh(fr,geo,mat,u,y,v,yawDu,yawDv,parent){ const m=new THREE.Mesh(geo,mat); m.position.copy(fr.p(u,y,v)); if(yawDu!=null) m.rotation.y=fr.yaw(yawDu,yawDv); (parent||this.root).add(m); return m; }
+
+  // ---------- parede do poço ----------
+  // Uma faixa por trecho de altura (quebras nas aberturas, nas bandas seladas e nas fases de acabamento) e por quadrante,
+  // recortada nas aberturas. Nas bandas seladas a parede vira CHAPA DE CONTENÇÃO: sem prego (interactable nulo) e sem
+  // agarras. Cada pedaço sólido fica registrado em shellSegs (a trava final do cilindro, guard(), usa).
   _shell(){
-    for(const [axis,s] of [['x',1],['x',-1],['z',1],['z',-1]]){
-      const ops=this.openings.filter(o=>o.axis===axis&&o.s===s);
-      const oi=s*W, oo=s*(W+.5), L0=-W-.5, L1=W+.5;
-      const ys=new Set([-30,TOP+30]); ops.forEach(o=>{ ys.add(o.y0); ys.add(o.y1); }); LOCK_BANDS.forEach(b=>{ ys.add(b.y0); ys.add(b.y1); });
-      SHELL_FINISH.forEach(f=>{ ys.add(f.y); if(f.band) ys.add(f.y+SHELL_BAND); });
-      const Y=[...ys].sort((p,q)=>p-q);
-      for(let i=0;i<Y.length-1;i++){
-        const ya=Y[i], yb=Y[i+1]; if(yb-ya<1e-6) continue; const mid=(ya+yb)/2;
-        const mat=LOCK_BANDS.some(b=>mid>b.y0&&mid<b.y1)?MAT.liner:this._wallMat(axis,s,mid);
-        const bo={cut:true,interactable:mat===MAT.liner?null:SURFACE.concrete};
-        const op=ops.find(o=>mid>o.y0&&mid<o.y1);
-        if(op){ this._boxLO(axis,L0,op.lat0,oi,oo,ya,yb,mat,bo); this._boxLO(axis,op.lat1,L1,oi,oo,ya,yb,mat,bo); }
-        else this._boxLO(axis,L0,L1,oi,oo,ya,yb,mat,bo);
+    const ys=new Set([-30,TOP+30]); this.openings.forEach(o=>{ ys.add(o.y0); ys.add(o.y1); }); LOCK_BANDS.forEach(b=>{ ys.add(b.y0); ys.add(b.y1); });
+    SHELL_FINISH.forEach(f=>{ ys.add(f.y); if(f.band) ys.add(f.y+SHELL_BAND); });
+    const Y=[...ys].sort((p,q)=>p-q);
+    // as faixas que continuam iguais (mesmo quadrante, mesmo material, mesmo recorte) viram uma peça só: menos chamadas de
+    // desenho, mesma colisão (a UV de mundo não muda)
+    const open=new Map(), pieces=[], mats=new Map(), matId=m=>{ if(!mats.has(m)) mats.set(m,mats.size); return mats.get(m); };
+    const piece=(key,a0,span,ya,yb,mat,porous)=>{ const last=open.get(key); if(last&&Math.abs(last.y1-ya)<1e-9) last.y1=yb; else { const p={a0,span,y0:ya,y1:yb,mat,porous}; open.set(key,p); pieces.push(p); } };
+    for(let i=0;i<Y.length-1;i++){
+      const ya=Y[i], yb=Y[i+1]; if(yb-ya<1e-6) continue; const mid=(ya+yb)/2, band=this._inBand(mid,0);
+      const here=this.openings.filter(o=>mid>o.y0&&mid<o.y1);
+      for(let q=0;q<4;q++){
+        const q0=-Math.PI/4+q*Math.PI/2, mat=band?MAT.liner:this._wallMat(q,mid);
+        for(const [s0,s1] of this._subtract(q0,Math.PI/2,here)) piece(`${q}|${s0.toFixed(6)}|${s1.toFixed(6)}|${matId(mat)}`,q0+s0,s1-s0,ya,yb,mat,false);
       }
+      for(const o of here) if(o.grate) piece('grade|'+o.id,o.a0,o.a1-o.a0,ya,yb,MAT.grate,true);   // janela de grade: sólida, deixa o ar passar
     }
-    const fl=new THREE.Mesh(new THREE.PlaneGeometry(2*W,2*W),MAT.grate); fl.rotation.x=-Math.PI/2;
-    fl.userData={type:'floor'}; this.root.add(fl); this.walls.push(fl);
-    this.platforms.push({minX:-W,maxX:W,minZ:-W,maxZ:W,top:0,bottom:-.3,kind:'floor'});
+    for(const p of pieces) this._shellArc(p.a0,p.span,p.y0,p.y1,p.mat,p.porous);
+    // piso de grade do fundo do poço
+    this._arc({r0:0,r1:SHAFT_R+.05,a0:0,span:TAU},-.3,0,MAT.grate,{kind:'floor',flat:true,porous:true,interactable:null});
+    // nervuras de aço nas juntas dos quadrantes (só visual): orientam o olhar num poço sem cantos; uma peça por trecho contínuo
+    for(let q=0;q<4;q++){ const a=Math.PI/4+q*Math.PI/2, p=polar(SHAFT_R-.04,a); let y0=null;
+      for(let i=0;i<Y.length;i++){ const cut=i===Y.length-1||this._inOpening(a,(Y[i]+Y[i+1])/2,.3);
+        if(!cut&&y0==null) y0=Y[i];
+        if(cut&&y0!=null){ this._obox(p.x,p.z,.05,.13,a,y0,Y[i],MAT.metal,{solid:false,ray:false}); y0=null; } } }
+    // casca externa do silo (vista de fora, no modo espectador): tudo o que existe fica dentro dela
+    const outer=new THREE.Mesh(new THREE.CylinderGeometry(SILO_R,SILO_R,TOP+60,64,1,true),new THREE.MeshStandardMaterial({color:0x6d6a64,roughness:.95}));
+    outer.position.y=TOP/2; this.root.add(outer); this.cutaway.push(outer);
+    const roof=new THREE.Mesh(new THREE.RingGeometry(SHAFT_R+SHELL_T,SILO_R,64,1),outer.material); roof.rotation.x=-Math.PI/2; roof.position.y=TOP+30; this.root.add(roof); this.cutaway.push(roof);
+    outer.userData.exterior=roof.userData.exterior=true;   // só se vê de fora: o SectorManager só desenha no modo espectador
   }
-  // acabamento da parede do poço (axis,s) na altura y — SHELL_FINISH (levelData.js)
-  _wallMat(axis,s,y){
-    const wi=RING.findIndex(r=>r.axis===axis&&r.s===s); let f=SHELL_FINISH[0];
-    for(const k of SHELL_FINISH) if(y>=k.y) f=k;
-    return f.band&&y<f.y+SHELL_BAND?MAT.concreteBand:(FINISH[f.mats[wi]]||MAT.concrete);
+  _shellArc(a0,span,y0,y1,mat,porous){
+    this._arc({r0:SHAFT_R,r1:SHAFT_R+SHELL_T,a0,span},y0,y1,mat,{cut:true,porous,segs:72});
+    this.shellSegs.push({a0,span,y0,y1});
   }
-  _inOpening(axis,s,lat,y,m=.3){ return this.openings.some(o=>o.axis===axis&&o.s===s&&lat>o.lat0-m&&lat<o.lat1+m&&y>o.y0-m&&y<o.y1+m); }
+  // trechos de [0, Q] (a partir de q0) que nenhuma abertura cobre
+  _subtract(q0,Q,ops){
+    let segs=[[0,Q]];
+    for(const o of ops){ const w=o.a1-o.a0, d=wrap2(o.a0-q0);
+      for(const s of [d,d-TAU]){ const e=s+w; segs=segs.flatMap(([a,b])=>(e<=a||s>=b)?[[a,b]]:[[a,Math.max(a,s)],[Math.min(b,e),b]].filter(([x,y])=>y-x>1e-4)); } }
+    return segs;
+  }
+  _quad(a){ return Math.floor(wrap2(a+Math.PI/4)/(Math.PI/2))%4; }
+  // acabamento da parede do poço no quadrante q e na altura y — SHELL_FINISH (levelData.js)
+  _wallMat(q,y){
+    let f=SHELL_FINISH[0]; for(const k of SHELL_FINISH) if(y>=k.y) f=k;
+    return f.band&&y<f.y+SHELL_BAND?MAT.concreteBand:(FINISH[f.mats[q]]||MAT.concrete);
+  }
+  _inOpening(a,y,m=.3){ const da=m/SHAFT_R; return this.openings.some(o=>wrap2(a-(o.a0-da))<=o.a1-o.a0+2*da&&y>o.y0-m&&y<o.y1+m); }
   _inBand(y,m=.6){ return LOCK_BANDS.some(b=>y>b.y0-m&&y<b.y1+m); }
-  _wallPos(axis,s,lat,y,out){ return axis==='x'?new V3(s*(W-out),y,lat):new V3(lat,y,s*(W-out)); }
-  hold(axis,s,lat,y,crumble){
-    const m=new THREE.Mesh(axis==='x'?GEO.holdX:GEO.holdZ,crumble?MAT.crumble:MAT.holdBrick);
-    m.position.copy(this._wallPos(axis,s,lat,y,.1));
-    if(axis==='x') m.rotation.x=this.rand(-.25,.25); else m.rotation.z=this.rand(-.25,.25);
-    m.userData={grab:true,type:'hold',crumble:!!crumble,alive:true,wallNormal:axis==='x'?new V3(-s,0,0):new V3(0,0,-s)};
+  // há parede do poço (sólida) no ângulo a, em alguma parte da altura do corpo [y, y+BODY_H]?
+  _shellAt(a,y){ const y0=y+.05, y1=y+BODY_H-.05; return this.shellSegs.some(s=>s.y0<y1&&s.y1>y0&&wrap2(a-s.a0)<=s.span); }
+  // TRAVA DO CILINDRO (chamada pelo jogador depois da colisão): quem estava dentro do poço não sai pela parede, e quem
+  // estava fora não entra por ela — só pelas aberturas. Nenhuma sequência de empurrões atravessa a parede curva.
+  guard(p,prev,v){
+    const r=Math.hypot(p.x,p.z), rp=Math.hypot(prev.x,prev.z), IN=SHAFT_R-RAD, OUT=SHAFT_R+SHELL_T+RAD;
+    if(rp<SHAFT_R&&r>IN+1e-4&&this._shellAt(Math.atan2(p.z,p.x),p.y)){
+      const ux=p.x/r, uz=p.z/r; p.x=ux*IN; p.z=uz*IN; const vn=v.x*ux+v.z*uz; if(vn>0){ v.x-=vn*ux; v.z-=vn*uz; }
+    } else if(rp>SHAFT_R+SHELL_T&&r<OUT-1e-4&&r>1e-6&&this._shellAt(Math.atan2(p.z,p.x),p.y)){
+      const ux=p.x/r, uz=p.z/r; p.x=ux*OUT; p.z=uz*OUT; const vn=v.x*ux+v.z*uz; if(vn<0){ v.x-=vn*ux; v.z-=vn*uz; }
+    }
+  }
+
+  // ---------- agarras na parede curva ----------
+  hold(a,y,crumble){
+    const m=new THREE.Mesh(GEO.holdX,crumble?MAT.crumble:MAT.holdBrick);
+    m.position.copy(polar(SHAFT_R-.1,a,y)); m.rotation.order='YXZ'; m.rotation.set(this.rand(-.25,.25),-a,0);   // eixo longo tangente à parede
+    m.userData={grab:true,type:'hold',crumble:!!crumble,alive:true,wallNormal:new V3(-Math.cos(a),0,-Math.sin(a))};
     this.root.add(m); this.grabbables.push(m); return m;
   }
-  // linha de agarras sobre uma parede; gaps = agarras omitidas (exigem impulso ou prego)
-  path(axis,s,lat0,y0,lat1,y1,o={}){
-    const L=Math.hypot(lat1-lat0,y1-y0), n=Math.max(1,Math.ceil(L/(o.step||1.05))), jl=o.jl||.22, jy=o.jy||.1;
+  // linha de agarras sobre a parede, de (a0,y0) a (a1,y1); gaps = agarras omitidas (exigem impulso ou prego)
+  path(a0,y0,a1,y1,o={}){
+    const R=SHAFT_R, L=Math.hypot(R*(a1-a0),y1-y0), n=Math.max(1,Math.ceil(L/(o.step||1.05))), jl=(o.jl||.22)/R, jy=o.jy||.1;
     const gaps=new Set(); let tries=0;
     while(gaps.size<(o.gaps||0)&&tries++<60&&n>=5){ const i=2+Math.floor(this.R()*(n-3)); if(!gaps.has(i-1)&&!gaps.has(i+1)) gaps.add(i); }
     let side=1;
     for(let i=0;i<=n;i++){
       if(gaps.has(i)) continue;
       const f=i/n, end=(i===0||i===n);
-      const lat=clamp(lerp(lat0,lat1,f)+(end?0:this.rand(-jl,jl)),-3.6,3.6);
-      const y=lerp(y0,y1,f)+(end?0:this.rand(-jy,jy));
-      if(o.crumbleLine) this.hold(axis,s,lat,y,!end&&this.R()<(o.crumble||0));      // (linhas antigas, à mão: o tijolo que desmorona FAZ parte da linha)
+      const a=lerp(a0,a1,f)+(end?0:this.rand(-jl,jl)), y=lerp(y0,y1,f)+(end?0:this.rand(-jy,jy));
+      if(o.crumbleLine) this.hold(a,y,!end&&this.R()<(o.crumble||0));      // (linhas antigas, à mão: o tijolo que desmorona FAZ parte da linha)
       else {
-        this.hold(axis,s,lat,y,false);                                                // a linha é SEMPRE firme e contínua...
-        if(!end&&i<n-1&&this.R()<(o.crumble||0)){ side=-side; const f2=(i+.5)/n; this.hold(axis,s,clamp(lerp(lat0,lat1,f2)+side*.55,-3.6,3.6),lerp(y0,y1,f2)+.12,true); }   // ...e o tijolo que desmorona é um EXTRA ao lado (armadilha opcional)
+        this.hold(a,y,false);                                               // a linha é SEMPRE firme e contínua...
+        if(!end&&i<n-1&&this.R()<(o.crumble||0)){ side=-side; const f2=(i+.5)/n; this.hold(lerp(a0,a1,f2)+side*.55/R,lerp(y0,y1,f2)+.12,true); }   // ...e o tijolo que desmorona é um EXTRA ao lado (armadilha opcional)
       }
     }
   }
   // soquete de prego: marca na parede onde o prego entra (1 prego + 3 marteladas); fica no meio de cada vão liso
-  _socket(axis,s,lat,y){ return this._socketAt(this._wallPos(axis,s,lat,y,0),axis==='x'?new V3(-s,0,0):new V3(0,0,-s)); }
+  _socket(a,y){ return this._socketAt(polar(SHAFT_R,a,y),new V3(-Math.cos(a),0,-Math.sin(a))); }
   _socketAt(p,nrm){   // p = ponto na SUPERFÍCIE da parede, nrm = normal para dentro da sala
     const g=new THREE.Group(); g.position.set(p.x+nrm.x*.03,p.y,p.z+nrm.z*.03); g.rotation.y=Math.atan2(nrm.x,nrm.z); this.root.add(g);
     const ring=new THREE.Mesh(new THREE.TorusGeometry(.13,.022,6,14),MAT.socket); g.add(ring);
@@ -149,44 +296,23 @@ class World{
     const hit=new THREE.Mesh(new THREE.BoxGeometry(.6,.6,.3),IMAT.hidden); g.add(hit);
     const sk=new NailSocket(this,p,nrm,ring); [ring,core,hit].forEach(m=>{ m.userData={type:'socket',interactable:sk}; }); this.interactables.push(ring,core,hit); this.sockets.push({p,n:nrm,sk}); return sk;
   }
-  // trecho de subida; com o.blank = comprimento (m) de parede LISA no meio da linha (sem tijolos):
-  // ali o jogador precisa de martelo + prego para continuar
-  _leg(axis,s,la,ya,lb,yb,o={}){
-    if(o.blank){
-      const L=Math.hypot(lb-la,yb-ya), f0=o.blankAt||.4, f1=Math.min(.9,f0+o.blank/L);
-      const at=f=>[lerp(la,lb,f),lerp(ya,yb,f)];
-      const [l0,y0]=at(f0), [l1,y1]=at(f1);
-      this.path(axis,s,la,ya,l0,y0,{...o,crumble:0,gaps:0,blank:0}); this.path(axis,s,l1,y1,lb,yb,{...o,crumble:0,gaps:0,blank:0});   // sem tijolos que desmoronam ao lado do vão
-      this._socket(axis,s,(l0+l1)/2,(y0+y1)/2);
-    } else this.path(axis,s,la,ya,lb,yb,o);
+  // borda curva presa à parede do poço: centro angular aC, largura w (m, medida na parede), profundidade d, topo top
+  _ledge(aC,w,d,top,o={}){
+    const span=w/SHAFT_R;
+    return this._arcBlock({r0:SHAFT_R-d,r1:SHAFT_R+.02,a0:aC-span/2,span},top-.3,top,{mat:o.mat||(o.kind==='rest'?MAT.woodDeck:MAT.metal),type:'ledge',kind:o.kind||'platform',label:o.label,id:o.id,flat:true});
   }
-  _block(minX,maxX,minZ,maxZ,bottom,top,o){
-    const geo=new THREE.BoxGeometry(maxX-minX,top-bottom,maxZ-minZ), m=new THREE.Mesh(geo,o.mat);
-    m.position.set((minX+maxX)/2,(top+bottom)/2,(minZ+maxZ)/2);
-    if(o.mat.userData&&o.mat.userData.tile) worldUV(geo,m.position.x,m.position.y,m.position.z,o.mat.userData.tile);
-    const grab=o.grab!==false;
-    const pd={minX,maxX,minZ,maxZ,top,bottom,climbable:grab,kind:o.kind||o.type};
-    m.userData={grab,type:o.type,alive:true,plat:pd,solid:pd};
-    this.root.add(m); (grab?this.grabbables:this.walls).push(m); this.platforms.push(pd);
-    if(o.label) this.checkpoints.push({id:o.id,label:o.label,bonus:500,optional:false,
-      position:new V3(m.position.x,top,m.position.z),radius:Math.max(maxX-minX,maxZ-minZ)/2,bounds:pd});
-    return pd;
-  }
-  platform(axis,s,lat,top,o={}){
-    const w=o.w||3, d=o.d||1.8; let minX,maxX,minZ,maxZ;
-    if(axis==='x'){ if(s>0){minX=W-d;maxX=W;}else{minX=-W;maxX=-W+d;} minZ=lat-w/2; maxZ=lat+w/2; }
-    else { if(s>0){minZ=W-d;maxZ=W;}else{minZ=-W;maxZ=-W+d;} minX=lat-w/2; maxX=lat+w/2; }
-    const mat=o.kind==='rest'?MAT.woodDeck:MAT.metal;   // descansos: tablado de madeira de andaime · demais: chapa de aço
-    return this._block(minX,maxX,minZ,maxZ,top-.3,top,{mat,type:'ledge',kind:o.kind||'platform',label:o.label,id:o.id});
-  }
-  beam(dir,c,y){ const h=.11;
-    return dir==='x'?this._block(-W,W,c-h,c+h,y-h,y+h,{mat:MAT.beam,type:'beam'}):this._block(c-h,c+h,-W,W,y-h,y+h,{mat:MAT.beam,type:'beam'}); }
+  // viga radial que cruza o poço inteiro (diâmetro) na direção a; agarrável e dá para subir nela
+  beamA(a,y){ const h=.11; return this._oblock(0,0,SHAFT_R+.25,h,a,y-h,y+h,{mat:MAT.beam,type:'beam'}); }
+  // viga numa corda paralela a x (dir 'x', a z = c) ou a z (dir 'z', a x = c) — trecho inicial
+  beam(dir,c,y){ const h=.11, L=Math.sqrt(Math.max(0,SHAFT_R*SHAFT_R-c*c))+.25;
+    return dir==='x'?this._block(-L,L,c-h,c+h,y-h,y+h,{mat:MAT.beam,type:'beam'}):this._block(c-h,c+h,-L,L,y-h,y+h,{mat:MAT.beam,type:'beam'}); }
   pipe(x,z,y0,y1){
     const m=new THREE.Mesh(new THREE.CylinderGeometry(.16,.16,y1-y0,12),MAT.pipe);
     m.position.set(x,(y0+y1)/2,z); m.userData={grab:true,type:'pipe',alive:true};
     this.root.add(m); this.grabbables.push(m);
     this.platforms.push({minX:x-.16,maxX:x+.16,minZ:z-.16,maxZ:z+.16,top:y1,bottom:y0,climbable:true,kind:'pipe'});
-    for(let y=y0+1.5;y<y1;y+=3){ const br=new THREE.Mesh(new THREE.BoxGeometry(.6,.08,.08),MAT.metal); br.position.set(x+.3*Math.sign(x),y,z); this.root.add(br); }
+    const r=Math.hypot(x,z)||1;
+    for(let y=y0+1.5;y<y1;y+=3){ const br=new THREE.Mesh(new THREE.BoxGeometry(.6,.08,.08),MAT.metal); br.position.set(x+.3*x/r,y,z+.3*z/r); br.rotation.y=-Math.atan2(z,x); this.root.add(br); }
   }
   // ---------- objetos interativos ----------
   box(x,y,z,loot){
@@ -224,44 +350,43 @@ class World{
     const it=new Note(text,true); b.userData={type:'terminal',interactable:it}; s.userData={type:'terminal',interactable:it};
     this.interactables.push(b,s);
   }
-  // painel quebrável preenchendo uma abertura. Por padrão a pista é sutil (o acabamento da parede em volta num tom um pouco
-  // mais quente, parafusos, desalinhamento, som oco); com o.mat (ex.: MAT.concreteCracked) a própria textura entrega o painel,
-  // o.bolts=false remove os parafusos e o.flush deixa o painel rente à parede (o desenho continua o da parede vizinha).
+  // painel quebrável preenchendo uma abertura da parede curva. Por padrão a pista é sutil (o acabamento da parede em volta
+  // num tom um pouco mais quente, parafusos, desalinhamento, som oco); com o.mat (ex.: MAT.concreteCracked) a própria
+  // textura entrega o painel, o.bolts=false remove os parafusos e o.flush deixa o painel rente à parede.
   breakable(opId,o){
-    const op=this.openings.find(x=>x.id===opId), s=op.s, mat=o.mat||altOf(this._wallMat(op.axis,s,(op.y0+op.y1)/2));
-    const m=this._boxLO(op.axis,op.lat0,op.lat1,s*(W-(o.flush?.002:.015)),s*(W+.5),op.y0,op.y1,mat,{type:'breakable',interactable:null,kind:'breakable'});
-    if(!o.flush){ if(op.axis==='x') m.rotation.x=.006; else m.rotation.z=.006; }
-    const n=op.axis==='x'?new V3(-s,0,0):new V3(0,0,-s);
-    if(o.bolts!==false) for(const [la,ya] of [[op.lat0+.12,op.y0+.15],[op.lat1-.12,op.y0+.15],[op.lat0+.12,op.y1-.15],[op.lat1-.12,op.y1-.15]]){
-      const b=new THREE.Mesh(new THREE.CylinderGeometry(.022,.022,.03,6),MAT.bolt);
-      const wp=op.axis==='x'?new V3(s*(W-.03),ya,la):new V3(la,ya,s*(W-.03));
-      b.position.copy(wp).sub(m.position); b.quaternion.setFromUnitVectors(new V3(0,1,0),n); m.add(b);
-    }
+    const op=this._op(opId), mid=(op.y0+op.y1)/2, mat=o.mat||altOf(this._wallMat(this._quad((op.a0+op.a1)/2),mid));
+    const m=this._arc({r0:SHAFT_R+(o.flush?.002:.015),r1:SHAFT_R+SHELL_T,a0:op.a0,span:op.a1-op.a0},op.y0,op.y1,mat,{type:'breakable',interactable:null,kind:'breakable'});
+    if(!o.flush) m.rotation.y=.004;                      // desalinhado de leve
+    if(o.bolts!==false){ const pad=.12/SHAFT_R;
+      for(const [a,y] of [[op.a0+pad,op.y0+.15],[op.a1-pad,op.y0+.15],[op.a0+pad,op.y1-.15],[op.a1-pad,op.y1-.15]]){
+        const b=new THREE.Mesh(new THREE.CylinderGeometry(.022,.022,.03,6),MAT.bolt), n=new V3(-Math.cos(a),0,-Math.sin(a));
+        b.position.copy(polar(SHAFT_R-.015,a,y)).sub(m.position); b.quaternion.setFromUnitVectors(new V3(0,1,0),n); m.add(b);
+      } }
     const it=new BreakableWall(m,{maxDamage:o.maxDamage,secretId:o.secretId});
     m.userData.interactable=it; m.userData.alive=true; return it;
   }
-  alcove(opId,depth=1.7,floorIn=0){
-    const op=this.openings.find(x=>x.id===opId), s=op.s, ax=op.axis, C=this._wallMat(ax,s,(op.y0+op.y1)/2);
-    const oi=s*(W-floorIn), o1=s*(W+.5), oD=s*(W+.5+depth), oE=s*(W+.75+depth), a=op.lat0, b=op.lat1;
-    this._boxLO(ax,a-.25,b+.25,oi,oE,op.y0-.3,op.y0,C,{kind:'floor'});
-    this._boxLO(ax,a-.25,b+.25,o1,oE,op.y1,op.y1+.3,C);
-    this._boxLO(ax,a-.25,a,o1,oE,op.y0,op.y1,C);
-    this._boxLO(ax,b,b+.25,o1,oE,op.y0,op.y1,C);
-    this._boxLO(ax,a,b,oD,oE,op.y0,op.y1,C);
-    const mid=(a+b)/2, oc=s*(W+.5+depth*.55);
-    return ax==='x'?new V3(oc,op.y0,mid):new V3(mid,op.y0,oc);
+  // nicho atrás de uma abertura (direção cardeal da abertura)
+  alcove(opId,depth=1.7){
+    const op=this._op(opId), fr=this._fr(op.theta), C=this._wallMat(this._quad(op.theta),(op.y0+op.y1)/2), a=op.v0, b=op.v1;
+    const u0=SHAFT_R+.02, u1=SHAFT_R+SHELL_T, uD=u1+depth, uE=uD+.25;
+    this._fb(fr,u0,uE,a-.25,b+.25,op.y0-.3,op.y0-.003,C,{kind:'floor',flat:true});
+    this._fb(fr,u1-.3,uE,a-.25,b+.25,op.y1,op.y1+.3,C);
+    this._fb(fr,u1-.3,uE,a-.25,a,op.y0,op.y1,C); this._fb(fr,u1-.3,uE,b,b+.25,op.y0,op.y1,C);
+    this._fb(fr,uD,uE,a,b,op.y0,op.y1,C);
+    return fr.p(u1+depth*.55,op.y0,(a+b)/2);
   }
-  // sala grande atrás de uma abertura: largura 'width' (lat), pé-direito 'height', profundidade útil 'depth' a partir da face externa do poço
+  // sala grande atrás de uma abertura: largura 'width', pé-direito 'height', profundidade útil 'depth' a partir da face
+  // externa do poço. A frente é reta: entre ela e a parede curva fica concreto maciço (paredes de fechamento ao lado da abertura).
   hall(opId,{depth=10,width=8,height=4}={}){
-    const op=this.openings.find(x=>x.id===opId), s=op.s, ax=op.axis, hw=width/2, t=.3;
-    const o0=s*(W+.5), o1=s*(W+.5+depth), o2=s*(W+.5+depth+t), y0=op.y0, yt=y0+height, C=MAT.concreteDark, sf=SURFACE.concrete;
-    this._boxLO(ax,-hw-t,hw+t,s*W,o2,y0-.3,y0,C,{kind:'floor',interactable:sf});
-    this._boxLO(ax,-hw-t,hw+t,o0,o2,yt,yt+.3,C,{interactable:sf,cut:true});
-    this._boxLO(ax,-hw-t,-hw,o0,o2,y0,yt+.3,C,{interactable:sf});
-    this._boxLO(ax,hw,hw+t,o0,o2,y0,yt+.3,C,{interactable:sf});
-    this._boxLO(ax,-hw-t,hw+t,o1,o2,y0,yt+.3,C,{interactable:sf});
-    const oc=s*(W+.5+depth/2);
-    return {anchor:ax==='x'?new V3(oc,y0,0):new V3(0,y0,oc), zone:{minX:-(W+.5+depth+t),maxX:-(W+.05),minZ:-hw-t,maxZ:hw+t,minY:y0-.4,maxY:yt+.3}};
+    const op=this._op(opId), fr=this._fr(op.theta), hw=width/2, t=.3, y0=op.y0, yt=y0+height, C=MAT.concreteDark, sf=SURFACE.concrete;
+    const u0=SHAFT_R+SHELL_T, u1=u0+depth, u2=u1+t;
+    this._fb(fr,SHAFT_R+.02,u2,-hw-t,hw+t,y0-.3,y0-.003,C,{kind:'floor',interactable:sf,flat:true});
+    this._fb(fr,u0-.3,u2,-hw-t,hw+t,yt,yt+.3,C,{interactable:sf,cut:true});
+    this._fb(fr,u0-.3,u0,-hw-t,op.v0,y0,yt,C,{interactable:sf}); this._fb(fr,u0-.3,u0,op.v1,hw+t,y0,yt,C,{interactable:sf});   // frente, dos lados da abertura
+    this._fb(fr,u0,u1,-hw-t,-hw,y0,yt+.3,C,{interactable:sf}); this._fb(fr,u0,u1,hw,hw+t,y0,yt+.3,C,{interactable:sf});
+    this._fb(fr,u1,u2,-hw-t,hw+t,y0,yt+.3,C,{interactable:sf});
+    const [x0,x1,z0,z1]=fr.box(u0-.4,u2,-hw-t,hw+t);
+    return {anchor:fr.p(u0+depth/2,y0,0), zone:{minX:x0,maxX:x1,minZ:z0,maxZ:z1,minY:y0-.4,maxY:yt+.3}};
   }
   revealSecret(id,ctx){
     const sc=this.secrets.find(x=>x.id===id); if(!sc||sc.revealed) return;
@@ -276,115 +401,81 @@ class World{
     this.root.add(a); this.grabbables.push(a); this.raycastTargets.push(a); return a;
   }
   nearAnchor(p,r){ return this.grabbables.some(m=>{ const t=m.userData.type; return (t==='hold'||t==='nail')&&m.userData.alive!==false&&m.position.distanceTo(p)<r; }); }
+  // diafragma de grade: disco que fecha o poço inteiro (sólido, não agarrável, sem prego; o ar e o olhar passam)
+  _diaphragm(y){
+    this._arc({r0:0,r1:SHAFT_R+.06,a0:0,span:TAU},y,y+.3,MAT.grate,{kind:'diaphragm',flat:true,porous:true,interactable:null});
+    this._arc({r0:SHAFT_R-.35,r1:SHAFT_R,a0:0,span:TAU},y-.28,y+.02,MAT.metal,{solid:false,ray:false,segs:48});
+    for(let k=0;k<4;k++) this._obox(0,0,SHAFT_R-.05,.07,k*Math.PI/4,y-.26,y-.01,MAT.metal,{solid:false,ray:false});
+  }
 
-  // ---------- subida: gerador de trechos ----------
-  // st = {w: parede do RING, dir: +1 anti-horário / -1 horário, lat: lat inicial (null = canto), y: altura do primeiro agarre}
-  // n trechos (um por parede) até yEnd (altura do ÚLTIMO agarre, 1.4 m abaixo do topo da plataforma de chegada).
-  // o.rests {i:{label,id,note,terminal,loot}} → plataforma de descanso (checkpoint) no fim do trecho i
-  // o.gaps(i) → agarras omitidas · o.crumble → prob. de agarra que desmorona · o.blanks [i] → parede lisa (martelo+prego)
-  // o.beams k → viga a cada k trechos · o.endLat → lat do último agarre (alinha com a soleira)
-  _climb(st,yEnd,n,o={}){
-    const rests=o.rests||{}, ws=[]; let sum=0, usable=yEnd-st.y;
-    for(let i=0;i<n-1;i++) usable-=rests[i]?3.2:.7;
-    for(let i=0;i<n;i++){ const w=.8+.4*this.R(); ws.push(w); sum+=w; }
-    let y=st.y;
-    for(let i=0;i<n;i++){
-      const wall=RING[st.w], last=i===n-1;
-      const from=st.lat!=null?st.lat:(st.dir>0?wall.a:wall.b);
-      let to=st.dir>0?wall.b:wall.a; if(last&&o.endLat!=null) to=o.endLat;
-      const yb=last?yEnd:y+usable*ws[i]/sum;
-      const lo={gaps:0,crumble:o.crumble||0,step:CLIMB.step,jl:CLIMB.jitterLat,jy:CLIMB.jitterY};
-      const blank=o.blanks&&o.blanks.includes(i);
-      if(blank){ lo.blank=CLIMB.blank; lo.blankAt=.4+.1*this.R(); }
-      this._leg(wall.axis,wall.s,from,y,to,yb,lo);
-      if(o.beams&&!blank&&!rests[i]&&!last&&i%o.beams===o.beams-1){
-        const c=clamp((from+to)/2,-2.4,2.4); this.beam(wall.axis==='x'?'x':'z',c,(y+yb)/2+.6);
-      }
-      if(last) break;
-      if(rests[i]){ const T=yb+1.4; this._rest(wall,to,T,rests[i]); y=T+1.8; } else y=yb+.7;
-      st.w=(st.w+st.dir+4)%4; st.lat=null;
-    }
-    return st;
+  // ponte de inspeção: passarela reta que cruza o poço pelo diâmetro, do descanso até a parede oposta
+  _bridge(a,T){
+    this._oblock(0,0,SHAFT_R,.6,a,T-.3,T,{mat:MAT.grate,type:'ledge',kind:'bridge',flat:true,porous:true});
+    for(const sg of [-1,1]){ const p=polar(.62,a+sg*Math.PI/2); this._obox(p.x,p.z,SHAFT_R-.2,.03,a,T+1.0,T+1.06,MAT.metal,{solid:false,ray:false}); }
   }
-  // plataforma de descanso no canto: checkpoint + caixa/nota/terminal
-  _rest(wall,endLat,T,sp={}){
-    const sg=Math.sign(endLat)||1, c=endLat-sg*1.25, {axis,s}=wall;
-    this.platform(axis,s,c,T,{w:3,d:1.8,label:sp.label,id:sp.id,kind:'rest'});
-    const P=(lat,off)=>axis==='x'?new V3(s*(W-off),T,lat):new V3(lat,T,s*(W-off));
-    if(sp.loot){ const p=P(c-sg*.6,.75); this.box(p.x,T,p.z,sp.loot); }
-    if(sp.note){ const p=P(c+sg*.55,.55); this.note(p.x,T,p.z,sp.note); }
-    if(sp.terminal){ const p=P(c,.45), face=axis==='x'?-s*Math.PI/2:(s>0?Math.PI:0); this.terminal(p.x,T,p.z,face,sp.terminal); }
-    const wing=WINGS.find(w=>w.after===sp.id); if(wing) this._wing(wall,c,T,{id:wing.id,finish:wing.finish,dress:(fr,I)=>this._dressWing(wing,fr,I)});
+  // soleira de uma ala: borda curta na parede, na altura do piso da sala, diante da abertura
+  _sill(a,w,H,note){
+    this._ledge(a,w,1.0,H,{kind:'sill'});
+    if(note){ const p=polar(SHAFT_R-.55,a+(w>2.5?.45:-.3)/SHAFT_R,H); this.note(p.x,p.y,p.z,note); }
   }
-  // soleira de um destino: pequena plataforma na parede (axis,s), na altura do piso da sala
-  _sill(axis,sd,lat,w,H,note){
-    this.platform(axis,sd,lat,H,{w,d:1.0,kind:'sill'});
-    if(note){ const p=axis==='x'?new V3(sd*(W-.55),H,lat+(w>2.5?.45:-.3)):new V3(lat+(w>2.5?.45:-.3),H,sd*(W-.55)); this.note(p.x,p.y,p.z,note); }
-  }
-  // plataforma de saída (10 m acima da soleira)
-  _exitPlat(axis,sd,lat,H,label,id,note,loot){
-    this.platform(axis,sd,lat,H+10,{w:3,d:1.8,label,id});
-    const P=(l,off)=>axis==='x'?new V3(sd*(W-off),H+10,l):new V3(l,H+10,sd*(W-off));
-    if(note){ const p=P(lat-.9,.45); this.note(p.x,p.y,p.z,note); }
-    if(loot){ const p=P(lat+.7,.9); this.box(p.x,p.y,p.z,loot); }
+  // plataforma de saída de uma ala (dez metros acima da soleira, já acima do trecho selado)
+  _exitPlat(a,top,label,id,note,loot){
+    this._ledge(a,3,1.8,top,{label,id});
+    const P=(lat,off)=>polar(SHAFT_R-off,a+lat/SHAFT_R,top);
+    if(note){ const p=P(-.9,.45); this.note(p.x,p.y,p.z,note); }
+    if(loot){ const p=P(.7,.9); this.box(p.x,p.y,p.z,loot); }
   }
 
   // ---------- layout vertical ----------
   _layout(){
-    this._start();   // 0–40 m (S0 + bifurcação), desenhado à mão
-    const [A,B,C]=HALLS;
-    const reg=(cfg,g)=>{ this.halls.push(g); this.puzzleRooms[cfg.id]={id:cfg.id,kind:cfg.kind,baseY:cfg.H,cap:cfg.H-6,zoneRoom:g.zoneRoom,zones:g.zones,refs:g.refs,geo:g,cfg}; this.puzzleDefs.push({id:cfg.id,kind:'hall'}); };
+    this._start();   // 0–40 m (S0 + bifurcação + passarela anelar), desenhado à mão
+    const [A,B]=HALLS;
+    const reg=(cfg,g)=>{ this.halls.push(g); this.puzzleRooms[cfg.id]={id:cfg.id,kind:cfg.kind,baseY:cfg.H,cap:cfg.H-6,zoneRoom:g.zoneRoom,zones:g.zones,refs:g.refs,geo:g,cfg,parent:cfg.hub||null}; this.puzzleDefs.push({id:cfg.id,kind:'hall'}); };
 
-    // ===== SUBIDA 1 · 40–100 m  → DESTINO I: Casa das Bombas (lado leste)
-    this._climb({w:0,dir:1,lat:-1.5,y:41.8},A.H-1.4,9,{
-      endLat:2.4,crumble:CLIMB.crumble[0],blanks:[4],beams:3,
-      rests:{2:{label:'Casa de máquinas',id:'cp3',note:NOTES[60],loot:{nails:3}},
-             5:{label:'Sala de controle',id:'cp4',terminal:NOTES[80],loot:{pills:1,nails:2}}}});
-    this._sill('x',A.s,1.8*A.m,2.4,A.H,null);
+    // ===== SUBIDA 1 · 40–100 m → I: Casa das Bombas (leste) — os trechos de subida ficam em Climbs.js
+    this._subida1();
+    this._sill(this._opA('h1_in'),2.4,A.H,null);
+    this._diaphragm(DIAPHRAGMS[0]);
     reg(A,this._foundry(A));
-    this._exitPlat('x',A.s,-1.8*A.m,A.H,A.exitLabel,A.exitId,NOTES[A.exitNote],{nails:3});
+    this._exitPlat(this._opA('h1_out'),A.H+10,A.exitLabel,A.exitId,NOTES[A.exitNote],{nails:3});
 
-    // ===== SUBIDA 2 · 110–200 m  → DESTINO II: A Estufa (lado oeste, espelhada)
-    this._climb({w:0,dir:1,lat:-1.8,y:A.H+12.9},B.H-1.4,11,{
-      endLat:-2.4,crumble:CLIMB.crumble[1],blanks:[5,9],beams:3,
-      rests:{3:{label:'Andaime norte',id:'cp6',note:NOTES[150],loot:{nails:3}},
-             6:{label:'Galeria de cabos',id:'cp7',note:NOTES[180],loot:{pills:1,nails:3}},
-             8:{label:'Mezanino',id:'cp8',loot:{nails:3}}}});
-    this._sill('x',B.s,1.8*B.m,2.4,B.H,NOTES[196]);
-    reg(B,this._greenhouse(B));
-    this._exitPlat('x',B.s,-1.8*B.m,B.H,B.exitLabel,B.exitId,NOTES[B.exitNote],{nails:3});
+    // ===== SUBIDA 2 · 113–150 m → boca da galeria do exaustor (o vento começa a puxar perto do fim)
+    this._subida2();
+    this._exhaust(EXHAUST);
 
-    // ===== SUBIDA 3 · 210–300 m  → DESTINO III: O Arquivo e o Labirinto (lado norte)
-    this._climb({w:2,dir:1,lat:1.8,y:B.H+12.9},C.H-1.4,14,{
-      endLat:.6,crumble:CLIMB.crumble[2],blanks:[2,6,10],beams:4,
-      rests:{3:{label:'Câmara de válvulas',id:'cp10',note:NOTES[240],loot:{nails:3}},
-             7:{label:'Corredor de serviço',id:'cp11',note:NOTES[270],loot:{pills:1,nails:3}},
-             10:{label:'Antessala do Arquivo',id:'cp12',loot:{nails:3}}}});
-    this._sill('z',-1,0,2.8,MAZE.H,NOTES[296]);
+    // ===== SUBIDA 2b · 177–200 m → II: Pátio das Máquinas (entrada pelo norte)
+    this._subida2b();
+    this._sill(this._opA('p200_in'),2.4,HUB.H,NOTES[196]);
+    this._diaphragm(DIAPHRAGMS[1]);
+    this._hub(HUB,B,reg);
+
+    // ===== SUBIDA 3a · 227–246 m → insuflador (chega por baixo do alçapão da grade)
+    this._subida3a();
+    this._insuflador(INSUF);
+
+    // ===== SUBIDA 3b · 253–300 m → III: o Arquivo e o Labirinto (norte)
+    this._subida3b();
+    this._sill(this._opA('mz300_in'),2.8,MAZE.H,NOTES[296]);
+    this._diaphragm(DIAPHRAGMS[2]);
     this._mazeRoom(MAZE);
-    this._exitPlat('z',-1,2.4,MAZE.H,'Duto do Arquivo','cp13',NOTES[310],{nails:3,pills:1});
+    this._exitPlat(this._opA('mz300_out'),MAZE.H+10,'Duto do Arquivo','cp13',NOTES[310],{nails:3,pills:1});
 
-    // ===== SUBIDA 4 · 310–400 m  → fuga até a superfície
-    this._climb({w:3,dir:-1,lat:2.4,y:312.9},TOP-1.4,12,{
-      endLat:.2,crumble:CLIMB.crumble[3],blanks:[3,6,9],beams:4,
-      rests:{2:{label:'Cabine de guincho',id:'cp14',note:NOTES[340],loot:{nails:3}},
-             5:{label:'Ponte de inspeção',id:'cp15',note:NOTES[370],loot:{pills:1,nails:3}},
-             8:{label:'Último patamar',id:'cp16',loot:{nails:3}}}});
+    // ===== SUBIDA 4 · 313–400 m → fuga até a superfície
+    this._subida4();
     this._exitDoor();
   }
-  // 0–40 m: início, depósito (segredo 1), bifurcação e passarela — sala secreta inicial (segredo 0) atrás do jogador
+  // 0–40 m: início, depósito (segredo 1), bifurcação e passarela anelar — sala secreta inicial (segredo 0) atrás do jogador
   _start(){
     // S0 · 0–20 m
     this.box(1.1,0,1.0,{hammer:1,nails:6});
     this.note(1.7,0,-1.3,NOTES[0]);
-    this.path('x',1,0,1.9,.6,9.0);
+    this.path(wallA('E',0),1.9,wallA('E',.6),9.0);
     this.beam('x',.6,10);
-    this.path('x',-1,1.4,10.7,1.0,18.6);
-    this.platform('x',-1,.5,20,{w:4.4,d:2.2,label:'Depósito',id:'cp1',kind:'rest'});
-    this.box(-3.2,20,2.0,{nails:2}); this.note(-3.0,20,-1.0,NOTES[20]);
+    this.path(wallA('W',1.4),10.7,wallA('W',1.0),18.6);
+    this._ledge(wallA('W',.5),4.4,2.2,20,{label:'Depósito',id:'cp1',kind:'rest'});
+    { const p=polar(5.2,wallA('W',2.0),20); this.box(p.x,20,p.z,{nails:2}); const q=polar(5.0,wallA('W',-1.0),20); this.note(q.x,20,q.z,NOTES[20]); }
     // segredo 0: parede de concreto RACHADO atrás do ponto de partida → salão vazio de 10 m de profundidade.
-    // O painel ocupa exatamente dois painéis de fôrma (3 × 3 m, juntas da textura nas bordas) e fica rente à parede:
-    // é o mesmo concreto da parede em volta, com uma trinca natural desenhada nele (TEXGEN.crackOver)
+    // O painel é o mesmo concreto da parede em volta (mesma escala e UV), com uma trinca natural desenhada (TEXGEN.crackOver)
     this.breakable('secret0',{maxDamage:4,secretId:'secret0',mat:MAT.concreteCracked,bolts:false,flush:true});
     const h0=this.hall('secret0',{depth:10,width:8,height:4});
     this.secrets.push({id:'secret0',revealed:false,anchor:h0.anchor,content:null,onReveal:null});
@@ -392,34 +483,38 @@ class World{
     // segredo 1: painel quebrável atrás do depósito → nicho vazio (reservado para um easter egg futuro)
     this.breakable('secret1',{maxDamage:3,secretId:'secret1'});
     this.secrets.push({id:'secret1',revealed:false,anchor:this.alcove('secret1',1.7),content:null,onReveal:null});
-    // S1 · 20–40 m: bifurcação
-    this.path('x',-1,2.4,21.8,3.55,27.5);
-    this.path('z',1,-3.55,28.2,-.3,31.0);
-    this.platform('z',1,.2,32,{w:1.4,d:1.0,kind:'rest'});
-    this.path('z',1,.9,33.9,3.55,37.0);
-    this.path('x',1,3.55,37.6,-.4,38.6);
-    this.path('x',-1,-1.2,21.8,-2.2,36.6,{crumble:.45,gaps:1});
-    this.platform('x',-1,-3.1,29,{w:.9,d:.9,kind:'cache'}); this.box(-3.6,29,-3.1,{pills:1});
+    // S1 · 20–40 m: bifurcação (oeste → sul → leste) e o atalho enferrujado (oeste, tijolos que desmoronam)
+    this.path(wallA('W',2.4),21.8,wallA('W',3.55),27.5);
+    this.path(wallA('S',-3.55),28.2,wallA('S',-.3),31.0);
+    this._ledge(wallA('S',.2),1.4,1.0,32,{kind:'rest'});
+    this.path(wallA('S',.9),33.9,wallA('S',3.55),37.0);
+    this.path(wallA('E',3.55),37.6,wallA('E',-.4),38.6);
+    this.path(wallA('W',-1.2),21.8,wallA('W',-2.2),36.6,{crumble:.45,gaps:1});
+    this._ledge(wallA('W',-3.1),.9,.9,29,{kind:'cache'}); { const p=polar(5.55,wallA('W',-3.1),29); this.box(p.x,29,p.z,{pills:1}); }
     this.beam('x',-2.4,37.6);
     this.checkpoints.push({id:'atalho',label:'Atalho enferrujado',bonus:750,optional:true,position:new V3(.5,36.0,-2.4),radius:2.0});
-    this.platform('x',1,-1.5,40,{w:3.2,d:1.8,label:'Passarela',id:'cp2'});
+    // passarela anelar: contorna o poço inteiro a 40 m (dá para dar a volta completa sem tocar a parede)
+    this._arcBlock({r0:SHAFT_R-1.2,r1:SHAFT_R+.02,a0:0,span:TAU},39.7,40,{mat:MAT.grate,type:'ledge',kind:'platform',label:'Passarela',id:'cp2',flat:true,porous:true});
+    for(let k=0;k<12;k++){ const a=k*TAU/12, p=polar(SHAFT_R-1.17,a); this._obox(p.x,p.z,.025,.025,a,40,41,MAT.metal,{solid:false,ray:false}); }
+    this._arc({r0:SHAFT_R-1.2,r1:SHAFT_R-1.14,a0:0,span:TAU},40.98,41.04,MAT.metal,{solid:false,ray:false,segs:48});
   }
   _exitDoor(){
-    this.platform('x',1,0,TOP,{w:3.2,d:2.2,kind:'exit'});
-    const nm=new THREE.Mesh(new THREE.PlaneGeometry(.32,.42),MAT.paper); nm.rotation.x=-Math.PI/2; nm.position.set(W-1.7,TOP+.012,-1.0);
+    const a=0;
+    this._ledge(a,3.2,2.2,TOP,{kind:'exit'});
+    const nm=new THREE.Mesh(new THREE.PlaneGeometry(.32,.42),MAT.paper); nm.rotation.x=-Math.PI/2; nm.position.set(SHAFT_R-1.7,TOP+.012,-1.0);
     nm.userData={type:'note',interactable:new LiveNote(()=>NOTES[395]+'\n\n'+(this.route?`Caminho escolhido: ${ENDINGS[this.route].name} (${ENDINGS[this.route].tag}).`:'Você não escolheu nenhum caminho. A porta leva à Fuga.'),false)}; this.root.add(nm); this.interactables.push(nm);
-    this.finish={position:new V3(W-1.1,TOP,0),radius:1.3};
+    this.finish={position:new V3(SHAFT_R-1.1,TOP,0),radius:1.3};
     const door=new THREE.Mesh(new THREE.PlaneGeometry(1.2,2.2),new THREE.MeshBasicMaterial({color:0xfff6e0}));
-    door.position.set(W-.02,TOP+1.1,0); door.rotation.y=-Math.PI/2; this.root.add(door);
-    const dl=new THREE.PointLight(0xfff0d0,2.2,18,1.4); dl.position.set(W-1,TOP+1.5,0); this.root.add(dl); this.finishDoor=door; this.finishLight=dl;
+    door.position.set(SHAFT_R-.02,TOP+1.1,0); door.rotation.y=-Math.PI/2; this.root.add(door);
+    const dl=new THREE.PointLight(0xfff0d0,2.2,18,1.4); dl.position.set(SHAFT_R-1,TOP+1.5,0); this.root.add(dl); this.finishDoor=door; this.finishLight=dl;
   }
 
-  // ---------- duto vertical + túnel até o poço (compartilhado pelas salas de bombas e pelo labirinto) ----------
+  // ---------- duto vertical + túnel até o poço (saída do labirinto) ----------
   // duto: interior x[x0,x1], profundidade 1.7 a partir do plano frontal zf (para -z), sobe de H a H+12.4;
-  // túnel: de zf até o poço (z=-4.5), piso em H+10. roofTop = topo do teto da sala (fecha o vão até o túnel).
+  // túnel: de zf até a parede curva do poço, piso em H+10. roofTop = topo do teto da sala (fecha o vão até o túnel).
   _duct(x0,x1,zf,H,roofTop){
-    const C=MAT.concrete, a=x0-.3, b=x1+.3, xc=(x0+x1)/2;
-    this._box(a,b,H-.3,H,zf-2,zf,C,{kind:'floor'});
+    const C=MAT.concrete, a=x0-.3, b=x1+.3, xc=(x0+x1)/2, zIn=x=>-Math.sqrt(Math.max(0,SHAFT_R*SHAFT_R-x*x));   // face interna do poço em x
+    this._box(a,b,H-.3,H,zf-2,zf,C,{kind:'floor',flat:true});
     this._box(a,x0,H,H+12.7,zf-2,zf,C); this._box(x1,b,H,H+12.7,zf-2,zf,C);
     this._box(a,b,H,H+12.7,zf-2,zf-1.7,C); this._box(a,b,H+12.4,H+12.7,zf-2,zf,C);
     this._box(a,b,roofTop,H+9.7,zf,zf+.3,C);
@@ -428,31 +523,37 @@ class World{
       const m=new THREE.Mesh(GEO.holdZ,MAT.holdBrick); m.position.set(xc+(i%2?.3:-.3)+this.rand(-.08,.08),y,zf-1.6); m.rotation.z=this.rand(-.25,.25);
       m.userData={grab:true,type:'hold',crumble:false,alive:true,wallNormal:new V3(0,0,1)}; this.root.add(m); this.grabbables.push(m);
     }
-    // túnel até o poço
-    this._block(x0,x1,zf,-4.0,H+9.7,H+10,{mat:MAT.metal,type:'ledge',kind:'tunnel'});
-    this._box(a,x0,H+10,H+12.7,zf,-4.5,C); this._box(x1,b,H+10,H+12.7,zf,-4.5,C); this._box(a,b,H+12.4,H+12.7,zf,-4.5,C);
+    // túnel até o poço: cada peça termina na face interna da parede curva medida no |x| mais perto do eixo (nunca
+    // invade o poço); o teto vai em faixas para acompanhar a curva. O piso entra embaixo da plataforma de saída.
+    const near=(p,q)=>p<=0&&q>=0?0:Math.min(Math.abs(p),Math.abs(q));
+    this._block(x0,x1,zf,zIn(Math.max(Math.abs(x0),Math.abs(x1))),H+9.7,H+9.995,{mat:MAT.metal,type:'ledge',kind:'tunnel',flat:true});
+    this._box(a,x0,H+10,H+12.7,zf,zIn(near(a,x0)),C); this._box(x1,b,H+10,H+12.7,zf,zIn(near(x1,b)),C);
+    const n=Math.ceil((b-a)/.6); for(let i=0;i<n;i++){ const s0=a+(b-a)*i/n, s1=a+(b-a)*(i+1)/n; this._box(s0,s1,H+12.4,H+12.7,zf,zIn(near(s0,s1)),C); }
   }
 
   // ---------- O Labirinto (puzzle difícil, 300 m) ----------
-  // Grande sala com paredes internas, entrada pela parede -z do poço. Na antecâmara, uma tela mostra a planta e a rota;
-  // quando o jogador chega a < MAZE.near m, uma contagem de MAZE.countdown s começa e a tela apaga PARA SEMPRE.
-  // O duto de manutenção de saída fica numa abertura baixa na parede do fundo, sem luz nem placa.
+  // Grande sala com paredes internas, ligada ao poço (norte) por um braço reto curto. Na antecâmara, uma tela mostra a
+  // planta e a rota; quando o jogador chega a < MAZE.near m, uma contagem de MAZE.countdown s começa e a tela apaga PARA
+  // SEMPRE. O duto de manutenção de saída fica numa abertura baixa na parede do fundo, sem luz nem placa.
   _mazeRoom(M){
     const H=M.H, cs=M.cell, t=M.wall, h=M.height, halfW=M.cols*cs/2, C=MAT.stoneDark, sf=SURFACE.concrete;   // labirinto de pedra antiga
-    const zA=-4.5, zG=zA-M.ante, zF=zG-M.rows*cs;                 // face externa do poço · linha da frente da grade · face interna da parede do fundo
-    const xb=c=>-halfW+cs*c, zb=r=>zG-cs*r;                         // bordas de coluna / de linha
-    const o={interactable:sf};
-    // casca da sala
-    this._box(-halfW-t,halfW+t,H-.3,H,zF-t,-4.0,C,{kind:'floor',interactable:sf});
-    this._box(-halfW-t,halfW+t,H+h,H+h+t,zF-t,-4.0,C,{interactable:sf,cut:true});
-    this._box(-halfW-t,-halfW,H,H+h,zF-t,-4.0,C,o); this._box(halfW,halfW+t,H,H+h,zF-t,-4.0,C,o);
-    this._box(-halfW-t,-W-.5,H,H+h+t,zA,-4.0,C,o); this._box(W+.5,halfW+t,H,H+h+t,zA,-4.0,C,o);   // fecha a frente ao lado do poço
+    const zA=-(SHAFT_R+SHELL_T+M.arm), zG=zA-M.ante, zF=zG-M.rows*cs;      // frente da sala · linha da frente da grade · face interna da parede do fundo
+    const xb=c=>-halfW+cs*c, zb=r=>zG-cs*r;                                  // bordas de coluna / de linha
+    const o={interactable:sf}, zIn=-Math.sqrt(SHAFT_R*SHAFT_R-1.2*1.2);
+    // casca da sala (a frente fica em z ∈ [zA, zA+t], com a porta do braço)
+    this._box(-halfW-t,halfW+t,H-.3,H,zF-t,zA+t,C,{kind:'floor',interactable:sf,flat:true});
+    this._box(-halfW-t,halfW+t,H+h,H+h+t,zF-t,zA+t,C,{interactable:sf,cut:true});
+    this._box(-halfW-t,-halfW,H,H+h,zF-t,zA+t,C,o); this._box(halfW,halfW+t,H,H+h,zF-t,zA+t,C,o);
+    this._box(-halfW-t,-1.2,H,H+h,zA,zA+t,C,o); this._box(1.2,halfW+t,H,H+h,zA,zA+t,C,o); this._box(-1.2,1.2,H+2.6,H+h,zA,zA+t,C,o);
+    // braço de entrada: do poço (parede curva) até a porta da sala
+    this._box(-1.5,1.5,H-.3,H-.005,zA,-SHAFT_R,C,{kind:'floor',interactable:sf,flat:true});
+    this._box(-1.5,-1.2,H,H+2.9,zA+t,zIn,C,o); this._box(1.2,1.5,H,H+2.9,zA+t,zIn,C,o); this._box(-1.5,1.5,H+2.6,H+2.9,zA+t,-SHAFT_R,C,{interactable:sf,cut:true});
     // parede do fundo, com a abertura baixa do duto na coluna de saída
     const e0=xb(M.exit), e1=xb(M.exit+1), gapH=2.4;
     this._box(-halfW-t,e0,H,H+h,zF-t,zF,C,o); this._box(e1,halfW+t,H,H+h,zF-t,zF,C,o); this._box(e0,e1,H+gapH,H+h,zF-t,zF,C,o);
     // grade do labirinto
     const grid=mazeGrid(M.cols,M.rows,M.seed,M.straight,M.entrance), route=mazeSolve(grid,M.entrance,M.exit);
-    this.maze={grid,route,cfg:M,zG,zF,xb,zb};
+    this.maze={grid,route,cfg:M,zA,zG,zF,xb,zb};
     const hRun=(r,c0,c1)=>this._box(xb(c0)-t/2,xb(c1+1)+t/2,H,H+h,zb(r)-t/2,zb(r)+t/2,C,o);          // parede ao longo de x na borda r
     const vRun=(c,r0,r1)=>this._box(xb(c)-t/2,xb(c)+t/2,H,H+h,zb(r1+1)-t/2,zb(r0)+t/2,C,o);          // parede ao longo de z na borda c
     // borda r=0 (frente): tudo fechado, menos a coluna de entrada
@@ -474,7 +575,8 @@ class World{
     const xc=(e0+e1)/2;
     this.puzzleRooms[M.id]={id:M.id,baseY:H,cap:H-6,
       zoneRoom:{minX:-halfW-t,maxX:halfW+t,minZ:zF-t,maxZ:zA,minY:H-.2,maxY:H+h+.3},
-      zoneDuct:{minX:e0-.3,maxX:e1+.3,minZ:zF-t-2.2,maxZ:zA,minY:H-.2,maxY:H+13},
+      zones:[{minX:-1.5,maxX:1.5,minZ:zA,maxZ:-SHAFT_R-.2,minY:H-.2,maxY:H+2.9}],
+      zoneDuct:{minX:e0-.3,maxX:e1+.3,minZ:zF-t-2.2,maxZ:-SHAFT_R-.2,minY:H-.2,maxY:H+13},
       zoneExit:{minX:e0,maxX:e1,minZ:zF-t-1.8,maxZ:zF-t,minY:H-.2,maxY:H+13},
       triggerZ:zA-.7,duct:{x:xc},kind:'archive',refs,code:info.code,info,cfg:M};
     this.puzzleDefs.push({id:M.id,kind:'hall'});
@@ -581,9 +683,9 @@ class World{
     if(this.finishDoor) this.finishDoor.material.color.setHex(col); if(this.finishLight) this.finishLight.color.setHex(col);
   }
   // ---------- modo espectador (ver js/systems/SpectatorMode.js) ----------
-  // paredes do poço, tetos das salas e do salão secreto viram vidro fantasma para enxergar o interior por fora
+  // parede do poço, casca do silo e tetos das salas viram vidro fantasma para enxergar o interior por fora
   setCutaway(on){
-    if(!this._ghostMat) this._ghostMat=new THREE.MeshBasicMaterial({color:0x7f93a8,transparent:true,opacity:.09,depthWrite:false,fog:false});
+    if(!this._ghostMat) this._ghostMat=new THREE.MeshBasicMaterial({color:0x7f93a8,transparent:true,opacity:.09,depthWrite:false,fog:false,side:THREE.DoubleSide});
     for(const m of this.cutaway){
       if(on){ if(!m.userData.origMat) m.userData.origMat=m.material; m.material=this._ghostMat; }
       else if(m.userData.origMat){ m.material=m.userData.origMat; m.userData.origMat=null; }
@@ -618,13 +720,21 @@ class World{
       for(const c of this.checkpoints) add([c.label||c.id,c.position.y.toFixed(0)+' m'+(c.optional?' · opcional':'')],c.position.x,c.position.y+1.6,c.position.z,{w:8});
       for(const h of this.halls){ if(!h.cfg||h.kind==='archive') continue; const c=h.fr.p((h.uN+h.uF)/2,h.H+h.h+3,0); add([h.cfg.name.toUpperCase(),`${h.H} m · ${h.cfg.tag} · final ${ENDINGS[h.cfg.route].name}`],c.x,c.y,c.z,{color:'#ff9a5a',w:14}); }
       for(const wg of WINGS){ const r=this.puzzleRooms[wg.id]; if(!r) continue; const z=r.zoneRoom; add([wg.name,'ramal opcional'],(z.minX+z.maxX)/2,z.maxY+1.2,(z.minZ+z.maxZ)/2,{color:'#c9a227',w:7}); }
-      add(['O ARQUIVO + LABIRINTO',`${MAZE.H} m · MEMÓRIA · final ${ENDINGS.witness.name}`],0,MAZE.H+11,-17,{color:'#ff9a5a',w:14});
-      if(this.maze){ const {zF,xb}=this.maze, M=this.maze.cfg; add(['Saída oculta (duto)','fundo do labirinto'],(xb(M.exit)+xb(M.exit+1))/2,M.H+3.4,zF+1.2,{color:'#7fe08a',w:8});
-        add(['Tela da planta','mostra a rota por 3 s'],this.mazeScr?this.mazeScr.center.x:-5,M.H+4.2,-8.8,{color:'#7fe08a',w:8}); }
-      for(const b of LOCK_BANDS) add(['TRECHO SELADO (chapa)',`${b.y0.toFixed(1)} – ${b.y1.toFixed(1)} m · só pela sala`],0,(b.y0+b.y1)/2,0,{color:'#ff5a5a',w:10});
+      if(this.maze){ const {zA,zF,xb}=this.maze, M=this.maze.cfg;
+        add(['O ARQUIVO + LABIRINTO',`${MAZE.H} m · MEMÓRIA · final ${ENDINGS.witness.name}`],0,MAZE.H+11,(zA+zF)/2,{color:'#ff9a5a',w:14});
+        add(['Saída oculta (duto)','fundo do labirinto'],(xb(M.exit)+xb(M.exit+1))/2,M.H+3.4,zF+1.2,{color:'#7fe08a',w:8});
+        if(this.mazeScr) add(['Tela da planta','mostra a rota por 3 s'],this.mazeScr.center.x,M.H+4.2,this.mazeScr.center.z+1.2,{color:'#7fe08a',w:8}); }
+      { const p=polar(10,Math.PI*.75,HUB.H+9.5); add(['PÁTIO DAS MÁQUINAS',`${HUB.H} m · anel · energia + freio → elevador`],p.x,p.y,p.z,{color:'#ff9a5a',w:14});
+        const e=this._fr(HUB.elevator.theta).p(16.2,HUB.H+3,0); add(['Elevador de carga',`${HUB.H} → ${HUB.elevator.top} m`],e.x,e.y,e.z,{color:'#7fe08a',w:8});
+        const f=this._fr(HUB.power.theta).p(20,HUB.H+8.5,0); add(['Casa de Força','energia do elevador'],f.x,f.y,f.z,{color:'#c9a227',w:8}); }
+      { const p=polar(8,(EXHAUST.a0+EXHAUST.a1)/2,EXHAUST.H+4.6); add(['GALERIA DO EXAUSTOR',`${EXHAUST.H} m · corredor protegido → escada`],p.x,p.y,p.z,{color:'#ff9a5a',w:12});
+        add(['EXAUSTOR',`${EXHAUST.fan.y} m · zona de sucção abaixo`],0,EXHAUST.fan.y+2.4,0,{color:'#ff5a5a',w:9}); }
+      { const p=polar(INSUF.fan.r,INSUF.a,INSUF.grateTop+3); add(['INSUFLADOR',`${INSUF.grateTop} m · o fluxo leva até o mirante`],p.x,p.y,p.z,{color:'#6ec6ff',w:10}); }
+      for(const b of LOCK_BANDS) add(['TRECHO SELADO (chapa)',`${b.y0.toFixed(1)} – ${b.y1.toFixed(1)} m · ${b.label}`],0,(b.y0+b.y1)/2,0,{color:'#ff5a5a',w:10});
+      for(const y of DIAPHRAGMS) add(['DIAFRAGMA DE GRADE',`${y.toFixed(1)} m · fecha o poço`],0,y+.8,0,{color:'#ff5a5a',w:8});
       for(const s of this.secrets) add([s.id==='secret0'?'SALA SECRETA (0 m)':'Nicho secreto (20 m)',s.id==='secret0'?'parede rachada · martelo · 10 m de fundo':'vazio · easter egg'],s.anchor.x,s.anchor.y+2.6,s.anchor.z,{color:'#c28aff',w:9});
       if(this.finish) add(['PORTA DE SAÍDA',TOP+' m'],this.finish.position.x-1,this.finish.position.y+3,this.finish.position.z,{color:'#7fe08a'});
-      for(let y=25;y<=TOP;y+=25) add([y+' m'],7.5,y,7.5,{color:'#6ec6ff',w:4});   // régua de altura
+      for(let y=25;y<=TOP;y+=25) add([y+' m'],SHAFT_R+3.5,y,SHAFT_R+3.5,{color:'#6ec6ff',w:4});   // régua de altura
       this.root.add(g); this._labels=g;
     }
     this._labels.visible=!!on;
@@ -636,22 +746,33 @@ class World{
     else if(!on&&S.state==='preview'){ S.state='wait'; this._paintScreen(S); }
   }
 
+  // agarras soltas pela parede (em cada quadrante), fora das aberturas, dos trechos selados e dos apoios especiais (Climbs.js)
+  // O sorteio tem sequência própria: a mesma semente avançada até o ponto em que a versão anterior do mapa começava a
+  // espalhar (SCATTER_SKIP). Assim o trecho inicial (0–40 m) fica idêntico, e mudar as subidas não embaralha as agarras soltas.
   _scatter(){
-    for(const [a,s] of [['x',1],['x',-1],['z',1],['z',-1]])
+    const keep=this.R; this.R=mulberry(1987); for(let i=0;i<SCATTER_SKIP;i++) this.R();
+    for(let q=0;q<4;q++)
       for(let y=2.5;y<TOP-2;y+=.9){
         if(this._inBand(y,.8)) continue;                       // trechos selados: nenhuma agarra solta
-        if(this.R()<lerp(.12,.05,y/TOP)){ const lat=this.rand(-3.3,3.3); if(!this._inOpening(a,s,lat,y,.4)){ const hm=this.hold(a,s,lat,y,this.R()<lerp(CLIMB.scatterCrumble[0],CLIMB.scatterCrumble[1],y/TOP)); hm.userData.extra=true; } }
+        if(this.R()<lerp(.12,.05,y/TOP)){ const a=-Math.PI/4+q*Math.PI/2+this.rand(.06,Math.PI/2-.06); if(!this._inOpening(a,y,.4)){
+          const crumble=this.R()<lerp(CLIMB.scatterCrumble[0],CLIMB.scatterCrumble[1],y/TOP);
+          // nem nas chapas, rachaduras, canos, corda e escadas: ali o apoio é o que está desenhado (o sorteio do tijolo
+          // pulado é consumido igual, para não deslocar os seguintes)
+          if(this._inSmooth(a,y,1.0)){ this.rand(-.25,.25); continue; }
+          const hm=this.hold(a,y,crumble); hm.userData.extra=true; } }
       }
+    this.R=keep;
   }
+  // luminárias de parede em espiral (ângulo de ouro): a luz nunca fica toda do mesmo lado
   _lamps(){
     for(let y=4,i=0;y<TOP+2;y+=7,i++){
-      const sz=i%2?1:-1, x=this.rand(-2.5,2.5);
+      const a=wrap2(i*2.39996+this.rand(-.2,.2));
       if(y>MAZE.H-5&&y<MAZE.H+14) continue;                    // o Labirinto é escuro: sem lâmpadas por perto (a luz do poço vaza pela parede)
-      if(this._inOpening('z',sz,x,y,.7)) continue;
+      if(this._inOpening(a,y,.7)) continue;
       const mat=new THREE.MeshBasicMaterial({color:0xfff2c8});
-      const m=new THREE.Mesh(GEO.lamp,mat); m.position.set(x,y,sz*(W-.07)); this.root.add(m);
+      const m=new THREE.Mesh(GEO.lamp,mat); m.position.copy(polar(SHAFT_R-.07,a,y)); m.rotation.y=-a+Math.PI/2; this.root.add(m);
       const dead=this.R()<lerp(.1,.8,clamp(y/TOP,0,1));        // quanto mais alto, mais lâmpadas mortas
-      this.lamps.push({mat,pos:new V3(x,y-.1,sz*(W-.5)),phase:this.R()*100,broken:!dead&&this.R()<.3,dead,k:dead?0:1});
+      this.lamps.push({mat,pos:polar(SHAFT_R-.5,a,y-.1),phase:this.R()*100,broken:!dead&&this.R()<.3,dead,k:dead?0:1});
     }
   }
   // ---------- runtime ----------
@@ -665,6 +786,8 @@ class World{
       } else { u.vy-=G*dt; o.position.y+=u.vy*dt; if(u.vy<-40){ this.root.remove(o); this.crumbling.splice(i,1); } }
     }
     if(this.animated.length) this.animated=this.animated.filter(a=>a.update(dt));
+    for(const m of this.movers) m.update(dt,player);        // elevador (leva o jogador junto)
+    for(const f of this.fans) f.spin(dt);
     if(this.mazeScr) this._updateMaze(dt,player);
   }
 }

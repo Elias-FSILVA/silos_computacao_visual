@@ -3,6 +3,9 @@
 
 /* ===== hotbar do HUD: quatro atalhos 1–4 ===== */
 #slots{ gap:14px; }
+/* Dois atalhos por mão: separação física entre [1][2] e [3][4]. */
+#slots .slot:nth-child(3){ margin-left:20px; position:relative; }
+#slots .slot:nth-child(3)::before{ content:''; position:absolute; left:-18px; top:10%; height:80%; border-left:1px solid rgba(221,214,200,.28); }
 #slotName{ margin-bottom:16px; }
 #slots .slot{ width:54px; height:54px; border-radius:6px; background:radial-gradient(circle at 50% 38%,rgba(28,24,20,.8),rgba(0,0,0,.6)); }
 /* anula o .empty de screens.css (margem e tamanho de fonte) e deixa o atalho vazio bem visível */
