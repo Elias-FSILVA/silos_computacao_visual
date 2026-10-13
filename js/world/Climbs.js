@@ -367,8 +367,8 @@ Object.assign(World.prototype,{
     // E · segundo vão de prego, agora seguido da escada danificada
     this._holds([[3.66,356.6],[3.72,360.2]],{crumble:0});
     this._plate(3.78,4.17,355.0,365.6);
-    this._socket(3.97,359.7); this._routeLamp(3.97,361.4,'yellow');
-    this._holds([[4.23,360.1],[4.33,362.4]],{crumble:0});
+    this._socket(4.04,359.9); this._routeLamp(4.04,361.4,'yellow');
+    this._holds([[4.29,360.1],[4.33,362.4]],{crumble:0});   // 4.29: o pulo da ponte (8.2 m/s) não alcança sem prego; soquete deslocado para cá mantém o lance ≤ 1,7 m
     this._islet(4.42,363.8);
     this._brokenLadder(4.60,364.6,{missing:[0,1,6,7]});
     this._restAt(4.85,373.2,{label:'Último patamar',id:'cp16',loot:{nails:3}});
