@@ -103,6 +103,7 @@ class World{
     this.root=new THREE.Group(); this.scene.add(this.root);
     this.platforms=[]; this.checkpoints=[]; this.walls=[]; this.grabbables=[]; this.interactables=[]; this.lamps=[]; this.crumbling=[];
     this.animated=[]; this.movers=[]; this.fans=[]; this.secrets=[]; this.puzzleRooms={}; this.puzzleDefs=[];
+    this.darkZones=[];   // salas escuras {zone, dark()}: enquanto dark() e o jogador dentro, a lanterna acende sozinha (Game._flashlight)
     this.maze=null; this.mazeScr=null; this._cam=null; this.cutaway=[]; this._routeGuide=null; this._labels=null;
     this.openings=OPENINGS.map(o=>this._opening(o)); this.shellSegs=[]; this.smooth=[]; this.sockets=[]; this.halls=[]; this.route=null; this.finishLight=null; this.finishDoor=null;
     this.spawnPoint=new V3(0,0,0); this.spawnYaw=-Math.PI/2;

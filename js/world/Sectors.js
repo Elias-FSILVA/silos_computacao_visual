@@ -31,6 +31,14 @@ class Fan{
 
 // rungs/agarras de escada: barra visível + caixa invisível (fácil de mirar), tratadas como 'hold' pela escalada
 const LADDER_HIT=new THREE.BoxGeometry(.16,.15,.62); LADDER_HIT.userData.shared=true;
+// halo das luminárias acesas (World._wallLamp): sprite aditivo com gradiente radial; a textura é uma só para todas
+let _HALO_TEX;
+function _lampHalo(col,opacity){
+  if(_HALO_TEX===undefined) _HALO_TEX=typeof document==='undefined'?null:canvasTex(64,64,(g,w,h)=>{
+    const r=g.createRadialGradient&&g.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2); if(!r) return; r.addColorStop(0,'rgba(255,255,255,1)'); r.addColorStop(.25,'rgba(255,255,255,.45)'); r.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle=r; g.fillRect(0,0,w,h); });
+  return new THREE.SpriteMaterial({map:_HALO_TEX,color:col,transparent:true,opacity,blending:THREE.AdditiveBlending,depthWrite:false});
+}
 
 // painel do elevador dentro da cabine: F aciona (se o Pátio deixar)
 class ElevatorControl extends Interactable{
@@ -94,11 +102,28 @@ Object.assign(World.prototype,{
   _plaque(pos,yaw,w,h,lines,o={}){
     const col=o.color||'#e8c15a', t=canvasTex(512,Math.round(512*h/w),(g,cw,ch)=>{ g.fillStyle=o.bg||'#14110d'; g.fillRect(0,0,cw,ch); g.strokeStyle=col; g.lineWidth=8; g.strokeRect(4,4,cw-8,ch-8);
       g.fillStyle=col; g.textAlign='center'; g.textBaseline='middle'; const n=lines.length, lh=ch/(n+1);
-      lines.forEach((s,i)=>{ g.font=`bold ${Math.min(64,lh*(i===0?.62:.5))|0}px sans-serif`; g.fillText(s,cw/2,lh*(i+1)); }); });
+      lines.forEach((s,i)=>{ g.font=`bold ${Math.min(64,lh*(i===0?.62:.5))|0}px sans-serif`; g.fillText(s,cw/2,lh*(i+1),cw-28); }); });
     const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshStandardMaterial({map:t,roughness:.7,metalness:.2,emissive:o.glow?0x332a10:0x000000}));
     m.position.copy(pos); m.rotation.y=yaw; this.root.add(m);
     if(o.note){ m.userData={type:'note',interactable:new Note(o.note)}; this._addHit(m); }
     return m;
+  },
+  // luminária de parede ACESA (lampadas_industriais.glb): p = ponto na superfície da parede, n = normal para fora dela.
+  // O vidro brilha atrás da grade (disco + halo) e a PointLight fica logo à frente. Sem o modelo, vira uma barra de luz.
+  // o: color, intensity, distance, decay, scale, kind ('rusty'|'yellow'), on (false = começa apagada), bulb/halo (materiais
+  // compartilhados, para acender um grupo de uma vez). Retorna {light, bulb, halo}.
+  _wallLamp(p,n,o={}){
+    const s=o.scale||1.5, col=o.color||0xffc98a, on=o.on!==false, yaw=Math.atan2(n.x,n.z);
+    const bulb=o.bulb||new THREE.MeshBasicMaterial({color:on?col:0x1a1612}), halo=o.halo||_lampHalo(col,on?.32:0);
+    const m=mapPart('mapLamps',o.kind==='yellow'?/Yellow/:/Rusty/);
+    if(m){
+      m.scale.setScalar(s); m.position.copy(p).addScaledVector(n,m.userData.size.z/2*s); m.rotation.y=yaw; this.root.add(m);
+      const d=new THREE.Mesh(new THREE.CircleGeometry(.095*s,16),bulb); d.position.copy(p).addScaledVector(n,.088*s); d.rotation.y=yaw; this.root.add(d);
+    } else { const b=new THREE.Mesh(new THREE.BoxGeometry(.9,.1,.1),bulb); b.position.copy(p).addScaledVector(n,.05); b.rotation.y=yaw; this.root.add(b); }
+    const sp=new THREE.Sprite(halo); sp.position.copy(p).addScaledVector(n,.2*s); sp.scale.setScalar(.75*s); this.root.add(sp);
+    const I=o.intensity||1.5, L=new THREE.PointLight(col,on?I:0,o.distance||12,o.decay||1.3);
+    L.position.copy(p).addScaledVector(n,.7); L.userData.on=I; this.root.add(L);
+    return {light:L,bulb,halo};
   },
   // escada de marinheiro numa parede do referencial fr (u = distância ao eixo do poço): degraus agarráveis de y0 a y1
   _ladder(fr,u,v,y0,y1,step=.38){
@@ -211,7 +236,11 @@ Object.assign(World.prototype,{
     for(const a of [.55,1.2,2.1,2.6,-.6,-2.4]){ const p=polar(r1-.35,a); this.pipe(p.x,p.z,H,H+h); }
     this._arc({r0:r1-.6,r1:r1-.4,a0:0,span:TAU},H+h-.7,H+h-.5,MAT.pipe,{solid:false,ray:false,segs:96});
     this._arc({r0:r0+.2,r1:r0+.4,a0:0,span:TAU},H+h-.5,H+h-.3,MAT.pipe,{solid:false,ray:false,segs:96});
-    for(let k=0;k<6;k++){ const a=k*TAU/6+.3, L=new THREE.PointLight(0xffd9a0,.9,11,1.6); L.position.copy(polar((r0+r1)/2,a,H+h-.6)); this.root.add(L);
+    // luminárias acesas: parede externa (entre portas, placas e canos) e parede do poço; as barras do teto só enfeitam
+    { const bulb=new THREE.MeshBasicMaterial({color:0xffc98a}), halo=_lampHalo(0xffc98a,.32);
+      for(const a of [.3,.9,1.95,2.35,2.85,3.65,4.25,-1.57,-1.05,-.3]) this._wallLamp(polar(r1,a,H+3.6),inward(a),{bulb,halo});
+      for(const a of [0,1.25,2.5,3.75,-1.15]) this._wallLamp(polar(r0,a,H+3.4),inward(a).negate(),{bulb,halo,intensity:1.2,distance:10}); }
+    for(let k=0;k<6;k++){ const a=k*TAU/6+.3;
       const lb=new THREE.Mesh(new THREE.BoxGeometry(.14,.07,1.6),MAT.glowAmber); lb.position.copy(polar((r0+r1)/2,a,H+h-.05)); lb.rotation.y=-a; this.root.add(lb); }
     // ---- plataforma segura na entrada: tablado, banco e poucos recursos (1 pílula, 2 pregos) ----
     const ea=Hc.entryA;
@@ -237,6 +266,7 @@ Object.assign(World.prototype,{
       zoneRoom:{...arcBounds(zarc),minY:H-.2,maxY:H+h+t,arc:zarc},
       zones:[zf(PW.theta,r1,PW.u1+.3,-PW.V-.3,PW.V+.3,H-.2,H+PW.h+.3),zf(EL.theta,r1,EL.u1+.3,-EL.V,EL.V,H-.6,EL.top+3.4),zf(EL.theta,r0-.2,r1,-1.5,1.5,EL.top-.2,EL.top+2.9)]};
     this.puzzleDefs.push({id:hall,kind:'hall'});
+    this.darkZones.push({zone:this.puzzleRooms[hall].zones[0],dark:()=>!refs.powered});   // Casa de Força, até a energia voltar
   },
   // CASA DE FORÇA (leste do anel): quatro geradores com a potência pintada, barramento e visor de carga
   _powerHouse(Hc,refs){
@@ -251,8 +281,9 @@ Object.assign(World.prototype,{
     gv.forEach((v,i)=>{
       this._fb(fr,uF-2.0,uF,v-1.0,v+1.0,H,H+2.6,MAT.pump,{interactable:null});
       this._fmesh(fr,new THREE.CylinderGeometry(.35,.35,1.6,14),MAT.pipe,uF-1.0,H+3.4,v).rotation.x=0;
-      this._fsign(fr,uF-2.02,H+1.95,v,-1,0,1.1,.75,(g,cw,ch)=>{ g.fillStyle='#15120d'; g.fillRect(0,0,cw,ch); g.strokeStyle='#c9a227'; g.lineWidth=6; g.strokeRect(3,3,cw-6,ch-6);
+      const plate=this._fsign(fr,uF-2.02,H+1.95,v,-1,0,1.1,.75,(g,cw,ch)=>{ g.fillStyle='#15120d'; g.fillRect(0,0,cw,ch); g.strokeStyle='#c9a227'; g.lineWidth=6; g.strokeRect(3,3,cw-6,ch-6);
         g.fillStyle='#e8c15a'; g.textAlign='center'; g.textBaseline='middle'; g.font='bold 40px sans-serif'; g.fillText('G'+(i+1),cw/2,ch*.32); g.font='bold 52px sans-serif'; g.fillText(POWER.ratings[i]+' MW',cw/2,ch*.7); },256,176);
+      plate.mesh.material=new THREE.MeshBasicMaterial({map:plate.tex});   // tinta fosforescente: dá para ler no escuro
       const lamp=this._fmesh(fr,new THREE.BoxGeometry(.3,.12,.3),MAT.darkLamp,uF-1.0,H+2.66,v); refs.lamps.push(lamp);
       const lv=this._makeLever(P(uF-2.18,H+1.0,v),fr.yaw(-1,0),{hall,id:'gen:'+i,label:'Gerador G'+(i+1),jam:POWER.jam[i],deny:'O barramento está desarmado. Espere o rearme.'});
       refs.gens.push(lv);
@@ -262,15 +293,27 @@ Object.assign(World.prototype,{
     const scr=canvasTex(512,256,()=>{}), sm=new THREE.Mesh(new THREE.PlaneGeometry(1.6,.8),new THREE.MeshBasicMaterial({map:scr})); sm.position.copy(P(18.2,H+2.5,-V+.05)); sm.rotation.y=fr.yaw(0,1); this.root.add(sm);
     this._fb(fr,17.25,19.15,-V,-V+.04,H+2.0,H+3.0,M,{interactable:null,solid:false,ray:false});
     refs.display=(load,state,col)=>{ const g=scr.userData.ctx; g.fillStyle='#030803'; g.fillRect(0,0,512,256); g.fillStyle='#4fa05a'; g.font='bold 30px monospace'; g.textAlign='center'; g.textBaseline='middle';
-      g.fillText('BARRAMENTO · CARGA',256,46); g.fillStyle=col||'#9bffa8'; g.font='bold 96px monospace'; g.fillText(load+' MW',256,132); g.font='bold 30px monospace'; g.fillText(state||'',256,214); scr.needsUpdate=true; };
+      g.fillText('CARGA · META '+POWER.demand+' MW',256,46); g.fillStyle=col||'#9bffa8'; g.font='bold 96px monospace'; g.fillText(load+' MW',256,132); g.font='bold 30px monospace'; g.fillText(state||'',256,214); scr.needsUpdate=true; };
     refs.display(0,'DESLIGADO');
-    this._lbl(fr,18.2,H+3.35,-V+.06,0,1,2.2,.45,'BARRAMENTO','#e8c15a');
+    { const lb=this._lbl(fr,18.2,H+3.35,-V+.06,0,1,2.2,.45,'BARRAMENTO','#e8c15a'); lb.mesh.material=new THREE.MeshBasicMaterial({map:lb.tex}); }
+    // quadro de instruções junto à porta (fosforescente, legível com a sala apagada); interagir abre a regra completa
+    { const q=this._plaque(P(uN+t+.02,H+1.9,-4.2),fr.yaw(1,0),3.0,2.0,['COMO RELIGAR A ENERGIA','1. O motor do elevador pede '+POWER.demand+' MW',
+        '2. Ligue geradores que somem '+POWER.demand+' MW','3. Nunca dois geradores VIZINHOS','4. Por último: feche o BARRAMENTO'],{color:'#ffd27a',note:POWER_TEXT.rule});
+      q.material=new THREE.MeshBasicMaterial({map:q.material.map}); }
     // mesa com o diário da engenheira e a regra de operação; transformadores de decoração
     this._fb(fr,16.0,17.6,4.6,6.4,H,H+.9,M,{interactable:null});
     { const q=P(16.8,H+.9,5.5); this.terminal(q.x,q.y,q.z,fr.yaw(0,-1),POWER_TEXT.log); const n=P(17.3,H+.9,4.9); this.note(n.x,n.y,n.z,POWER_TEXT.rule); }
     for(const v of [-5.6,5.6]) this._fb(fr,20.5,21.9,v-.7,v+.7,H,H+1.8,MAT.pump,{interactable:null});
-    for(const [u,v] of [[17,-3],[22,3],[17,3]]){ const L=new THREE.PointLight(0xffb070,.0,10,1.6); L.position.copy(P(u,H+h-.6,v)); this.root.add(L); (refs.powerLights=refs.powerLights||[]).push(L); }
-    { const L=new THREE.PointLight(0xff8040,.55,9,1.8); L.position.copy(P(18,H+4,0)); this.root.add(L); refs.emergency=L; }   // luz de emergência (até a energia voltar)
+    // luminárias da sala: apagadas até o barramento fechar (laterais e fundo, acima dos geradores e do barramento)
+    { const bulb=new THREE.MeshBasicMaterial({color:0x1a1612}), halo=_lampHalo(0xffb070,0), pw=[];
+      for(const [u,v,nu,nv] of [[16,-V,0,1],[22.5,-V,0,1],[17,V,0,-1],[22.5,V,0,-1],[uF,0,-1,0]])
+        pw.push(this._wallLamp(P(u,H+4.3,v),fr.n(nu,nv),{bulb,halo,color:0xffb070,on:false,intensity:1.5,distance:12,scale:1.4}).light);
+      refs.powerLights=pw; refs.powerBulb={bulb,halo}; }
+    // luz de emergência (até a energia voltar): luminária amarela acima da porta
+    { const e=this._wallLamp(P(uN+t,H+3.3,0),fr.n(1,0),{kind:'yellow',color:0xff8040,intensity:.9,distance:12,decay:1.5,scale:1.3}); refs.emergency=e.light; refs.emergencyBulb=e; }
+    refs.powered=false;
+    refs.setPowerLights=on=>{ refs.powered=on; refs.powerLights.forEach(L=>{ L.intensity=on?L.userData.on:0; }); refs.powerBulb.bulb.color.setHex(on?0xffb070:0x1a1612); refs.powerBulb.halo.opacity=on?.32:0;
+      refs.emergency.intensity=on?0:refs.emergency.userData.on; refs.emergencyBulb.bulb.color.setHex(on?0x1a1612:0xff8040); refs.emergencyBulb.halo.opacity=on?0:.32; };
     this._fmesh(fr,new THREE.BoxGeometry(.1,.1,2*V),MAT.pipe,uF-.4,H+h-.5,0);
   },
   // ELEVADOR DE CARGA (sul do anel): poço com duas portas (200 m e 224 m), cabine que sobe com o jogador, freio

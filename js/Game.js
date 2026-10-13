@@ -15,6 +15,10 @@ class Game{
     this.camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.03,200); this.camera.rotation.order='YXZ';
     this.scene.add(this.camera);
     const head=new THREE.PointLight(0xb8ae98,.45,7,2); this.camera.add(head);
+    // lanterna: fica sempre na cena (apagada = intensidade 0, sem recompilar shaders); L liga/desliga e ela acende
+    // sozinha nas salas escuras (world.darkZones) — no VR é o único jeito: não sobra botão livre no controle
+    const fl=this.flashlight=new THREE.SpotLight(0xfff0d8,0,22,.5,.55,1.4); fl.position.set(.12,-.1,0); fl.target.position.set(.12,-.1,-1);
+    this.camera.add(fl); this.camera.add(fl.target); this.flashOn=null; this.flashAuto=false; this.flashTipped=false;
     this.audio=new AudioManager(this.settings.data);
     this.world=new World(this.scene);
     this.player=new Player(this.scene,this.camera,this.world);
@@ -104,6 +108,16 @@ class Game{
     this.fx.clear(); this.puzzles.reset(); this._zones(); this.audio.silence();
     this.checkpoints.reset(); this.atmosphere.reset(); this.result=null; this.saved=false; this.savedIndex=-1; this.vt=0;
     this.ui.hideNote(); this.ui.resetPack(); this.keys={}; this.gameBtn={};   // resetPack: fecha a mochila e esquece as posições dos itens
+    this.flashOn=null; this.flashAuto=false; this.flashlight.intensity=0;
+  }
+  // lanterna: flashOn = escolha do jogador (null = automática: acesa só dentro de uma sala escura)
+  toggleFlashlight(){ this.flashOn=!(this.flashOn??this.flashAuto); this.ui.toast('Lanterna',this.flashOn?'ligada':'desligada',1.5); }
+  _flashlight(dt){
+    const p=this.player.position, dark=(this.world.darkZones||[]).some(d=>d.dark()&&inZone(p,d.zone));
+    if(dark&&!this.flashTipped){ this.flashTipped=true; this.ui.toast('Escuro demais','A lanterna acende sozinha'+(this.vr.active?'':' · L liga e desliga'),5); }
+    if(dark!==this.flashAuto){ this.flashAuto=dark; if(!dark) this.flashOn=null; }   // ao sair da sala escura, volta ao automático
+    const L=this.flashlight, tgt=(this.flashOn??this.flashAuto)?2.4:0;
+    L.intensity+=clamp(tgt-L.intensity,-dt*12,dt*12);
   }
   _zones(){ this.mass.safeZones=Object.values(this.world.puzzleRooms).flatMap(r=>[r.zoneRoom,r.zoneDuct,...(r.zones||[])].filter(Boolean)); }
   beginPlay(){
@@ -340,6 +354,7 @@ class Game{
         case 'Space': this.player.jump({x:(this.keys.KeyD?1:0)-(this.keys.KeyA?1:0),y:(this.keys.KeyW?1:0)-(this.keys.KeyS?1:0)}); break;
         case 'KeyF': this.interact(); break;
         case 'KeyQ': this.items.quick('pills'); break;
+        case 'KeyL': this.toggleFlashlight(); break;
         case 'KeyX': this.items.holsterAll(); break;
         case 'Tab': this.openInventory(); break;   // alterna: a mochila é interativa e precisa do mouse solto
         case 'Escape': case 'KeyP': this.pause(); break;
@@ -408,7 +423,7 @@ class Game{
     this._windFx(dt);
     this.items.update(dt); this.fx.update(dt);
     this.timer.update(dt);
-    this.puzzles.update(dt);
+    this.puzzles.update(dt); this._flashlight(dt);
     if(this.mass.update(dt,this.timer.elapsedTime,this.player)==='activated') this.ui.msg('O piso vibra. Algo lá embaixo começou a subir.',4);
     if(this.mass.caught&&!this.player.dead) this.player.die('mass');
     this.player.applyCamera(); this.player.updateViewmodel();

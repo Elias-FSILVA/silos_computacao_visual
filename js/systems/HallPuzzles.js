@@ -167,7 +167,7 @@ class ArchiveLogic{
 //   FREIO (Estufa): o ciclo completo faz as raízes soltarem o freio de segurança (evento 'brake' vindo da Estufa).
 //   ELEVADOR: com os dois, o painel da cabine leva o jogador (dentro da cabine) até 224 m.
 class HubLogic{
-  constructor(p){ this.p=p; this.power=false; this.brake=false; this.on=POWER.ratings.map(()=>false); this.lockUntil=0; p.requiredActions=['power','brake','elevator'];
+  constructor(p){ this.p=p; this.power=false; this.brake=false; this.on=POWER.ratings.map(()=>false); this.lockUntil=0; this.trips=0; this.entered=false; p.requiredActions=['power','brake','elevator'];
     const el=this.refs.elevator; if(el) el.onArrive=()=>{ p.msg(`Patamar de ${HUB.elevator.top} m. O braço devolve ao poço, acima da grade.`,4); if(p.g.audio.clank) p.g.audio.clank(); }; }
   get refs(){ return this.p.refs; }
   get locked(){ return this.p.t<this.lockUntil; }
@@ -198,7 +198,7 @@ class HubLogic{
       const L=this.load(), adj=this.on.some((v,i)=>v&&this.on[i+1]);
       if(L===POWER.demand&&!adj){
         this.power=true; p.step('power'); p.score(600); this._show('ENERGIA NO MOTOR','#9bffa8');
-        R.setStatus('power',true); (R.powerLights||[]).forEach(l=>{ l.intensity=1.0; }); if(R.emergency) R.emergency.intensity=0;
+        R.setStatus('power',true); R.setPowerLights(true);
         p.msg(`O barramento fecha em ${L} MW. Lá no anel, o motor do elevador acorda.`,5); if(p.g.audio.chime) p.g.audio.chime();
         this._check();
       } else this._trip(adj?'Dois geradores vizinhos ligados: o cabo entre eles estoura e o barramento desarma.':`Carga de ${L} MW: não é o que o motor pede. O barramento desarma.`);
@@ -210,11 +210,25 @@ class HubLogic{
   }
   _check(){ if(this.power&&this.brake) this.p.msg('Energia e freio liberados: o elevador de carga (sul do anel) está pronto.',5); }
   _trip(why){
-    const p=this.p, R=this.refs; p.shake(.6); p.msg(why+` Painel travado por ${POWER.lockout} s.`,4); if(p.g.audio.crash) p.g.audio.crash();
+    const p=this.p, R=this.refs; p.shake(.6); p.msg(why+` Painel travado por ${POWER.lockout} s.`+this._tip(++this.trips),this.trips>1?7:4); if(p.g.audio.crash) p.g.audio.crash();
     this.on=this.on.map(()=>false); R.gens.forEach(l=>l.setOn(false,false)); R.bus.setOn(false,false);
     this.lockUntil=p.t+POWER.lockout; this._show('DESARMADO','#ff6a5a');
   }
-  update(){ if(this._wasLocked&&!this.locked) this._show('REARMADO'); this._wasLocked=this.locked; }
+  // dica cada vez mais direta a cada desarme: a regra → as potências dos vizinhos → a resposta
+  _tip(n){
+    const r=POWER.ratings, d=POWER.demand;
+    if(n===2) return ` Dica: some as placas dos geradores (${r.map((v,i)=>'G'+(i+1)+'='+v).join(', ')}) até dar ${d} MW, pulando os vizinhos.`;
+    if(n>=3){ const sol=[]; for(let m=1;m<1<<r.length;m++){ if(m&(m>>1)) continue; let s=0; r.forEach((v,i)=>{ if(m>>i&1) s+=v; }); if(s===d){ r.forEach((_,i)=>{ if(m>>i&1) sol.push('G'+(i+1)); }); break; } }
+      return ` Dica: ligue só ${sol.join(' e ')} e depois feche o barramento.`; }
+    return '';
+  }
+  update(){
+    if(this._wasLocked&&!this.locked) this._show('REARMADO'); this._wasLocked=this.locked;
+    // primeira vez na Casa de Força sem energia: diz o objetivo e onde está a regra
+    const z=this.p.room.zones&&this.p.room.zones[0];
+    if(!this.entered&&!this.power&&z&&inBox(this.p.g.player.position,z)){ this.entered=true;
+      this.p.msg(`Casa de Força sem energia. Para religar a luz e o elevador: ligue geradores que somem ${POWER.demand} MW (sem dois vizinhos) e feche o barramento. O quadro ao lado da porta explica.`,8); }
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
