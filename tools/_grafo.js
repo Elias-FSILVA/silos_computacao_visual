@@ -1,15 +1,17 @@
 // Grafo de alcance sobre o mundo real — usado por test_mundo, test_escalada e test_rota.
-// Nós: agarras (tijolos, degraus de escada), soquetes de prego e bordas onde se fica em pé (descansos, soleiras,
-// passarelas, grades, vigas…), de qualquer forma: caixa, girada ou setor anelar (distâncias por Collision.js).
+// Nós: agarras (tijolos, degraus de escada), pontos dos apoios contínuos (rachadura, corda, cano: userData.samples, um a
+// cada ~0,4 m), soquetes de prego e bordas onde se fica em pé (descansos, soleiras, passarelas, grades, vigas, saliências,
+// andaimes, tubos…), de qualquer forma: caixa, girada ou setor anelar (distâncias por Collision.js).
 // Arestas dirigidas com o alcance REAL do Player: olho a 0,85 m abaixo da agarra (pendurado) ou 0,2 m (puxado), 0,5 m à
 // frente da parede; alcance 2,0 m (1,7 m com estamina baixa).
 //   'hang' / 'pull' / 'pullmax'  agarra → agarra      'mantle'  agarra → borda      'stand'  borda → agarra
-//   'walk'  borda → borda no mesmo nível, encostadas
+//   'walk'  borda → borda no mesmo nível, encostadas      'climbup'  borda → borda agarrável mais alta (em pé, agarra e sobe)
 // As alas entram como teletransportes (o caminho dentro delas — puzzle, piso, escada, elevador, fluxo de ar — é conferido à parte).
 // customWings(at,cp) → lista de alas (outro mapa); o.standClamp(q,hold) → onde o corpo para junto à parede (outro poço)
 module.exports=function grafo(world,customWings,o={}){
   const V=world.spawnPoint.constructor, REACH_OK=2.0, REACH_LOW=1.7;
   const holds=[...world.grabbables.filter(m=>m.userData.type==='hold').map(m=>({k:'h',p:m.position,n:m.userData.wallNormal||new V(),crumble:!!m.userData.crumble,socket:false,extra:!!m.userData.extra,rung:!!m.userData.rung,m})),
+               ...world.grabbables.filter(m=>m.userData.samples).flatMap(m=>m.userData.samples.map(s=>({k:'h',p:s.p,n:s.n,crumble:false,socket:false,cont:m.userData.type,m}))),
                ...world.sockets.map(s=>({k:'h',p:s.p,n:s.n,crumble:false,socket:true,sk:s.sk}))];
   const KINDS=new Set(['rest','sill','cache','exit','tunnel','platform','gallery','tank','shelf','landing','grate','bridge']);
   const isFloor=p=>p.kind==='floor'&&p.top===0&&p.minX<=-3.5&&p.maxX>=3.5&&p.minZ<=-3.5&&p.maxZ>=3.5;   // piso do fundo do poço
@@ -37,12 +39,15 @@ module.exports=function grafo(world,customWings,o={}){
     holdsNear(pd.top-.5,pd.top+3.7,j=>{ const B=holds[j], q=solidClampIn(pd,B.p.x,B.p.z,0,{}), r=Math.hypot(q.x,q.z), lim=SHAFT_R-RAD;
       if(o.standClamp) o.standClamp(q,B); else if(Math.hypot(B.p.x,B.p.z)<SHAFT_R+.1&&r>lim){ q.x*=lim/r; q.z*=lim/r; }
       const e=new V(q.x,pd.top+1.6,q.z); if(e.distanceTo(B.p)<=REACH_OK) adj[N+k].push([j,'stand']); });
-    for(let l=0;l<M;l++){ if(l===k) continue; const B=plats[l]; if(Math.abs(pd.top-B.top)<.05&&footDist(pd,B)<.5) adj[N+k].push([N+l,'walk']); }
+    for(let l=0;l<M;l++){ if(l===k) continue; const B=plats[l]; if(Math.abs(pd.top-B.top)<.05&&footDist(pd,B)<.5) adj[N+k].push([N+l,'walk']);
+      // em pé, uma borda agarrável mais alta ao alcance: agarra e sobe (como de um andaime para o tubo)
+      else if(B.climbable&&B.top-pd.top>.5&&B.top-pd.top<=2.2){ const c=centroid(B), q=solidClampIn(pd,c.x,c.z,.3,{}), e=new V(q.x,pd.top+1.6,q.z);
+        if(dist3(e,B)<=REACH_OK&&e.y>=solidBottom(B)-1.3) adj[N+k].push([N+l,'climbup']); } }
   }
   const idxP=pd=>N+plats.indexOf(pd);
   // busca em largura (0-1: arestas que exigem prego custam 1). opts: allowed (Set de tipos), noCrumble, noSockets, tele [[a,b]]
   function search(starts,opts={}){
-    const allowed=opts.allowed||new Set(['hang','pull','pullmax','stand','mantle','walk']), dd=new Array(N+M).fill(1e9), prev=new Array(N+M).fill(-1), q=[];
+    const allowed=opts.allowed||new Set(['hang','pull','pullmax','stand','mantle','walk','climbup']), dd=new Array(N+M).fill(1e9), prev=new Array(N+M).fill(-1), q=[];
     const ex=new Map(); (opts.tele||[]).forEach(([a,b])=>{ (ex.get(a)||ex.set(a,[]).get(a)).push(b); });
     starts.forEach(s=>{ dd[s]=0; q.push(s); });
     while(q.length){ const u=q.shift();
@@ -63,5 +68,5 @@ module.exports=function grafo(world,customWings,o={}){
   ];
   const tele=wings.map(w=>[idxP(w.from),idxP(w.to)]);
   const start=N+plats.findIndex(isFloor), exit=N+plats.findIndex(p=>p.kind==='exit');
-  return {holds,plats,N,M,node,adj,idxP,search,wings,tele,start,exit,eyeOf,dist3,footDist};
+  return {holds,plats,N,M,node,adj,idxP,search,wings,tele,start,exit,eyeOf,dist3,footDist,centroid};
 };

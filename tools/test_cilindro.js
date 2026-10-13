@@ -34,7 +34,8 @@ log('— Agarras —');
   chk('agarras do poço a 10 cm da superfície (r = 5,90 m)',bad===0,`${hs.length} agarras · fora ${bad}`);
   chk('normal de cada agarra aponta para o eixo do poço',nb===0,'desalinhadas '+nb);
   const angs=hs.map(m=>wrap2(Math.atan2(m.position.z,m.position.x))), q=[0,0,0,0]; angs.forEach(a=>q[Math.floor(wrap2(a+Math.PI/4)/(Math.PI/2))%4]++);
-  chk('agarras espalhadas por toda a circunferência (os quatro quadrantes)',q.every(c=>c>80),'L/S/O/N '+q.join(' / ')); }
+  const tot=q.reduce((s,c)=>s+c,0);
+  chk('agarras espalhadas por toda a circunferência (cada quadrante com ≥ 12%)',q.every(c=>c>=.12*tot),'L/S/O/N '+q.join(' / ')); }
 
 // ---------- 3) colisão radial: empurrar o corpo contra a parede em toda a volta ----------
 log('— Colisão —');

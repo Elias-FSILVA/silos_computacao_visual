@@ -10,7 +10,7 @@
 //
 // O poço é um CILINDRO de raio SHAFT_R: a parede é feita de setores anelares (uma faixa por trecho de altura e por
 // quadrante, recortada nas aberturas), as agarras ficam na superfície curva com a normal apontando para o eixo, e a
-// subida gerada é uma espiral pela parede. Coordenadas polares: θ = atan2(z, x) (leste 0, sul π/2, oeste π, norte −π/2).
+// os trechos de subida depois da passarela ficam em Climbs.js. Coordenadas polares: θ = atan2(z, x) (leste 0, sul π/2, oeste π, norte −π/2).
 // Layout vertical: ver o cabeçalho de levelData.js.
 // ============================================================================
 
@@ -49,8 +49,8 @@ function arcGeometry(A,y0,y1,tile,segs=72){
 }
 // ângulo de um ponto do trecho inicial desenhado à mão (0–40 m): as quatro "paredes" antigas viraram quadrantes do
 // cilindro; lat em metros a partir do centro de cada quadrante (±4 m ↔ ±45°, os cantos antigos coincidem)
+const SCATTER_SKIP=2470;     // posição da sequência de sorteio em que as agarras soltas começavam (ver _scatter)
 const wallA=(w,lat)=>w==='E'?lat*Math.PI/16:w==='S'?Math.PI/2-lat*Math.PI/16:w==='W'?Math.PI-lat*Math.PI/16:-Math.PI/2+lat*Math.PI/16;
-const REST_PAD=.5/SHAFT_R;   // depois de um descanso, o trecho seguinte começa meio metro adiante na parede
 
 // ---------- labirinto: gerador (backtracker com viés de linha reta) + solucionador ----------
 // E[c][r] = parede a leste da célula; N[c][r] = parede ao norte (norte = mais fundo na sala, -z)
@@ -92,7 +92,7 @@ class World{
     this.platforms=[]; this.checkpoints=[]; this.walls=[]; this.grabbables=[]; this.interactables=[]; this.lamps=[]; this.crumbling=[];
     this.animated=[]; this.movers=[]; this.fans=[]; this.secrets=[]; this.puzzleRooms={}; this.puzzleDefs=[];
     this.maze=null; this.mazeScr=null; this._cam=null; this.cutaway=[]; this._routeGuide=null; this._labels=null;
-    this.openings=OPENINGS.map(o=>this._opening(o)); this.shellSegs=[]; this.sockets=[]; this.halls=[]; this.route=null; this.finishLight=null; this.finishDoor=null;
+    this.openings=OPENINGS.map(o=>this._opening(o)); this.shellSegs=[]; this.smooth=[]; this.sockets=[]; this.halls=[]; this.route=null; this.finishLight=null; this.finishDoor=null;
     this.spawnPoint=new V3(0,0,0); this.spawnYaw=-Math.PI/2;
     this._layout(); this._shell(); this._scatter(); this._lamps();
     this.raycastTargets=[...this.walls,...this.grabbables,...this.interactables];
@@ -283,16 +283,6 @@ class World{
     const hit=new THREE.Mesh(new THREE.BoxGeometry(.6,.6,.3),IMAT.hidden); g.add(hit);
     const sk=new NailSocket(this,p,nrm,ring); [ring,core,hit].forEach(m=>{ m.userData={type:'socket',interactable:sk}; }); this.interactables.push(ring,core,hit); this.sockets.push({p,n:nrm,sk}); return sk;
   }
-  // trecho de subida; com o.blank = comprimento (m) de parede LISA no meio da linha (sem tijolos):
-  // ali o jogador precisa de martelo + prego para continuar
-  _leg(a0,y0,a1,y1,o={}){
-    if(o.blank){
-      const L=Math.hypot(SHAFT_R*(a1-a0),y1-y0), f0=o.blankAt||.4, f1=Math.min(.9,f0+o.blank/L);
-      const at=f=>[lerp(a0,a1,f),lerp(y0,y1,f)], [b0,c0]=at(f0), [b1,c1]=at(f1);
-      this.path(a0,y0,b0,c0,{...o,crumble:0,gaps:0,blank:0}); this.path(b1,c1,a1,y1,{...o,crumble:0,gaps:0,blank:0});   // sem tijolos que desmoronam ao lado do vão
-      this._socket((b0+b1)/2,(c0+c1)/2);
-    } else this.path(a0,y0,a1,y1,o);
-  }
   // borda curva presa à parede do poço: centro angular aC, largura w (m, medida na parede), profundidade d, topo top
   _ledge(aC,w,d,top,o={}){
     const span=w/SHAFT_R;
@@ -405,48 +395,6 @@ class World{
     for(let k=0;k<4;k++) this._obox(0,0,SHAFT_R-.05,.07,k*Math.PI/4,y-.26,y-.01,MAT.metal,{solid:false,ray:false});
   }
 
-  // ---------- subida: gerador de trechos em espiral ----------
-  // st = {a: ângulo inicial, y: altura do primeiro agarre, dir?: +1 (θ crescente: leste → sul → oeste → norte) / −1, pad?: recuo
-  // inicial na parede (m→rad)}. n trechos até yEnd (altura do ÚLTIMO agarre, 1,4 m abaixo do topo da plataforma de chegada).
-  // Cada trecho gira CLIMB.sweep em volta do poço; com o.endA a espiral fecha exatamente nesse ângulo (soleira, plataforma de
-  // destino) — sem dir, escolhe o sentido em que os trechos ficam mais perto do tamanho nominal (nem voltas extras, nem paredões retos).
-  // o.rests {i:{label,id,note,terminal,loot,bridge}} → plataforma de descanso (checkpoint) no fim do trecho i
-  // o.crumble → prob. de agarra extra que desmorona · o.blanks [i] → parede lisa (martelo+prego) · o.beams k → viga a cada k trechos
-  _climb(st,yEnd,n,o={}){
-    const rests=o.rests||{}, ws=[], sw=[]; let usable=yEnd-st.y, wsum=0, ssum=0, pads=0;
-    for(let i=0;i<n-1;i++){ usable-=rests[i]?3.2:.7; if(rests[i]) pads+=REST_PAD; }
-    for(let i=0;i<n;i++){ const w=.8+.4*this.R(); ws.push(w); wsum+=w; const s=lerp(CLIMB.sweep[0],CLIMB.sweep[1],this.R()); sw.push(s); ssum+=s; }
-    let dir=st.dir;
-    if(o.endA!=null){
-      const fit=d=>{ const a0=st.a+d*(st.pad||0), base=wrap2((o.endA-a0)*d), k=Math.max(0,Math.round((ssum+pads-base)/TAU)); return (base+k*TAU-pads)/ssum; };
-      const bad=f=>f>.25?Math.abs(Math.log(f)):Infinity;
-      if(dir==null) dir=bad(fit(1))<=bad(fit(-1))?1:-1;
-      const f=fit(dir); for(let i=0;i<n;i++) sw[i]*=f;
-    }
-    dir=st.dir=dir||1;
-    let a=st.a+dir*(st.pad||0), y=st.y;
-    for(let i=0;i<n;i++){
-      const last=i===n-1, b=a+st.dir*sw[i], yb=last?yEnd:y+usable*ws[i]/wsum;
-      const lo={gaps:0,crumble:o.crumble||0,step:CLIMB.step,jl:CLIMB.jitterLat,jy:CLIMB.jitterY};
-      const blank=o.blanks&&o.blanks.includes(i);
-      if(blank){ lo.blank=CLIMB.blank; lo.blankAt=.4+.1*this.R(); }
-      this._leg(a,y,b,yb,lo);
-      if(o.beams&&!blank&&!rests[i]&&!last&&i%o.beams===o.beams-1) this.beamA((a+b)/2,(y+yb)/2+.6);
-      if(last){ a=b; break; }
-      if(rests[i]){ const T=yb+1.4; this._rest(b,dir,T,rests[i]); a=b+dir*REST_PAD; y=T+1.8; } else { a=b; y=yb+.7; }
-    }
-    st.a=a; return st;
-  }
-  // plataforma de descanso junto à parede, terminando logo depois do último agarre do trecho: checkpoint + caixa/nota/terminal
-  _rest(aEnd,dir,T,sp={}){
-    const c=aEnd-dir*1.25/SHAFT_R, P=(lat,off)=>polar(SHAFT_R-off,c+lat/SHAFT_R,T);
-    this._ledge(c,3,1.8,T,{label:sp.label,id:sp.id,kind:'rest'});
-    if(sp.loot){ const p=P(-dir*.6,.75); this.box(p.x,T,p.z,sp.loot); }
-    if(sp.note){ const p=P(dir*.55,.55); this.note(p.x,T,p.z,sp.note); }
-    if(sp.terminal){ const p=P(0,.45); this.terminal(p.x,T,p.z,Math.atan2(-Math.cos(c),-Math.sin(c)),sp.terminal); }
-    if(sp.bridge) this._bridge(c,T);
-    const wing=WINGS.find(w=>w.after===sp.id); if(wing) this._wingA(c,T,{id:wing.id,finish:wing.finish,dress:(fr,I)=>this._dressWing(wing,fr,I)});
-  }
   // ponte de inspeção: passarela reta que cruza o poço pelo diâmetro, do descanso até a parede oposta
   _bridge(a,T){
     this._oblock(0,0,SHAFT_R,.6,a,T-.3,T,{mat:MAT.grate,type:'ledge',kind:'bridge',flat:true,porous:true});
@@ -471,45 +419,36 @@ class World{
     const [A,B]=HALLS;
     const reg=(cfg,g)=>{ this.halls.push(g); this.puzzleRooms[cfg.id]={id:cfg.id,kind:cfg.kind,baseY:cfg.H,cap:cfg.H-6,zoneRoom:g.zoneRoom,zones:g.zones,refs:g.refs,geo:g,cfg,parent:cfg.hub||null}; this.puzzleDefs.push({id:cfg.id,kind:'hall'}); };
 
-    // ===== SUBIDA 1 · 40–100 m → I: Casa das Bombas (leste)
-    this._climb({a:wallA('E',-1.5),y:41.8},A.H-1.4,9,{endA:this._opA('h1_in'),crumble:CLIMB.crumble[0],blanks:[4],beams:3,
-      rests:{2:{label:'Casa de máquinas',id:'cp3',note:NOTES[60],loot:{nails:3}},
-             5:{label:'Sala de controle',id:'cp4',terminal:NOTES[80],loot:{pills:1,nails:2}}}});
+    // ===== SUBIDA 1 · 40–100 m → I: Casa das Bombas (leste) — os trechos de subida ficam em Climbs.js
+    this._subida1();
     this._sill(this._opA('h1_in'),2.4,A.H,null);
     this._diaphragm(DIAPHRAGMS[0]);
     reg(A,this._foundry(A));
     this._exitPlat(this._opA('h1_out'),A.H+10,A.exitLabel,A.exitId,NOTES[A.exitNote],{nails:3});
 
     // ===== SUBIDA 2 · 113–150 m → boca da galeria do exaustor (o vento começa a puxar perto do fim)
-    this._climb({a:this._opA('h1_out'),y:A.H+12.9},EXHAUST.H-1.4,6,{endA:EXHAUST.entryA,crumble:CLIMB.crumble[1],blanks:[4],beams:3,
-      rests:{2:{label:'Andaime norte',id:'cp6',note:NOTES[130],loot:{nails:3}}}});
+    this._subida2();
     this._exhaust(EXHAUST);
 
     // ===== SUBIDA 2b · 177–200 m → II: Pátio das Máquinas (entrada pelo norte)
-    this._climb({a:this._opA('ex174_out'),y:EXHAUST.top+2.9},HUB.H-1.4,4,{endA:this._opA('p200_in'),crumble:CLIMB.crumble[1],blanks:[2],beams:3,
-      rests:{1:{label:'Mezanino',id:'cp8',note:NOTES[186],loot:{pills:1,nails:3}}}});
+    this._subida2b();
     this._sill(this._opA('p200_in'),2.4,HUB.H,NOTES[196]);
     this._diaphragm(DIAPHRAGMS[1]);
     this._hub(HUB,B,reg);
 
-    // ===== SUBIDA 3a · 227–246 m → insuflador
-    this._climb({a:this._opA('p200_out'),y:HUB.elevator.top+2.9},INSUF.grateTop-1.4,4,{endA:INSUF.a-.7,crumble:CLIMB.crumble[2],blanks:[1],beams:3});   // chega por baixo do alçapão da grade
+    // ===== SUBIDA 3a · 227–246 m → insuflador (chega por baixo do alçapão da grade)
+    this._subida3a();
     this._insuflador(INSUF);
 
     // ===== SUBIDA 3b · 253–300 m → III: o Arquivo e o Labirinto (norte)
-    this._climb({a:INSUF.a,y:INSUF.ledge.top+2.9},MAZE.H-1.4,8,{endA:this._opA('mz300_in'),crumble:CLIMB.crumble[2],blanks:[3,6],beams:4,
-      rests:{2:{label:'Corredor de serviço',id:'cp11',note:NOTES[270],loot:{pills:1,nails:3}},
-             5:{label:'Antessala do Arquivo',id:'cp12',note:NOTES[240],loot:{nails:3}}}});
+    this._subida3b();
     this._sill(this._opA('mz300_in'),2.8,MAZE.H,NOTES[296]);
     this._diaphragm(DIAPHRAGMS[2]);
     this._mazeRoom(MAZE);
     this._exitPlat(this._opA('mz300_out'),MAZE.H+10,'Duto do Arquivo','cp13',NOTES[310],{nails:3,pills:1});
 
     // ===== SUBIDA 4 · 313–400 m → fuga até a superfície
-    this._climb({a:this._opA('mz300_out'),y:312.9},TOP-1.4,12,{endA:wallA('E',.2),crumble:CLIMB.crumble[3],blanks:[3,6,9],beams:4,
-      rests:{2:{label:'Cabine de guincho',id:'cp14',note:NOTES[340],loot:{nails:3}},
-             5:{label:'Ponte de inspeção',id:'cp15',note:NOTES[370],loot:{pills:1,nails:3},bridge:true},
-             8:{label:'Último patamar',id:'cp16',loot:{nails:3}}}});
+    this._subida4();
     this._exitDoor();
   }
   // 0–40 m: início, depósito (segredo 1), bifurcação e passarela anelar — sala secreta inicial (segredo 0) atrás do jogador
@@ -794,13 +733,22 @@ class World{
     else if(!on&&S.state==='preview'){ S.state='wait'; this._paintScreen(S); }
   }
 
-  // agarras soltas pela parede (em cada quadrante), fora das aberturas e dos trechos selados
+  // agarras soltas pela parede (em cada quadrante), fora das aberturas, dos trechos selados e dos apoios especiais (Climbs.js)
+  // O sorteio tem sequência própria: a mesma semente avançada até o ponto em que a versão anterior do mapa começava a
+  // espalhar (SCATTER_SKIP). Assim o trecho inicial (0–40 m) fica idêntico, e mudar as subidas não embaralha as agarras soltas.
   _scatter(){
+    const keep=this.R; this.R=mulberry(1987); for(let i=0;i<SCATTER_SKIP;i++) this.R();
     for(let q=0;q<4;q++)
       for(let y=2.5;y<TOP-2;y+=.9){
         if(this._inBand(y,.8)) continue;                       // trechos selados: nenhuma agarra solta
-        if(this.R()<lerp(.12,.05,y/TOP)){ const a=-Math.PI/4+q*Math.PI/2+this.rand(.06,Math.PI/2-.06); if(!this._inOpening(a,y,.4)){ const hm=this.hold(a,y,this.R()<lerp(CLIMB.scatterCrumble[0],CLIMB.scatterCrumble[1],y/TOP)); hm.userData.extra=true; } }
+        if(this.R()<lerp(.12,.05,y/TOP)){ const a=-Math.PI/4+q*Math.PI/2+this.rand(.06,Math.PI/2-.06); if(!this._inOpening(a,y,.4)){
+          const crumble=this.R()<lerp(CLIMB.scatterCrumble[0],CLIMB.scatterCrumble[1],y/TOP);
+          // nem nas chapas, rachaduras, canos, corda e escadas: ali o apoio é o que está desenhado (o sorteio do tijolo
+          // pulado é consumido igual, para não deslocar os seguintes)
+          if(this._inSmooth(a,y,1.0)){ this.rand(-.25,.25); continue; }
+          const hm=this.hold(a,y,crumble); hm.userData.extra=true; } }
       }
+    this.R=keep;
   }
   // luminárias de parede em espiral (ângulo de ouro): a luz nunca fica toda do mesmo lado
   _lamps(){

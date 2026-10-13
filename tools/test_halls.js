@@ -71,7 +71,8 @@ log('— Galeria do exaustor (150 m) —');
   reg.interact(ctx()); chk('  depois de resolvido, o registro não reabre nada',R.door.open);
   const z=world.puzzleRooms.ex150.zones[0]; G.player.position.set((z.minX+z.maxX)/2,z.minY+5,(z.minZ+z.maxZ)/2); tick('ex150',.2); chk('  no poço de serviço (escada) a massa continua contida',mass.hold!==null);
   G.player.position.copy(polar(SHAFT_R-.8,Math.PI,EXHAUST.top)); tick('ex150',.2); chk('  de volta ao poço, acima do exaustor: massa liberada',mass.hold===null);
-  const rungs=world.grabbables.filter(m=>m.userData.rung); const ys=rungs.map(m=>m.position.y).sort((a,b)=>a-b); let gap=0; for(let i=1;i<ys.length;i++) gap=Math.max(gap,ys[i]-ys[i-1]);
+  // só a escada do poço de serviço (as escadas danificadas ficam dentro do poço)
+  const rungs=world.grabbables.filter(m=>m.userData.rung&&Math.hypot(m.position.x,m.position.z)>SHAFT_R+.3); const ys=rungs.map(m=>m.position.y).sort((a,b)=>a-b); let gap=0; for(let i=1;i<ys.length;i++) gap=Math.max(gap,ys[i]-ys[i-1]);
   chk('escada do poço de serviço: degraus de 150 m até o patamar de 174 m',rungs.length>50&&ys[0]<EXHAUST.H+.6&&ys[ys.length-1]>EXHAUST.top-1&&gap<=.4,`${rungs.length} degraus · maior vão ${gap.toFixed(2)} m`);
 }
 // =========================== PÁTIO DAS MÁQUINAS · energia ===========================

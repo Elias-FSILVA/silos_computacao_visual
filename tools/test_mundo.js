@@ -97,7 +97,7 @@ const walkOnto=(P,dx,dz,pd,frames=600)=>{ T.face(P,dx,dz); let ok=false;
   for(let i=0;i<frames&&!P.dead&&!ok;i++){ T.step(P,1,{x:0,y:1}); ok=P.grounded&&Math.abs(P.position.y-pd.top)<.05&&solidInXZ(pd,P.position.x,P.position.z,-.35); }
   T.step(P,20); return ok&&!P.dead&&solidInXZ(pd,P.position.x,P.position.z,0); };
 // escada do poço de serviço: subir degrau a degrau (sempre o próximo ao alcance), puxando, até o patamar de 174 m
-{ const E=EXHAUST, fr=world._fr(E.shaftTheta), rungs=world.grabbables.filter(m=>m.userData.rung).sort((a,b)=>a.position.y-b.position.y), P=T.makePlayer();
+{ const E=EXHAUST, fr=world._fr(E.shaftTheta), rungs=world.grabbables.filter(m=>m.userData.rung&&Math.hypot(m.position.x,m.position.z)>SHAFT_R+.3).sort((a,b)=>a.position.y-b.position.y), P=T.makePlayer();
   place(P,fr.p(E.r1+.3+.9,E.H,0)); let i=0, hand=0, minSt=100;
   const land=world.platforms.find(p=>p.kind==='landing');
   for(let guard=0;guard<400&&!P.dead;guard++){

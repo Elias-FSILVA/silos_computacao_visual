@@ -7,6 +7,16 @@ Jogo de escalada em primeira pessoa feito com Three.js, inspirado em *White Knuc
 Você está no fundo de um silo industrial gigantesco: um cilindro de 400 m de altura. Escala-se pelo poço redondo do centro, com 12 m de diâmetro, e as alas, salas e corredores ficam construídos no corpo do silo, em volta dele. O poço continua além da luz, e uma massa escura começa a subir por ele, cada vez mais rápido. A única saída é escalar.
 
 - **Escalada com duas mãos.** Cada botão do mouse (ou cada grip no VR) é uma mão. Você agarra tijolos e bordas, puxa o corpo para cima e administra a estamina de cada braço. Mão cansada escorrega.
+- **Apoios variados.** Depois da passarela de 40 m a subida alterna trechos curtos de tijolo com rachaduras profundas (agarráveis em qualquer ponto, gastam um pouco mais a pegada), cordas, um cano para atravessar de lado, escadas de manutenção sem alguns degraus, vigas e um tubo que atravessam o poço, passarelas, andaimes e saliências de concreto para ficar em pé. Chapas de aço remendadas não aceitam prego: onde elas aparecem, o caminho é outro. Nenhum trecho contínuo passa de ~6 m.
+
+  | Subida | Ideia | Apoios |
+  |---|---|---|
+  | 1 (40–100 m) | concreto em zigue-zague; cada apoio novo aparece com chão logo embaixo | primeira rachadura, primeiro prego, cano lateral sobre uma chapa, viga de lado a lado |
+  | 2 (110–150 m) | o espaço do poço | andaimes, tubo gigante como ponte, passarelas, travessia lateral |
+  | 2b (174–200 m) | corda | corda presa ao mezanino sobre uma parede de chapa |
+  | 3a (224–246 m) | rachaduras | duas rachaduras com um andaime no meio, até o alçapão do insuflador |
+  | 3b (252–300 m) | prego obrigatório | escada danificada; vão de 3 m numa chapa que só se cruza com prego; rachadura de lado |
+  | 4 (310–400 m) | tudo combinado | rachadura + viga, tubo + passarela, corda presa à ponte, segundo vão de prego + escada, andaime |
 - **Ferramentas.** Pregos cravados a martelo viram apoio nos trechos lisos da parede. O martelo também quebra paredes rachadas e destrava mecanismos, e as pílulas recuperam a estamina das mãos. Tudo fica numa mochila circular com atalhos de 1 a 4, que tem limite por pilha e peso por item.
 - **Subida vertical e alas horizontais.** As subidas são espirais pela parede curva do poço. Em certas alturas o poço é fechado de verdade, por um diafragma de grade ou pelo próprio exaustor, e a parede vira chapa lisa. Para continuar é preciso sair por uma ala, resolver o que ela pede e voltar ao poço mais acima, por uma porta, uma escada, um elevador ou pelo fluxo de ar:
 
@@ -70,7 +80,7 @@ Os ajustes finos do VR (ganho da puxada, alcance do agarre, encaixe da mão no c
 
 **Modo espectador.** É uma câmera livre para voar pelo mapa inteiro, com paredes transparentes, nomes das partes e régua de altura. Para abrir, use a tecla F2 no menu ou abra o endereço com `?espectador` no final. Os comandos estão em [COMO_RODAR.txt](COMO_RODAR.txt).
 
-**Ajuste da escalada.** Os parâmetros ficam em `CLIMB`, no arquivo `js/world/levelData.js`: distância entre tijolos, tamanho dos vãos lisos, tijolos que desmoronam e quanto cada trecho gira em volta do poço (`sweep`). Os ventiladores ficam em `EXHAUST.fan` e `INSUF.fan`.
+**Ajuste da escalada.** Os trechos de subida depois da passarela ficam em `js/world/Climbs.js` (`_subida1` … `_subida4`), escritos em coordenadas polares (ângulo na parede, altura); lá também estão as peças (rachadura, corda, cano, escada, saliência, andaime, passarela, tubo, chapa, luminária). As linhas de tijolos usam `CLIMB` em `js/world/levelData.js` (distância entre tijolos e tijolos que desmoronam). Os ventiladores ficam em `EXHAUST.fan` e `INSUF.fan`. Depois de mexer numa subida, rode `node tools/test_ritmo.js`.
 
 **Geometria e colisão.** O poço, os pisos e as passarelas circulares são setores anelares; os objetos fora das direções cardeais são caixas giradas. As três formas convivem em `world.platforms`, e `js/world/Collision.js` resolve o corpo do jogador contra todas elas. A parede do poço só se atravessa pelas aberturas, garantido por `world.guard`.
 
@@ -81,6 +91,7 @@ node tools/test_cilindro.js     # o poço é um cilindro: geometria, colisão, v
 node tools/test_ventiladores.js # fluxo de ar: direção, intensidade, abrigo, sucção, insuflador
 node tools/test_mundo.js        # trancas, conectividade, alas a pé, escada, elevador e insuflador (Player real)
 node tools/test_rota.js         # um robô sobe a rota inteira com a física real (estamina, pílulas, quedas)
+node tools/test_ritmo.js        # trecho inicial intacto, trechos curtos, variedade por subida, vãos de prego, ritmo lento
 node tools/test_escalada.js     # alcance real da escalada
 node tools/test_halls.js        # puzzles das alas
 node tools/test_espectador.js
@@ -94,7 +105,7 @@ node tools/test_scripts.js      # ordem dos scripts no index.html
 js/
   Game.js          estados da partida, entrada e loop principal
   player/          escalada com duas mãos, modelo das mãos, VR
-  world/           mapa (poço cilíndrico, colisão, alas, ventiladores, elevador), texturas e dados do nível
+  world/           mapa (poço cilíndrico, colisão, subidas, alas, ventiladores, elevador), texturas e dados do nível
   items/           itens, inventário e animações de uso
   interaction/     objetos interativos (painéis, válvulas, alavancas, leitores…)
   systems/         massa que sobe, puzzles, cronômetro, modo espectador

@@ -12,20 +12,20 @@ class Obj{ constructor(geo,mat){ this.geometry=geo; this.material=mat; this.posi
   add(...c){ for(const o of c){ this.children.push(o); o.parent=this; } return this; } remove(o){ const i=this.children.indexOf(o); if(i>=0){ this.children.splice(i,1); o.parent=null; } return this; }
   traverse(f){ f(this); this.children.forEach(c=>c.traverse(f)); } updateMatrixWorld(){} lookAt(){} rotateZ(){} getWorldPosition(v){ return v.copy(this.position); } localToWorld(v){return v;} }
 class Geo{ constructor(w,h,d){ this.parameters={w,h,d}; this.attributes={uv:{getX:()=>0,getY:()=>0,setXY(){},needsUpdate:false}}; this.userData={}; } translate(){return this;} rotateX(){return this;} dispose(){} }
-class BufGeo{ constructor(){ this.attributes={}; this.userData={}; this.parameters={}; } setAttribute(k,v){ this.attributes[k]=v; return this; } computeBoundingSphere(){} computeVertexNormals(){} rotateX(){ return this; } dispose(){} }
+class BufGeo{ constructor(){ this.attributes={}; this.userData={}; this.parameters={}; } setAttribute(k,v){ this.attributes[k]=v; return this; } setIndex(){ return this; } addGroup(){} translate(){ return this; } computeBoundingSphere(){} computeVertexNormals(){} rotateX(){ return this; } dispose(){} }
 class F32Attr{ constructor(a,n){ this.array=a; this.itemSize=n; this.count=a.length/n; } }
 class Mat{ constructor(o={}){ Object.assign(this,o); this.color=Object.assign({setHex(){},setRGB(){},copy(){return this;},lerp(){return this;}},o.color!=null?{v:o.color}:{}); this.userData={}; this.emissive={setHex(){},setRGB(){}}; } }
 class Tex{ constructor(c){ this.image=c; this.userData={}; this.repeat={set(){}}; } }
 const noopCtx=new Proxy({},{get:(t,k)=>k in t?t[k]:(k==='createLinearGradient'?()=>({addColorStop(){}}):k==='measureText'?()=>({width:10}):()=>{}),set:(t,k,v)=>{t[k]=v;return true;}});
 global.document={createElement:()=>({width:0,height:0,getContext:()=>noopCtx})};
 global.THREE={Vector3:V3,Vector2:class{},Group:Obj,Mesh:Obj,PointLight:Obj,AmbientLight:Obj,Scene:Obj,PerspectiveCamera:Obj,
-  Sprite:Obj,SpriteMaterial:Mat,BoxGeometry:Geo,PlaneGeometry:Geo,CylinderGeometry:Geo,TorusGeometry:Geo,RingGeometry:Geo,CircleGeometry:Geo,BufferGeometry:BufGeo,Float32BufferAttribute:F32Attr,Object3D:class extends Obj{ updateMatrix(){} },InstancedMesh:class extends Obj{ constructor(g,m,n){ super(g,m); this.count=n; this.instanceMatrix={}; } setMatrixAt(){} },
+  Sprite:Obj,SpriteMaterial:Mat,BoxGeometry:Geo,PlaneGeometry:Geo,CylinderGeometry:Geo,SphereGeometry:Geo,TorusGeometry:Geo,RingGeometry:Geo,CircleGeometry:Geo,BufferGeometry:BufGeo,Float32BufferAttribute:F32Attr,Object3D:class extends Obj{ updateMatrix(){} },InstancedMesh:class extends Obj{ constructor(g,m,n){ super(g,m); this.count=n; this.instanceMatrix={}; } setMatrixAt(){} },
   MeshStandardMaterial:Mat,MeshBasicMaterial:Mat,CanvasTexture:Tex,Raycaster:class{},Color:class{setHex(){}},FogExp2:class{},
   RepeatWrapping:1,DoubleSide:2,LinearToneMapping:1,Quaternion:class{},Euler:class{},Matrix4:class{},WebGLRenderer:class{}};
 global.window=global; global.localStorage=undefined; global.performance={now:()=>0};
 function load(rel){ const f=path.join(ROOT,rel); vm.runInThisContext(fs.readFileSync(f,'utf8'),{filename:rel}); }
 ['js/core/utils.js','js/world/textures.js','js/world/assets.js','js/world/levelData.js','js/world/Collision.js','js/world/World.js','js/world/Halls.js','js/items/itemDefs.js','js/items/Inventory.js',
- 'js/interaction/Interactables.js','js/world/Sectors.js','js/systems/MassSystem.js','js/systems/progress.js','js/systems/PuzzleSystem.js','js/systems/HallPuzzles.js'].forEach(load);
+ 'js/interaction/Interactables.js','js/world/Sectors.js','js/world/Climbs.js','js/systems/MassSystem.js','js/systems/progress.js','js/systems/PuzzleSystem.js','js/systems/HallPuzzles.js'].forEach(load);
 
 
 const scene=new Obj(); const world=vm.runInThisContext('(s)=>new World(s)')(scene);

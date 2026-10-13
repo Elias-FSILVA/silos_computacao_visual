@@ -8,7 +8,7 @@ const T=require('./_player.js'); console.log=log;
 const {world}=T, Gr=require('./_grafo.js')(world), {N}=Gr, percorrer=require('./_robo.js');
 let fails=0; const out=(k,v)=>log(k.padEnd(76),v); const chk=(k,ok,x='')=>{ out(k,(ok?'OK ':'FALHOU ')+x); if(!ok) fails++; };
 
-const route=Gr.search([Gr.start],{allowed:new Set(['hang','pull','pullmax','stand','mantle','walk']),noCrumble:true,tele:Gr.tele});
+const route=Gr.search([Gr.start],{allowed:new Set(['hang','pull','pullmax','stand','mantle','walk','climbup']),noCrumble:true,tele:Gr.tele});
 const path=route.path(Gr.exit);
 const sector=y=>y<100?'Subida 1':y<150?'Subida 2':y<200?'Subida 2b':y<246?'Subida 3a':y<300?'Subida 3b':'Subida 4';
 const P=T.makePlayer(); P.position.copy(world.spawnPoint); P._prev.copy(P.position);

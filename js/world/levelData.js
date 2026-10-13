@@ -201,13 +201,14 @@ const MAZE={id:'mz300',H:300,cols:9,rows:7,cell:2.4,wall:.3,height:8,ante:9.0,ar
   near:6,             // distância (m) que dispara a contagem
   hideMapUntilNear:true};  // false = mapa visível já de longe (permite ler sem contagem)
 
-// ---- ESCALADA: ajuste fino das subidas geradas (as linhas à mão do início, 0–40 m, continuam como eram) ----
+// ---- ESCALADA: ajuste fino das linhas de tijolos (as linhas à mão do início, 0–40 m, continuam como eram) ----
+// Os trechos de subida depois da passarela (rachaduras, corda, canos, escadas, saliências, vãos de prego) ficam em
+// js/world/Climbs.js; aqui só os parâmetros das linhas de tijolos.
 // Alcance real do jogador: ~2,0 m do olho; pendurado o olho fica 0,85 m abaixo da agarra, puxado 0,2 m (1,7 m com pouca stamina).
 // step      = distância entre tijolos (m). 0,8 → mesmo pulando UM tijolo que desmoronou ainda há outro firme ao alcance.
-// blank     = vão LISO (m) com soquete de prego no meio (1 prego + martelo). Mantido curto: cada metade fica a ≤ 1,2 m.
-// crumble   = chance de um tijolo desmoronar por subida (nunca dois seguidos, nunca ao lado de um vão liso).
-// sweep     = quanto cada trecho gira em volta do poço (rad): a subida é uma espiral pela parede curva.
-const CLIMB={step:.8,jitterLat:.14,jitterY:.07,blank:2.4,crumble:[.10,.14,.16,.20],scatterCrumble:[.08,.16],sweep:[.9,1.3]};
+// blank     = vão LISO (m) com soquete de prego no meio, nas linhas das alas (Halls.js)
+// crumble   = chance de um tijolo EXTRA, que desmorona, ao lado da linha (por subida: 1 · 2 e 2b · 3a e 3b · 4)
+const CLIMB={step:.8,jitterLat:.14,jitterY:.07,blank:2.4,crumble:[.10,.14,.16,.20],scatterCrumble:[.08,.16]};
 
 // ---- trechos de poço selados: parede de chapa de contenção (sem agarras soltas, sem prego) ----
 // Acima de cada ala obrigatória até a saída dela. O fechamento físico do poço vem dos diafragmas e do exaustor.

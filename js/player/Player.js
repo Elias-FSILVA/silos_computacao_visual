@@ -6,6 +6,8 @@
 //                   isClimbing, isHanging, grabbedSurface,
 //                   pull, effort, pullFatigue, fatigueFx, needsPull (puxada corporal)
 // Consome do World: platforms, spawnPoint, raycastTargets, addPiton(), touch()
+// Superfície agarrada (userData): wallNormal fixa, ou normalAt(ponto, out) nos apoios contínuos (rachadura, cano, corda);
+// gripCost = pegada extra por segundo (rachadura).
 // Puxada: agarrado e segurando o botão, arrastar o mouse para baixo ergue o corpo (pull 0 = pendurado,
 // 1 = queixo na borda). O corpo segue a puxada com inércia, cede devagar sem esforço e a fadiga dos braços
 // (pullFatigue) reduz a eficiência, faz a câmera/mão tremer e, no nível crítico, drena a pegada.
@@ -174,8 +176,9 @@ class Player{
     }
     h.stamina=Math.max(0,h.stamina-Math.max(0,fall-4)*2.2);
     h.inContact=true; h.surface=hit.object; h.point.copy(hit.point);
-    const wn=hit.object.userData.wallNormal;
-    if(wn) h.normal.copy(wn); else h.normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+    const u=hit.object.userData, wn=u.wallNormal;
+    if(u.normalAt) u.normalAt(hit.point,h.normal);          // apoio contínuo (rachadura, cano, corda): normal no ponto agarrado
+    else if(wn) h.normal.copy(wn); else h.normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
     this._fitPull();
     this.world.touch(hit.object);
     this.emit('grab',h);
@@ -302,7 +305,7 @@ class Player{
     // pegada: custo base + esforço de puxar; com os braços no limite, a pegada escorrega depressa
     const base=held.length===2?3:(this.lockOff?6:9), crit=clamp((this.pullFatigue-FATIGUE_CRIT)/(1-FATIGUE_CRIT),0,1);
     for(const h of held){
-      let d=base+this.effort*3+crit*14+wf*WIND_DRAIN; if(input.x) d+=1.5;
+      let d=base+this.effort*3+crit*14+wf*WIND_DRAIN+(h.surface.userData.gripCost||0); if(input.x) d+=1.5;   // gripCost: rachadura (dedos entalados)
       h.stamina=Math.max(0,h.stamina-d*dt);
       if(h.stamina<=0){ h.exhausted=true; this._release(h); this.emit('exhausted',h); }
     }
