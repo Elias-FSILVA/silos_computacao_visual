@@ -23,10 +23,13 @@
 // PULL_GAIN: puxada por pixel de mouse (~130px levam de pendurado a puxado, descansado)
 const PULL_GAIN=.0075, PULL_MANTLE=.5, FATIGUE_CRIT=.85;
 const WIND_K=2.0, WIND_TEAR=24, WIND_DRAIN=.35;   // arrasto do ar (1/s) · força que arranca as mãos (m/s²) · pegada gasta por m/s² de vento
+// Ajustes de movimento (não métricas de percurso): salto agarrado sobe sem recuo automático.
+// A componente horizontal só existe por comando direcional, relativa ao olhar.
+const PLAYER_PHYSICS={wallJumpControl:2.4,airControl:4.2,coyoteTime:.12};
 const REDUCED_MOTION=(()=>{ try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } })();
 class Hand{
   constructor(name,side){ this.name=name; this.side=side; this.point=new V3(); this.normal=new V3(); this.reset(); }
-  reset(){ this.occupied=false; this.isGrabbing=false; this.inContact=false; this.surface=null; this.stamina=100; this.cooldown=0; this.pull=0; this.exhausted=false; }
+  reset(){ this.occupied=false; this.isGrabbing=false; this.inContact=false; this.surface=null; this.stamina=PLAYER_BASE_ATTRIBUTES.maxStamina; this.cooldown=0; this.pull=0; this.exhausted=false; }
   get state(){ return this.isGrabbing?'closed':'open'; }
 }
 const _e=new V3(), _t=new V3(), _d=new V3(), _f=new V3(), _r=new V3(), _mv=new V3(), _p=new V3(), _q=new V3(), _n=new V3(), _c0=new THREE.Vector2(0,0), _wq=new THREE.Quaternion();
@@ -35,11 +38,14 @@ const PRESS_T=.34, PRESS_TIP=-HandModel.indexTip(1,new V3()).z;
 const _pm=new THREE.Matrix4(), _pqa=new THREE.Quaternion(), _pqb=new THREE.Quaternion(), _pup=new V3(), _px=new V3(1,0,0);
 
 class Player{
-  constructor(scene,camera,world){
+  constructor(scene,camera,world,{perkCatalog=PERK_DEFS}={}){
     this.scene=scene; this.camera=camera; this.world=world;
-    this.maxStamina=100;
     this.leftHand=new Hand('left',-1); this.rightHand=new Hand('right',1);
     this.hands=[this.leftHand,this.rightHand];
+    this.attributes=new PlayerAttributes({catalog:perkCatalog,onChange:effective=>{
+      // Capacidade menor limita a reserva; capacidade maior nunca preenche a diferença.
+      this.hands.forEach(h=>{ h.stamina=clamp(h.stamina,0,effective.maxStamina); });
+    }});
     this.position=new V3(); this.velocity=new V3(); this._prev=new V3();
     this.ray=new THREE.Raycaster(); this.listeners={}; this.xr=null;
     this.windF=new V3(); this._colOpt={guard:(p,prev,v)=>{ if(this.world.guard) this.world.guard(p,prev,v); }};
@@ -49,27 +55,30 @@ class Player{
   on(t,f){ (this.listeners[t]=this.listeners[t]||[]).push(f); }
   emit(t,d){ (this.listeners[t]||[]).forEach(f=>f(d)); }
   reset(){
+    this.attributes.clearPerks();
     const w=this.world;
     this.position.copy(w.spawnPoint); this.velocity.set(0,0,0); this._prev.copy(this.position);
     this.yaw=w.spawnYaw; this.pitch=.1;
     this.grounded=true; this.fellOff=false; this.dead=false; this.deathReason=null;
-    this.maxHeightReached=0; this.mantle=null; this.shake=0;
+    this.maxHeightReached=0; this.mantle=null; this.shake=0; this.coyoteT=0;
+    this.stats=new PlayerStats();
     // puxada: pull (corpo) persegue pullTarget (comando do mouse); effort/jolt alimentam câmera e mão
     this.pull=0; this.pullTarget=0; this.pullIn=0; this.effort=0; this.jolt=0;
     this.pullFatigue=0; this.fatigueFx=0; this.restT=0; this.fatigueWarned=false; this.fxT=0; this.pulledNow=false;
     this.hands.forEach(h=>h.reset());
     this.itemPose=null;
     this.press=[null,null]; this.point=[false,false];   // gesto do indicador (painel); point: VR, mão perto do painel
-    this.stats={slips:0,pillsUsed:0,pitonsUsed:0};
+    this.stats.reset();
     this.viewmodelVisible=true;
     this.windAir=null; this.windG=0; this.windLevel=0; this.windFan=null; this.windF.set(0,0,0);
   }
   // ---------- estado derivado ----------
+  get maxStamina(){ return this.attributes.effective.maxStamina; }
   get stamina(){ return clamp(Math.min(this.leftHand.stamina,this.rightHand.stamina),0,this.maxStamina); }
   get isClimbing(){ return this.hands.some(h=>h.inContact); }
   get isHanging(){ return this.isClimbing&&!this.grounded; }
   get grabbedSurface(){ const h=this.hands.find(h=>h.inContact); return h?h.surface:null; }
-  get reach(){ return this.stamina<20?1.7:REACH; }
+  get reach(){ const a=this.attributes.effective; return this.stamina<20?a.tiredReach:a.reach; }
   eyePos(out){ return out.set(this.position.x,this.position.y+EYE,this.position.z); }
   addShake(a){ this.shake=Math.max(this.shake,a); }
   // ---------- entrada ----------
@@ -146,24 +155,29 @@ class Player{
     this.hands.forEach(h=>{ if(h.inContact){ h.stamina=Math.max(0,h.stamina-8); this._release(h); } h.isGrabbing=false; });
     this.emit('mantle');
   }
-  jump(){
+  jump(input={x:0,y:0}){
     if(this.dead||this.mantle) return;
+    const attributes=this.attributes.effective;
     const held=this.hands.filter(h=>h.inContact);
     if(held.length){
       const led=this.canMantle();
       if(led){ this._startMantle(led); return; }
       if(this.needsPull){ this.emit('needPull'); return; }
-      if(held.some(h=>h.stamina<12)){ this.emit('weak'); return; }
-      _n.set(0,0,0); held.forEach(h=>_n.add(_q.set(h.normal.x,0,h.normal.z))); if(_n.lengthSq()>1e-4) _n.normalize();
-      held.forEach(h=>{ h.stamina-=12; this._release(h); h.cooldown=.22; });
-      this.velocity.set(_n.x*2.2+this.velocity.x*.3,5.8,_n.z*2.2+this.velocity.z*.3);
-      this.grounded=false; this.emit('walljump');
-    } else if(this.grounded){ this.velocity.y=5.2; this.grounded=false; this.emit('jump'); }
+      if(held.some(h=>h.stamina<attributes.wallJumpStaminaCost)){ this.emit('weak'); return; }
+      // Soltar não é ricochetear: nem a normal da parede nem a oscilação da mola
+      // decidem a trajetória. Sem direção, o impulso é estritamente vertical.
+      _f.set(-Math.sin(this.yaw),0,-Math.cos(this.yaw)); _r.set(Math.cos(this.yaw),0,-Math.sin(this.yaw));
+      _mv.set(0,0,0).addScaledVector(_f,input.y).addScaledVector(_r,input.x); if(_mv.lengthSq()>1) _mv.normalize();
+      held.forEach(h=>{ h.stamina-=attributes.wallJumpStaminaCost; this._release(h); h.cooldown=.22; });
+      this.velocity.set(_mv.x*PLAYER_PHYSICS.wallJumpControl,attributes.wallJumpSpeed,_mv.z*PLAYER_PHYSICS.wallJumpControl);
+      this.grounded=false; this.coyoteT=0; this.stats.recordJump(true); this.emit('walljump');
+    } else if(this.grounded||this.coyoteT>0){ this.velocity.y=attributes.jumpSpeed; this.grounded=false; this.coyoteT=0; this.stats.recordJump(); this.emit('jump'); }
   }
   restoreStamina(){ this.hands.forEach(h=>{ h.stamina=this.maxStamina; h.exhausted=false; }); this.stats.pillsUsed++; }
   die(reason){
     if(this.dead) return;
-    this.dead=true; this.deathReason=reason; if(reason==='fall') this.fellOff=true;
+    this.dead=true; this.deathReason=reason; if(reason==='fall'){ this.fellOff=true; this.stats.recordFall(); }
+    this.attributes.clearPerks();
     this.releaseAll(); this.emit('death',reason);
   }
   // ---------- mãos ----------
@@ -172,7 +186,7 @@ class Player{
     const hit=this._grabHit(h); if(!hit||!hit.object.userData.grab) return false;
     const fall=-this.velocity.y;
     if(!this.isClimbing&&fall>12){
-      h.stamina=Math.max(0,h.stamina-25); h.cooldown=.35; this.stats.slips++; this.emit('slip',h); return false;
+      h.stamina=Math.max(0,h.stamina-25); h.cooldown=.35; this.stats.recordSlip(); this.emit('slip',h); return false;
     }
     h.stamina=Math.max(0,h.stamina-Math.max(0,fall-4)*2.2);
     h.inContact=true; h.surface=hit.object; h.point.copy(hit.point);
@@ -219,6 +233,7 @@ class Player{
     this.hands.forEach(h=>{ if(h.isGrabbing&&!h.inContact) this._tryGrab(h); });
     this._prev.copy(this.position);
     this._wind(); if(this.dead) return;
+    if(this.grounded) this.coyoteT=PLAYER_PHYSICS.coyoteTime; else this.coyoteT=Math.max(0,this.coyoteT-dt);
     const held=this.hands.filter(h=>h.inContact);
     if(this.mantle) this._mantle(dt);
     else if(held.length) this._climb(dt,input,held);
@@ -227,7 +242,8 @@ class Player{
     const climbing=this.isClimbing;
     this.hands.forEach(h=>{
       if(h.inContact) return;
-      const r=(this.grounded&&!climbing)?35:(climbing?12:0);
+      const a=this.attributes.effective;
+      const r=(this.grounded&&!climbing)?a.groundRecovery:(climbing?a.freeHandRecovery:0);
       h.stamina=clamp(h.stamina+r*dt,0,this.maxStamina);
       if(h.exhausted&&h.stamina>=30) h.exhausted=false;
     });
@@ -242,10 +258,10 @@ class Player{
     if(!climbing){ this.effort*=Math.exp(-6*dt); this.jolt*=Math.exp(-6*dt); }
     const f=this.pullFatigue;
     const gain=climbing?this.effort*.08+(this.grounded?0:this.pull*.03+(this.lockOff?.035:0)):0;
-    if(gain>.02){ this.pullFatigue=Math.min(1,f+gain*dt); this.restT=0; }
+    if(gain>.02){ this.pullFatigue=Math.min(1,f+gain*dt*this.attributes.effective.fatigueGainMultiplier); this.restT=0; }
     else {
       this.restT+=dt;
-      if(this.restT>.8){ const r=climbing?.035:(this.grounded?.14:.07); this.pullFatigue=Math.max(0,f-r*dt*(.4+.6*smooth(Math.min(1,(this.restT-.8)/1.5)))); }
+      if(this.restT>.8){ const r=climbing?.035:(this.grounded?.14:.07); this.pullFatigue=Math.max(0,f-r*dt*this.attributes.effective.fatigueRecoveryMultiplier*(.4+.6*smooth(Math.min(1,(this.restT-.8)/1.5)))); }
     }
     const tgt=smooth(clamp((this.pullFatigue-.2)/.8,0,1));
     this.fatigueFx+=(tgt-this.fatigueFx)*(1-Math.exp(-(tgt>this.fatigueFx?3:1.2)*dt));
@@ -270,12 +286,12 @@ class Player{
     _mv.set(0,0,0).addScaledVector(_f,input.y).addScaledVector(_r,input.x); if(_mv.lengthSq()>1) _mv.normalize();
     const v=this.velocity;
     if(this.grounded){ const k=Math.min(1,dt*12); v.x+=(_mv.x*3.4-v.x)*k; v.z+=(_mv.z*3.4-v.z)*k; }
-    else { v.x+=_mv.x*2.5*dt; v.z+=_mv.z*2.5*dt; v.x*=1-.15*dt; v.z*=1-.15*dt; }
+    else { v.x+=_mv.x*PLAYER_PHYSICS.airControl*dt; v.z+=_mv.z*PLAYER_PHYSICS.airControl*dt; v.x*=1-.10*dt; v.z*=1-.10*dt; }
     // vento: acelera rumo à velocidade do ar ao longo do fluxo (o arrasto cresce com a força do fluxo: g)
     const a=this.windAir;
     if(a){ const u=a.length(); if(u>1e-4){ const nx=a.x/u, ny=a.y/u, nz=a.z/u, vn=v.x*nx+v.y*ny+v.z*nz, g=this.windG;
       v.x+=WIND_K*(a.x-g*vn*nx)*dt; v.y+=WIND_K*(a.y-g*vn*ny)*dt; v.z+=WIND_K*(a.z-g*vn*nz)*dt; } }
-    v.y-=G*dt;
+    v.y-=this.attributes.effective.gravity*dt;
     this.position.addScaledVector(v,dt);
     this._collide(true);
   }
@@ -306,7 +322,7 @@ class Player{
     const base=held.length===2?3:(this.lockOff?6:9), crit=clamp((this.pullFatigue-FATIGUE_CRIT)/(1-FATIGUE_CRIT),0,1);
     for(const h of held){
       let d=base+this.effort*3+crit*14+wf*WIND_DRAIN+(h.surface.userData.gripCost||0); if(input.x) d+=1.5;   // gripCost: rachadura (dedos entalados)
-      h.stamina=Math.max(0,h.stamina-d*dt);
+      h.stamina=Math.max(0,h.stamina-d*dt*this.attributes.effective.gripDrainMultiplier);
       if(h.stamina<=0){ h.exhausted=true; this._release(h); this.emit('exhausted',h); }
     }
     if(this.isClimbing&&!this.mantle&&this.pull>=.97&&this.pulledNow){ const led=this.canMantle(); if(led) this._startMantle(led); }
@@ -365,8 +381,7 @@ class Player{
     const nod=(this.jolt*.02+n(17.3,26.9,.7)*tr*.8)*mo;
     c.rotation.set(this.pitch-nod,this.yaw,roll); c.updateMatrixWorld();
   }
-  // A mão direita com item segue `itemPose` (preenchida pelo ItemSystem); sem item, a pose vem da escalada:
-  // relaxada → aberta ao tentar agarrar → gancho ao segurar (abre e treme quando a estamina acaba).
+  // Cada mão ocupada segue a pose do respectivo item; mãos livres mantêm as poses de escalada.
   updateViewmodel(){
     // relógio próprio: o Game chama sem dt; o tempo real mantém a animação igual em qualquer taxa de quadros
     const now=performance.now(), dt=this._vmT?Math.min(.05,(now-this._vmT)/1000):1/60; this._vmT=now;
@@ -377,7 +392,7 @@ class Player{
     const xr=this.xr, camPos=_n.setFromMatrixPosition(this.camera.matrixWorld), camQ=this.camera.getWorldQuaternion(_wq);
     this.hands.forEach((h,i)=>{
       const hm=this.handModels[i], m=hm.root; m.visible=this.viewmodelVisible&&!this.dead;
-      const pose=(h.occupied&&this.itemPose)?this.itemPose:null;
+      const pose=h.occupied&&this.itemPoses?this.itemPoses[i]:(h.occupied&&i===1?this.itemPose:null);
       // VR: a mão solta (ou com item) fica no controle (ou na mão rastreada)
       const inHand=xr&&!h.inContact&&xr.handPose(i,m.position,m.quaternion);
       if(pose){

@@ -29,6 +29,8 @@ class Game{
     this.cinematic=new IntroCinematic(this);
     this.spectator=new SpectatorMode(this);
     this.state='menu'; this.keys={}; this.playerName=''; this.result=null; this.saved=false; this.savedIndex=-1;
+    this.devCommandHistory=[]; this.devHistoryIndex=0; this.devHistoryDraft='';
+    this.devConsoleReturnState=null; this._devConsoleWasPlaying=false;
     this.gameBtn={}; this._lockGuard=0;   // gameBtn: botões do mouse pressionados DURANTE a partida (cliques na interface não contam)
     this._lockReq=0; this._resuming=false;   // pedido de Pointer Lock pendente (instante) · retomada aguardando a captura
     this.settingsReturn='menu'; this.wasLocked=false; this.menuT=0; this.vt=0;
@@ -50,6 +52,23 @@ class Game{
     applyTextureQuality(this.renderer,s.quality);   // filtragem anisotrópica das paredes (assets.js)
     this.audio.apply(s);
   }
+  // ---------- console do desenvolvedor ----------
+  openDevConsole(){
+    if(!this.settings.data.devConsoleEnabled||this.vr.active||this.ui.$('devConsole').hidden===false) return;
+    if(!['play','paused','menu'].includes(this.state)) return;
+    this.devConsoleReturnState=this.state; this._devConsoleWasPlaying=this.state==='play';
+    if(this._devConsoleWasPlaying){ this.state='console'; this.timer.pause(); this._lockGuard=performance.now()+500; this.unlock(); }
+    this.keys={}; this.ui.$('devConsole').hidden=false; this.ui.$('devConsoleInput').focus();
+  }
+  closeDevConsole(){
+    const panel=this.ui.$('devConsole'); if(panel.hidden) return;
+    panel.hidden=true;
+    if(this._devConsoleWasPlaying){ this.state='play'; this.timer.resume(); this._lockGuard=performance.now()+500; this.lock(); }
+    else this.state=this.devConsoleReturnState||this.state;
+    this.devConsoleReturnState=null; this._devConsoleWasPlaying=false;
+  }
+  toggleDevConsole(){ if(this.ui.$('devConsole').hidden) this.openDevConsole(); else this.closeDevConsole(); }
+  clearDevConsoleOutput(){ this.ui.$('devConsoleOutput').textContent=''; }
   // ---------- fluxo ----------
   tryStart(vr){
     const v=this.ui.validateName(this.ui.$('nameIn').value);
@@ -79,6 +98,19 @@ class Game{
   toMenu(){
     this.state='menu'; this.unlock(); this.resetRun(); this.ui.clearMsg(); this.ui.setHUD(false); this.ui.show('menu');
     this.audio.setRumble(.03); this.audio.setTension(0);
+  }
+  returnFromSpectator(previousState){
+    if(previousState==='play'){
+      this.state='play'; this.ui.hideScreens(); this.ui.setHUD(true); this.player.viewmodelVisible=true; this.player.updateViewmodel();
+      this.timer.resume(); this.lock(); return;
+    }
+    if(previousState==='paused'){
+      this.state='paused'; this.ui.setHUD(true); this.ui.show('pause'); return;
+    }
+    if(previousState==='menu'){
+      this.state='menu'; this.ui.setHUD(false); this.ui.show('menu'); return;
+    }
+    this.toMenu();
   }
   pause(){
     if(this.state!=='play') return;
@@ -127,6 +159,7 @@ class Game{
     if(this.state!=='play') return;
     this.state='ending'; this.result=result; this.timer.finish();
     const breakdown=this.score.finalize(result,this.timer.time,this.player);
+    this.player.attributes.clearPerks();
     this.player.releaseAll(); this.unlock(); this.ui.hideNote(); this.ui.setPack(false); this.ui.clearMsg();
     this.audio.siren(false);
     if(result==='finish') this.audio.chime(); else this.audio.boom();
@@ -194,7 +227,27 @@ class Game{
     $('btnPauseSettings').onclick=()=>{ this.settingsReturn='pause'; this.ui.show('settings'); };
     $('btnSetBack').onclick=()=>this.ui.show(this.settingsReturn);
     $('btnRanking').onclick=()=>this.showRanking('menu');
-    $('btnSpectate').onclick=()=>this.spectator.enter();
+    const devInput=$('devConsoleInput'),devOutput=$('devConsoleOutput');
+    const runDevCommand=()=>{
+      const raw=devInput.value.trim(); if(!raw) return;
+      this.devCommandHistory.push(raw); if(this.devCommandHistory.length>50) this.devCommandHistory.shift();
+      this.devHistoryIndex=this.devCommandHistory.length; this.devHistoryDraft='';
+      const result=DevConsole.execute(raw,this);
+      devOutput.textContent+=`\n> ${raw}\n${result}`;
+      const lines=devOutput.textContent.split('\n'); if(lines.length>80) devOutput.textContent=lines.slice(-80).join('\n');
+      devOutput.scrollTop=devOutput.scrollHeight; devInput.value='';
+    };
+    $('devConsoleForm').addEventListener('submit',e=>{e.preventDefault();runDevCommand();});
+    $('devConsoleClose').onclick=()=>this.closeDevConsole();
+    devInput.addEventListener('keydown',e=>{
+      if(e.key==='ArrowUp'){
+        e.preventDefault(); if(this.devHistoryIndex===this.devCommandHistory.length) this.devHistoryDraft=devInput.value;
+        this.devHistoryIndex=Math.max(0,this.devHistoryIndex-1); devInput.value=this.devCommandHistory[this.devHistoryIndex]||'';
+      }else if(e.key==='ArrowDown'){
+        e.preventDefault(); this.devHistoryIndex=Math.min(this.devCommandHistory.length,this.devHistoryIndex+1);
+        devInput.value=this.devHistoryIndex===this.devCommandHistory.length?this.devHistoryDraft:(this.devCommandHistory[this.devHistoryIndex]||'');
+      }
+    });
     $('btnResRanking').onclick=()=>this.showRanking('result');
     $('btnRankBack').onclick=()=>this.ui.show(this.rankReturn||'menu');
     $('btnQuit').onclick=()=>this.ui.show('quit');
@@ -233,17 +286,23 @@ class Game{
       if(!this.locked()&&this.canLock()&&!this.vr.busy){ this.lock(); return; }   // clique com o cursor solto só recaptura: não agarra nem usa item
       if(e.button===0&&this.interaction.keypadAimed()){ this.interact(0); return; }   // painel de senha: clique aperta o número
       this.gameBtn[e.button]=true;
-      if(e.button===0) this.player.setGrab(0,true);
-      else if(e.button===2){ if(this.items.equipped) this.items.use(true); else this.player.setGrab(1,true); }
+      if(e.button===0){ if(this.items.equippedFor('left')) this.items.useHand('left',true); else this.player.setGrab(0,true); }
+      else if(e.button===2){ if(this.items.equippedFor('right')) this.items.useHand('right',true); else this.player.setGrab(1,true); }
     });
     addEventListener('mouseup',e=>{
       // só solta o que um clique de partida segurou: cliques e arrastos na mochila não soltam as mãos
       if(!this.gameBtn[e.button]) return;
       this.gameBtn[e.button]=false;
-      if(e.button===0) this.player.setGrab(0,false); else if(e.button===2){ this.items.use(false); this.player.setGrab(1,false); }
+      if(e.button===0){ if(this.items.equippedFor('left')) this.items.useHand('left',false); else this.player.setGrab(0,false); }
+      else if(e.button===2){ if(this.items.equippedFor('right')) this.items.useHand('right',false); else this.player.setGrab(1,false); }
     });
     addEventListener('wheel',e=>{ if(this.state==='play'&&Math.abs(e.deltaY)>4) this.items.cycle(e.deltaY>0?1:-1); else if(this.state==='spectate'&&Math.abs(e.deltaY)>4) this.spectator.wheel(e.deltaY); },{passive:true});
     addEventListener('keydown',e=>{
+      if(e.code==='Backquote'&&this.settings.data.devConsoleEnabled&&!this.vr.active){ e.preventDefault(); this.toggleDevConsole(); return; }
+      if(!this.ui.$('devConsole').hidden){
+        if(e.code==='Escape'){ e.preventDefault(); this.closeDevConsole(); }
+        return;
+      }
       if(e.code==='F2'&&this.state==='menu'&&!this.ui.$('menu').hidden){ e.preventDefault(); this.spectator.enter(); return; }   // atalho do modo espectador
       const typing=e.target&&e.target.tagName==='INPUT'&&e.target.type==='text';
       if(typing) return;
@@ -259,10 +318,10 @@ class Game{
       if(e.repeat) return;
       if(qk>=0){ this.items.selectQuick(qk); return; }
       switch(e.code){
-        case 'Space': this.player.jump(); break;
+        case 'Space': this.player.jump({x:(this.keys.KeyD?1:0)-(this.keys.KeyA?1:0),y:(this.keys.KeyW?1:0)-(this.keys.KeyS?1:0)}); break;
         case 'KeyF': this.interact(); break;
         case 'KeyQ': this.items.quick('pills'); break;
-        case 'KeyX': this.items.holster(); break;
+        case 'KeyX': this.items.holsterAll(); break;
         case 'Tab': this.openInventory(); break;   // alterna: a mochila é interativa e precisa do mouse solto
         case 'Escape': case 'KeyP': this.pause(); break;
       }

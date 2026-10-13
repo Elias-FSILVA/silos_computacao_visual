@@ -31,6 +31,8 @@ class SpectatorMode{
   }
   enter(){
     if(this.active) return; const g=this.g, c=g.camera, atm=g.atmosphere;
+    this.returnState=g.state;
+    if(this.returnState==='play'){ g.timer.pause(); g.keys={}; }
     this.head=c.children.find(o=>o.isLight)||{intensity:0,distance:0};
     this.saved={far:c.far,headI:this.head.intensity,headD:this.head.distance,amb:atm.ambient.intensity};
     this.active=true; g.state='spectate'; g.keys={}; g.ui.hideScreens(); g.ui.setHUD(false); g.ui.clearMsg();
@@ -42,7 +44,8 @@ class SpectatorMode{
     if(!this.active) return; this.active=false; const g=this.g, c=g.camera, s=this.saved;
     c.far=s.far; c.updateProjectionMatrix(); this.head.intensity=s.headI; this.head.distance=s.headD; g.atmosphere.ambient.intensity=s.amb;
     g.world.setCutaway(false); g.world.setRouteGuide(false); g.world.setLabels(false); g.world.setSpectator(false);
-    this.hud.hidden=true; g.toMenu();
+    this.hud.hidden=true; const returnState=this.returnState||'menu'; this.returnState=null;
+    if(g.returnFromSpectator) g.returnFromSpectator(returnState); else g.toMenu();
   }
   _apply(){
     const g=this.g, atm=g.atmosphere, b=this.bright;
