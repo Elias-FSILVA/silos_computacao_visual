@@ -83,6 +83,7 @@
       <label class="row">Brilho <input type="range" min="0.6" max="1.6" step="0.05" data-key="brightness"><output></output></label>
       <label class="row">Campo de visão <input type="range" min="60" max="100" step="1" data-key="fov"><output></output></label>
       <label class="row">Qualidade <select data-key="quality"><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select><span></span></label>
+      <label class="row">Distância de visão <select data-key="viewDistance"><option value="near">Curta</option><option value="normal">Normal</option><option value="far">Longa</option></select><span></span></label>
     </fieldset>
     <fieldset class="set"><legend>Jogo</legend>
       <label class="row">Sensibilidade <input type="range" min="0.3" max="2.5" step="0.05" data-key="sensitivity"><output></output></label>
@@ -168,6 +169,7 @@
 <script src="js/core/models.js"></script>
 <script src="js/core/modelDefs.js"></script>
 <script src="js/core/settings.js"></script>
+<script src="js/core/renderConfig.js"></script>
 <script src="js/core/ranking.js"></script>
 <script src="js/atmosphere/AudioManager.js"></script>
 <script src="js/world/textures.js"></script>
@@ -182,6 +184,7 @@
 <script src="js/interaction/Interactables.js"></script>
 <script src="js/world/Sectors.js"></script>
 <script src="js/world/Climbs.js"></script>
+<script src="js/world/SectorManager.js"></script>
 <script src="js/interaction/InteractionSystem.js"></script>
 <script src="js/items/ItemSystem.js"></script>
 <script src="js/player/HandModel.js"></script>
@@ -202,6 +205,7 @@
 <script src="js/ui/IntroCinematic.js"></script>
 <script src="js/systems/SpectatorMode.js"></script>
 <script src="js/ui/DevConsole.js"></script>
+<script src="js/ui/PerfOverlay.js"></script>
 <script src="js/Game.js"></script>
 <script src="js/main.js"></script>
 </body>

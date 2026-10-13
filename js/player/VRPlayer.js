@@ -93,6 +93,10 @@ class VRPlayer{
       this.floor=type==='local-floor'; this.renderer.xr.setReferenceSpaceType(type);
       s.addEventListener('end',()=>this._onEnd());
       s.addEventListener('visibilitychange',()=>this.g.onVRVisibility(s.visibilityState));
+      // resolução do framebuffer do headset (perfil VR, conforme a qualidade): só pode mudar ANTES de setSession — o
+      // XRWebGLLayer é criado ali e o r128 ignora a troca com a sessão em andamento
+      const vp=RenderProfile.resolve(this.g.settings.data,true);
+      if(this.renderer.xr.setFramebufferScaleFactor) this.renderer.xr.setFramebufferScaleFactor(vp.framebufferScale||1);
       return this.renderer.xr.setSession(s).then(()=>{ this.session=s; this._onStart(); if(onStart) onStart(); });
     })).catch(err=>{ console.warn('VR:',err); this.g.ui.msg('Não foi possível entrar em VR.',3); })
       .then(()=>{ this.entering=false; });
@@ -100,10 +104,11 @@ class VRPlayer{
   exit(){ if(this.session) this.session.end().catch(()=>{}); }
   _onStart(){
     this.active=true;
-    const l=this.session.renderState.baseLayer; if(l&&'fixedFoveation' in l) l.fixedFoveation=1;   // Quest: menos pixels na periferia
+    // perfil VR (js/core/renderConfig.js): neblina, janela de setores, far, luzes; foveação fixa do Quest (menos pixels na periferia)
+    const p=this.g.applyRenderProfile();
+    const l=this.session.renderState.baseLayer; if(l&&'fixedFoveation' in l) l.fixedFoveation=p.foveation!=null?p.foveation:1;
     this.rig.add(this.camera); this.camera.position.set(0,0,0); this.camera.rotation.set(0,0,0);
     this.panel.attach(this.camera); this.hud.attach(this.g.scene,this.camera);
-    this.g.atmosphere.setLightCount(3);
     this.frames=0; this.heightOffset=this.floor?0:EYE; this.rigPitch=0;
     this.nail=[{t:0,armed:true},{t:0,armed:true}]; this.ham=[0,1].map(()=>({prev:null,cd:0,armed:new WeakMap(),wall:null}));
     this.pill=[{t:0,armed:true},{t:0,armed:true}]; this.keyHover=[null,null]; this.invHover=-1; this.invOpen=false; this.hud.setInventory(false);

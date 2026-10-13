@@ -2,10 +2,24 @@
 // ============================================================================
 // js/atmosphere/AtmosphereManager.js — fog, luz, exposição e eventos de tensão
 // Lê: player.position.y, player.maxHeightReached, player.stamina; gameplay: checkpointJustCollected, finished, result
+// Neblina: FogExp2 RADIAL. O Three.js mede a neblina pela profundidade ao longo do olhar (−mvPosition.z): girar a cabeça
+// muda a neblina de um mesmo objeto (incômodo em VR) e, nas bordas da tela, mostra mais longe do que no centro. Com a
+// distância real até o olho a neblina é a mesma em qualquer direção (cima, baixo, cada olho do VR) e o fim da janela de
+// renderização (RENDER_CONFIG: fogFull ≤ above/below) fica sempre dentro da neblina opaca.
+// A distância é calculada POR FRAGMENTO a partir da posição interpolada (linear, exata): interpolar a própria distância
+// entre vértices erraria feio nos triângulos grandes da parede do poço (dezenas de metros de altura).
+// A densidade base vem do perfil (RenderProfile: 99,5% em fogFull); a altura e a massa só a deixam mais densa.
 // ============================================================================
+(function radialFog(C){
+  if(!C||!C.fog_vertex||/vFogPosition/.test(C.fog_vertex)) return;
+  C.fog_pars_vertex=C.fog_pars_vertex.replace(/varying\s+float\s+fogDepth\s*;/,'varying vec3 vFogPosition;');
+  C.fog_vertex=C.fog_vertex.replace(/fogDepth\s*=\s*-\s*mvPosition\.z\s*;/,'vFogPosition = mvPosition.xyz;');
+  C.fog_pars_fragment=C.fog_pars_fragment.replace(/varying\s+float\s+fogDepth\s*;/,'varying vec3 vFogPosition;');
+  C.fog_fragment=C.fog_fragment.replace(/#ifdef\s+USE_FOG/,'#ifdef USE_FOG\n\tfloat fogDepth = length( vFogPosition );');
+})(typeof THREE!=='undefined'&&THREE.ShaderChunk);
 class AtmosphereManager{
   constructor(scene,renderer,audio){
-    this.scene=scene; this.renderer=renderer; this.audio=audio;
+    this.scene=scene; this.renderer=renderer; this.audio=audio; this.fogBase=.055;
     scene.fog=new THREE.FogExp2(0x050403,.06);
     this.ambient=new THREE.AmbientLight(0x2a2620,.55); scene.add(this.ambient);
     this.pool=[]; for(let i=0;i<5;i++){ const l=new THREE.PointLight(0xffe2a8,1.3,15,1.6); scene.add(l); this.pool.push(l); }
@@ -18,6 +32,8 @@ class AtmosphereManager{
   reset(){ this.t=0; this.next=40+Math.random()*20; this.pending=null; this.last=null; this.shapes=0;
     this.blackout=0; this.blackoutY=0; this.shape=null; this.heartT=0; this.shapeMesh.visible=false; }
   setLightCount(n){ this.lightCount=n; this.pool.forEach((l,i)=>l.visible=i<n); }
+  // perfil de renderização (RenderProfile.resolve): densidade base da neblina e luzes das luminárias
+  setProfile(p){ this.fogBase=p.fogDensity; this.setLightCount(Math.min(this.pool.length,p.lampLights)); }
   update(dt,ctx){
     const {player,world,mass,state,playing}=ctx; this.t+=dt;
     const y=player.position.y, h=clamp(y/TOP,0,1);
@@ -25,7 +41,7 @@ class AtmosphereManager{
     // fog: quente embaixo, fria em cima, avermelhada perto da massa
     this.col.copy(this.warm).lerp(this.cold,h).lerp(this.red,prox*.65);
     this.scene.fog.color.copy(this.col); this.scene.background&&this.scene.background.copy(this.col);
-    this.scene.fog.density=.055+h*.02+prox*.03;
+    this.scene.fog.density=this.fogBase+h*.02+prox*.03;
     // cansaço escurece a visão
     const tired=player.isClimbing?clamp((35-player.stamina)/35,0,1):0;
     this.renderer.toneMappingExposure=1-tired*.3-(this.blackout>0?.15:0);

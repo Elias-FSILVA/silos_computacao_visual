@@ -123,6 +123,27 @@ node tools/test_halls.js        # puzzles das alas
 node tools/test_espectador.js
 node tools/test_final.js        # os quatro finais
 node tools/test_scripts.js      # ordem dos scripts no index.html
+node tools/test_setores.js      # janela de renderização com o Three.js real: colisão e raycast intactos, estados, histerese, liberação
+```
+
+### Desempenho, distância de renderização e VR
+
+O mapa inteiro é montado na carga (a colisão e as agarras sempre completas), mas só o que está em volta dos olhos é desenhado. Tudo é regulado em [js/core/renderConfig.js](js/core/renderConfig.js): perfis `pc` e `vr`, distância da neblina, janela acima/abaixo, histerese, pré-carga, descarga, LOD, luzes e escala do framebuffer do Quest, além de ajustes por região (salas fechadas com janela menor, insuflador com mais pré-carga acima). No menu, **Qualidade** e **Distância de visão** escolhem a variação do perfil.
+
+- **Setores** ([js/world/SectorManager.js](js/world/SectorManager.js)): faixas de 10 m do poço e uma por sala de `world.puzzleRooms`. Estados descarregado → carregando → pronto → ativo, com histerese na saída e atraso na descarga. Sala com puzzle em andamento não descarrega. Descarregar libera só as texturas específicas do setor; colisão, agarras, pregos, portas e puzzles nunca mudam.
+- **Desenho**: peças estáticas viram uma malha por material e por setor (as originais ficam invisíveis, como alvo do raycast); as agarras de tijolo viram `InstancedMesh` (a que desmorona volta a ser desenhada sozinha); andaimes e luminárias glTF trocam por uma caixa da mesma cor além de `lod` metros.
+- **Luzes**: as luzes das salas são virtuais. Um pool fixo copia as mais relevantes, e o shader nunca recompila no meio do jogo.
+- **Neblina**: `FogExp2` radial (distância real ao olho), igual em qualquer direção e nos dois olhos do VR. O fim da janela fica dentro da neblina opaca.
+- **VR**: escala do framebuffer pela qualidade, aplicada antes de `setSession`; foveação fixa do Quest. O Three.js r128 não tem multiview nem `setFoveation`.
+
+**Diagnóstico.** F3 (ou `?diag` no endereço, ou `diag` no console) mostra FPS, tempo de quadro, draw calls, triângulos, memória de GPU, setores, luzes e região; em VR aparece num painel preso à vista e no console a cada 5 s. O comando `setores` no console lista os ativos. Chaves de comparação: `?nobatch`, `?nosectors`, `?perfil=vr` (perfil do VR na tela do PC).
+
+**Banco de desempenho** (Chrome headless, mesmas posições e ângulos):
+
+```bash
+node tools/perf_bench.js                    # 11 posições × 4 direções, idas e voltas a 30 m/s, 3 reinícios
+node tools/perf_bench.js --query perfil=vr  # perfil do VR emulado no PC
+node tools/perf_bench.js --audit            # o que existe no mapa: malhas, triângulos e luzes por tipo e altura
 ```
 
 ### Estrutura

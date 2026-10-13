@@ -10,6 +10,8 @@ class Game{
     r.toneMapping=THREE.LinearToneMapping; r.toneMappingExposure=1; r.xr.enabled=true;
     document.getElementById('view').appendChild(r.domElement);
     this.scene=new THREE.Scene(); this.scene.background=new THREE.Color(0x050403);
+    this.scene.matrixAutoUpdate=false;   // a cena nunca se move: sem forçar a recomposição das matrizes do mapa todo quadro
+    // far definitivo vem do perfil (applyRenderProfile): o plano distante fica dentro da neblina opaca
     this.camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.03,200); this.camera.rotation.order='YXZ';
     this.scene.add(this.camera);
     const head=new THREE.PointLight(0xb8ae98,.45,7,2); this.camera.add(head);
@@ -23,6 +25,11 @@ class Game{
     this.puzzles=new PuzzleSystem(this);
     this.timer=new TimerSystem(); this.score=new ScoreSystem(); this.checkpoints=new CheckpointSystem(this.world); this.ranking=new Ranking();
     this.atmosphere=new AtmosphereManager(this.scene,r,this.audio);
+    // janela vertical de renderização, setores, batching/instancing/LOD e pool de luzes (só o desenho; colisão intacta)
+    this.sectors=this.world.sectors=new SectorManager(this);
+    if(/[?&]nobatch\b/.test(location.search)) this.sectors.batched=false;     // comparação A/B (tools/perf_bench.js)
+    if(/[?&]nosectors\b/.test(location.search)) this.sectors.enabled=false;
+    this.perf=new PerfOverlay(this);
     this.ui=new UIManager();
     this.vr=new VRPlayer(this);
     this.puzzles.reset(); this._zones();
@@ -38,19 +45,30 @@ class Game{
     try{ const n=LS&&LS.getItem('silos.lastName'); if(n) this.ui.$('nameIn').value=n; }catch(e){}
     this.ui.show('menu'); this.ui.setHUD(false);
     if(/[?&]espectador\b/.test(location.search)) this.spectator.enter();   // link direto: .../index.html?espectador
+    if(/[?&]diag\b/.test(location.search)) this.perf.toggle(true);         // modo de diagnóstico (também F3)
     // setAnimationLoop: igual ao requestAnimationFrame no monitor, e o único jeito de desenhar no headset
     this.last=performance.now(); r.setAnimationLoop(t=>this._loop(t));
   }
   // ---------- configurações ----------
   applySettings(){
     const s=this.settings.data;
-    this.camera.fov=s.fov; this.camera.aspect=innerWidth/innerHeight; this.camera.updateProjectionMatrix();
-    const pr={low:.6,medium:1,high:Math.min(window.devicePixelRatio||1,2)}[s.quality]||1;
+    this.camera.fov=s.fov; this.camera.aspect=innerWidth/innerHeight;
+    const p=this.applyRenderProfile();
+    const pr=Math.min(p.pixelRatio?p.pixelRatio[s.quality]||1:1,window.devicePixelRatio||1);
     if(!this.renderer.xr.isPresenting){ this.renderer.setPixelRatio(pr); this.renderer.setSize(innerWidth,innerHeight); }
     this.renderer.domElement.style.filter=`brightness(${s.brightness})`;
-    this.atmosphere.setLightCount(s.quality==='low'?3:5);
     applyTextureQuality(this.renderer,s.quality);   // filtragem anisotrópica das paredes (assets.js)
     this.audio.apply(s);
+  }
+  // perfil de renderização (js/core/renderConfig.js): PC ou VR, qualidade e distância de visão → câmera, neblina, luzes e setores
+  applyRenderProfile(){
+    // ?perfil=vr: usa o perfil do VR na tela do PC (comparar custos no mesmo hardware; tools/perf_bench.js --query perfil=vr)
+    const vr=(this.vr&&this.vr.active)||/[?&]perfil=vr\b/.test(location.search);
+    const p=this.renderProfile=RenderProfile.resolve(this.settings.data,vr);
+    if(!(this.spectator&&this.spectator.active)){ this.camera.far=p.far; }
+    this.camera.updateProjectionMatrix();
+    this.atmosphere.setProfile(p); this.sectors.setProfile(p);
+    return p;
   }
   // ---------- console do desenvolvedor ----------
   openDevConsole(){
@@ -304,6 +322,7 @@ class Game{
         return;
       }
       if(e.code==='F2'&&this.state==='menu'&&!this.ui.$('menu').hidden){ e.preventDefault(); this.spectator.enter(); return; }   // atalho do modo espectador
+      if(e.code==='F3'){ e.preventDefault(); if(!e.repeat) this.perf.toggle(); return; }                                         // diagnóstico de desempenho
       const typing=e.target&&e.target.tagName==='INPUT'&&e.target.type==='text';
       if(typing) return;
       if(this.state==='intro'){ if(['Space','Escape','Enter'].includes(e.code)){ e.preventDefault(); this.cinematic.skip(); } return; }
@@ -349,7 +368,7 @@ class Game{
   }
   // ---------- loop ----------
   _loop(now){
-    const dt=Math.min(.05,(now-this.last)/1000); this.last=now; this.vt+=dt;
+    const dt=Math.min(.05,(now-this.last)/1000), t0=performance.now(); this.last=now; this.vt+=dt;
     try{
       if(this.state==='play') this._play(dt);
       else if(this.state==='intro'){ this.cinematic.update(dt); this._ambient(dt,false); }
@@ -360,7 +379,9 @@ class Game{
       this.mass.visual(this.vt);
       this.ui.tick(dt);
       if(this.vr.active){ if(this.state!=='play') this.vr.idle(dt); this.vr.updatePanel(this.ui); }
+      this.sectors.update(dt);   // depois de mover câmera/jogador: a janela segue os olhos deste quadro
       this.renderer.render(this.scene,this.camera);
+      this.perf.frame(performance.now()-t0);
     }catch(err){ console.error(err); }
   }
   _ambient(dt,playing){ this.fx.update(dt); this.audio.setWind(0); this.atmosphere.update(dt,{player:this.player,world:this.world,mass:this.mass,state:this.getUIState(),playing}); }

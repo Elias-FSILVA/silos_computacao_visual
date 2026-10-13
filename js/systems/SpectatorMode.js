@@ -37,6 +37,7 @@ class SpectatorMode{
     this.saved={far:c.far,headI:this.head.intensity,headD:this.head.distance,amb:atm.ambient.intensity};
     this.active=true; g.state='spectate'; g.keys={}; g.ui.hideScreens(); g.ui.setHUD(false); g.ui.clearMsg();
     c.far=1200; c.updateProjectionMatrix();
+    if(g.sectors) g.sectors.setFullView(true);   // mapa inteiro, peças originais (paredes fantasma), todas as luzes
     g.world.setSpectator(true);            // tela do labirinto mostra a planta o tempo todo, sem contagem
     this._apply(); this.goto(SPEC_VIEWS[7]); this.hud.hidden=false; this._hud(true); g.lock();
   }
@@ -44,6 +45,7 @@ class SpectatorMode{
     if(!this.active) return; this.active=false; const g=this.g, c=g.camera, s=this.saved;
     c.far=s.far; c.updateProjectionMatrix(); this.head.intensity=s.headI; this.head.distance=s.headD; g.atmosphere.ambient.intensity=s.amb;
     g.world.setCutaway(false); g.world.setRouteGuide(false); g.world.setLabels(false); g.world.setSpectator(false);
+    if(g.sectors) g.sectors.setFullView(false);
     this.hud.hidden=true; const returnState=this.returnState||'menu'; this.returnState=null;
     if(g.returnFromSpectator) g.returnFromSpectator(returnState); else g.toMenu();
   }

@@ -82,8 +82,20 @@ class World{
   constructor(scene){ this.scene=scene; this.TOP=TOP; this.root=null; this.onCrumble=null; this.onSecretRevealed=null; this.onMazeEvent=null; this.build(); }
   reset(){
     if(this.root){ this.scene.remove(this.root);
-      this.root.traverse(o=>{ if(o.geometry&&!o.geometry.userData.shared) o.geometry.dispose(); }); }
+      this.root.traverse(o=>{ if(o.geometry&&!o.geometry.userData.shared) o.geometry.dispose(); });
+      this._trashMaterials(this.root); }
     this.build();
+  }
+  // materiais e texturas criados só para esta construção do mapa (placas, telas, teclados, lâmpadas): vão para this.trash,
+  // que o SectorManager libera alguns segundos depois — quando o mapa novo já usa os mesmos programas de shader, que assim
+  // não são destruídos e recompilados. Os compartilhados (MAT, IMAT, TEX, modelos glTF, LOD) ficam.
+  _trashMaterials(root){
+    const keepM=new Set([...Object.values(MAT),...Object.values(IMAT),...ALT.values()]), keepT=new Set(Object.values(TEX)), out=new Set();
+    if(typeof Models!=='undefined'&&Models.ready) Models.ready.forEach(r=>r.scene.traverse(o=>{ if(o.material) [].concat(o.material).forEach(m=>keepM.add(m)); }));
+    if(typeof SectorManager!=='undefined'&&SectorManager._avg) SectorManager._avg.forEach(m=>keepM.add(m));
+    root.traverse(o=>{ [].concat(o.material||[]).forEach(m=>{ if(!m||keepM.has(m)) return; out.add(m);
+      for(const k of ['map','normalMap','emissiveMap','alphaMap']) if(m[k]&&m[k].isTexture&&!keepT.has(m[k])) out.add(m[k]); }); });
+    this.trash=(this.trash||[]).concat([...out]);
   }
   rand(a,b){ return a+(b-a)*this.R(); }
   build(){
@@ -217,6 +229,7 @@ class World{
     const outer=new THREE.Mesh(new THREE.CylinderGeometry(SILO_R,SILO_R,TOP+60,64,1,true),new THREE.MeshStandardMaterial({color:0x6d6a64,roughness:.95}));
     outer.position.y=TOP/2; this.root.add(outer); this.cutaway.push(outer);
     const roof=new THREE.Mesh(new THREE.RingGeometry(SHAFT_R+SHELL_T,SILO_R,64,1),outer.material); roof.rotation.x=-Math.PI/2; roof.position.y=TOP+30; this.root.add(roof); this.cutaway.push(roof);
+    outer.userData.exterior=roof.userData.exterior=true;   // só se vê de fora: o SectorManager só desenha no modo espectador
   }
   _shellArc(a0,span,y0,y1,mat,porous){
     this._arc({r0:SHAFT_R,r1:SHAFT_R+SHELL_T,a0,span},y0,y1,mat,{cut:true,porous,segs:72});
