@@ -21,10 +21,10 @@ const INVENTORY_CONFIG={ slots:10, defaultStackLimit:10, defaultWeight:1 };
 // Teclas dos atalhos. Fonte única: Game.js (entrada) e UIManager.js (rótulos e layout) leem esta tabela.
 // Slots 1–2 pertencem à mão esquerda; 3–4 à direita. Cada mão pode ter até dois itens vinculados.
 const QUICK_KEYS=[
-  {code:'Digit1',label:'1',place:'superior'},
-  {code:'Digit2',label:'2',place:'direita'},
-  {code:'Digit3',label:'3',place:'inferior'},
-  {code:'Digit4',label:'4',place:'esquerda'}
+  {code:'Digit1',label:'1',place:'superior esquerda'},
+  {code:'Digit2',label:'2',place:'inferior esquerda'},
+  {code:'Digit3',label:'3',place:'superior direita'},
+  {code:'Digit4',label:'4',place:'inferior direita'}
 ];
 
 // ---- leitura dos metadados dos itens (valores inválidos caem no padrão, com aviso de desenvolvimento) ----

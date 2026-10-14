@@ -80,10 +80,12 @@ body.inv-open #reticle, body.inv-open #prompt, body.inv-open #inv{ visibility:hi
 #packWrap .ps.quick:hover{ border-color:var(--bone); }
 #packWrap .ps.quick .kc{ position:absolute; left:-2px; top:-2px; min-width:1.5em; height:1.5em; padding:0 .15em; text-align:center; line-height:1.4em;
   background:var(--bone); color:#000; border-radius:.25em 0 .3em 0; font-family:"Big Shoulders Stencil Display",Impact,sans-serif; font-weight:800; font-size:1.15em; pointer-events:none; }
-/* atalho vazio: borda tracejada e o número grande e apagado no centro */
+#packWrap .ps.quick[data-side="right"] .kc{ left:auto; right:-2px; border-radius:0 .25em 0 .3em; }
+/* atalho vazio: borda tracejada e o número posicionado no lado externo (fora da linha do círculo) */
 #packWrap .ps.quick.none{ border-style:dashed; border-color:rgba(221,214,200,.3); background:rgba(0,0,0,.55); }
-#packWrap .ps.quick.none .kc{ left:50%; top:50%; transform:translate(-50%,-50%); height:auto; min-width:0; padding:0; line-height:1; background:none;
-  color:rgba(221,214,200,.35); font-size:3em; border-radius:0; }
+#packWrap .ps.quick.none .kc{ left:24%; right:auto; top:50%; transform:translate(-50%,-50%); height:auto; min-width:0; padding:0; line-height:1; background:none;
+  color:rgba(221,214,200,.35); font-size:2.6em; border-radius:0; }
+#packWrap .ps.quick.none[data-side="right"] .kc{ left:76%; right:auto; transform:translate(-50%,-50%); }
 
 /* estados comuns */
 #packWrap .ps.sel{ border-color:var(--bone); box-shadow:0 0 0 .22em rgba(221,214,200,.45); }
