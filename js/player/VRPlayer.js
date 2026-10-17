@@ -167,7 +167,8 @@ class VRPlayer{
     const g=this.g, p=this.player, s=g.settings.data;
     this._frame();
     const [L,R]=this._readAll();
-    for(let i=0;i<2;i++){ const st=i?R:L; if(!st) continue;
+    // grip agarra com a mão vazia; na mão com item (picareta inclusive) não agarra nem solta — a picareta é do gatilho
+    for(let i=0;i<2;i++){ const st=i?R:L; if(!st||g.items.equippedFor(i?'right':'left')) continue;
       if(st.d.grip) p.setGrab(i,true); else if(st.u.grip) p.setGrab(i,false); }
     let mx=0, my=0, turning=0, jumpRequested=false;
     if(L){
@@ -176,14 +177,14 @@ class VRPlayer{
       if(L.d.a) g.items.holsterAll();   // A esquerdo guarda as mãos livres, como o X do desktop
       if(L.d.b) this.toggleInventory();
       // gatilho esquerdo: aperta o número sob o indicador esquerdo; com hand tracking, a pinça pula
-      if(L.d.trigger){ if(this.keyHover[0]) this._pressKey(0); else if(this.invOpen&&this.invHover>=0){ g.items.select(this.invHover); this._haptic(0,.3,20); } else if(g.items.equippedFor('left')) g.items.useHand('left',true); else if(L.tracked) jumpRequested=true; }
+      if(L.d.trigger){ if(this.keyHover[0]) this._pressKey(0); else if(this.invOpen&&this.invHover>=0){ g.items.select(this.invHover,this._invSide(0)); this._haptic(0,.3,20); } else if(g.items.equippedFor('left')) g.items.useHand('left',true); else if(L.tracked) jumpRequested=true; }
       else if(L.u.trigger) g.items.useHand('left',false);
     }
     if(R){
       // gatilho direito: número do painel sob o indicador > item do inventário sob o indicador > usar/interagir
       if(R.d.trigger){
         if(this.keyHover[1]) this._pressKey(1);
-        else if(this.invOpen&&this.invHover>=0){ g.items.select(this.invHover); this._haptic(1,.3,20); }
+        else if(this.invOpen&&this.invHover>=0){ g.items.select(this.invHover,this._invSide(1)); this._haptic(1,.3,20); }
         else if(g.ui.noteOpen||!g.items.equippedFor('right')) g.interact(); else g.items.useHand('right',true);
       }
       else if(R.u.trigger) g.items.useHand('right',false);
@@ -406,6 +407,14 @@ class VRPlayer{
       H.armed.set(a,false); H.cd=VR_TUNE.hammerCooldown; break;
     }
     H.prev.copy(head);
+  }
+  // inventário no pulso: um item perHand (picareta) vai para a mão do gatilho usado; os demais seguem o vínculo
+  _invSide(i){ const s=this.g.items.inv&&this.g.items.inv.slots[this.invHover]; return s&&ITEM_DEFS[s.id]&&ITEM_DEFS[s.id].perHand?(i?'right':'left'):undefined; }
+  // picareta: crava = pulso forte e curto · ricochete (superfície inválida) = dois pulsos fracos · solta/arranca = pulso longo
+  axeFeedback(i,kind){
+    if(kind==='bite') this._haptic(i,1,40);
+    else if(kind==='bounce'){ this._haptic(i,.25,18); setTimeout(()=>this._haptic(i,.25,18),90); }
+    else this._haptic(i,.5,140);
   }
   _haptic(i,v,ms){
     try{ const c=this.ctrl[i], gp=c&&c.source&&c.source.gamepad, a=gp&&gp.hapticActuators&&gp.hapticActuators[0];

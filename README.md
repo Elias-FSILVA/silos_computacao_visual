@@ -42,8 +42,9 @@ Você está no fundo de um silo industrial gigantesco: um cilindro de 400 m de a
 | Pular / subir na borda | Espaço | A |
 | Interagir | F | gatilho direito |
 | Usar item | botão do mouse da mão que segura o item | gatilho da mão que segura o item |
+| Picareta: cravar / soltar | segurar / soltar o botão daquela mão | segurar / soltar o gatilho (ou pinça) |
 | Mochila / inventário | Tab, depois 1 a 4 | Y (inventário no pulso) |
-| Guardar item | X (guarda as duas mãos) | A esquerdo (idem) |
+| Guardar item | X (guarda as mãos livres; a picareta cravada fica) | A esquerdo (idem) |
 | Pílula | Q | levar o frasco à boca |
 | Pausa | Esc | clique no analógico esquerdo |
 
@@ -82,6 +83,13 @@ O `vercel.json` já configura tudo: a Vercel roda `npm ci` e `npm run build` e p
 - Cada mão tem estado próprio: usar, segurar ou soltar o botão de uma mão nunca mexe no item da outra. Pausa, mochila e console soltam os botões das duas mãos.
 - A mão com item comum não agarra. A **outra mão escala e puxa normalmente, inclusive pelo mouse**. O mouse só deixa de puxar durante o uso ativo de um item que mira (golpe do martelo, colocar prego, cartão, golpe da picareta). Pendurado num braço com a outra mão ocupada, o braço fica travado e gasta menos pegada (como antes, agora para as duas mãos).
 - Poses e itens são desenhados no espaço da mão direita e espelhados para a esquerda (`js/player/Handedness.js`), sem escala negativa.
+
+### Picareta (Climbing Axe)
+
+- Item **Picareta**: até 2 na mochila; cada mão equipada usa uma. A 1ª está na caixa do **Andaime norte** (128 m) e a 2ª na do **Corredor de serviço** (269,6 m). Com uma só, a outra mão recebe "Você só tem uma picareta".
+- Crava **só** em superfícies marcadas: **rachaduras** (que a mão nua também agarra) e **faixas de rocha** escuras com lâmpada amarela (R1 a 145 m, R2 a 237 m, R3 a 324 m), onde a mão nua não se segura. Não crava em parede comum, chapa, corda, cano, prego, porta, puzzle nem nos vãos de prego.
+- Segure o botão (ou o gatilho) para cravar e manter; solte para desprender. O retículo indica se dá para cravar ali. Fixar custa 5 de stamina (× o gasto de pegada dos perks). Pendurada, ela gasta como a mão, mas sem o custo extra da rachadura. A cravada é uma âncora: puxar, mantle e salto agarrado funcionam como com a mão.
+- Exausta, a picareta é arrancada (som de raspão) e só volta a cravar com a mão recuperada. Cravada, ela não pode ser guardada nem trocada ("A picareta está cravada"). A mão com picareta não agarra apoios comuns: guarde para usar a mão nua.
 
 ### Referência e escopo desta etapa
 

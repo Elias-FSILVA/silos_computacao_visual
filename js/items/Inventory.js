@@ -20,6 +20,7 @@ const INVENTORY_CONFIG={ slots:10, defaultStackLimit:10, defaultWeight:1 };
 
 // Teclas dos atalhos. Fonte única: Game.js (entrada) e UIManager.js (rótulos e layout) leem esta tabela.
 // Slots 1–2 pertencem à mão esquerda; 3–4 à direita. Cada mão pode ter até dois itens vinculados.
+// Item perHand (picareta): pode ter UM vínculo em cada grupo; os demais itens têm um vínculo só.
 const QUICK_KEYS=[
   {code:'Digit1',label:'1',place:'superior esquerda'},
   {code:'Digit2',label:'2',place:'inferior esquerda'},
@@ -93,14 +94,17 @@ class Inventory{
   // ---- atalhos ----
   // Vincula o item `id` ao atalho k. Um item ocupa um atalho só: se já estava em outro (j), o vínculo é transferido
   // e o item que ocupava k (se houver) passa a ocupar j. Nunca consome nem duplica unidades.
+  // perHand: a transferência só acontece dentro do grupo de k (0–1 ou 2–3); o vínculo do outro grupo fica.
   bind(k,id){
     if(!(k>=0&&k<this.quick)||!this.has(id)) return false;
-    const j=this.binds.indexOf(id), old=this.binds[k];
+    const per=!!(ITEM_DEFS[id]&&ITEM_DEFS[id].perHand), j=per?this.bindingOf(id,k<2?0:1):this.binds.indexOf(id), old=this.binds[k];
     if(j>=0&&j!==k) this.binds[j]=old;
     this.binds[k]=id; this.version++; return true;
   }
   unbind(k){ if(k>=0&&k<this.quick&&this.binds[k]){ this.binds[k]=null; this.version++; return true; } return false; }
-  bindingOf(id){ return this.binds.indexOf(id); }
+  // atalho do item (o primeiro); com group (0 = esquerda 1–2, 1 = direita 3–4), só naquele grupo
+  bindingOf(id,group){ if(group==null) return this.binds.indexOf(id); const a=group?2:0; for(let k=a;k<Math.min(a+2,this.quick);k++) if(this.binds[k]===id) return k; return -1; }
+  bindingsOf(id){ const out=[]; this.binds.forEach((b,k)=>{ if(b===id) out.push(k); }); return out; }
   // índice do slot real apontado pelo atalho k, ou -1 (vazio ou item que deixou de existir: o vínculo é limpo)
   boundSlot(k){
     const id=this.binds[k]; if(!id) return -1;

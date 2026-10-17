@@ -18,6 +18,8 @@
 // ItemSystem: golpe do martelo, colocar prego, cartão) o mouse mira em vez de puxar. Só no desktop; no VR a mira é
 // do controle. Sem ferramentas, nenhum dos dois acontece.
 // hand.anchor: 'hand' (pegada da mão nua), 'axe' (picareta cravada) ou null.
+// Picareta: axeTarget/anchorAxe/releaseAxe usam a MESMA âncora da mão (inContact/point/normal): mola, puxada, fadiga,
+// mantle, vento e salto são os de sempre. Fixar custa 5 × gripDrainMultiplier; sustentar é o dreno da mão SEM gripCost.
 // Modo VR (opcional): com `xr` (VRPlayer) ligado, mira e agarre saem dos controles, a puxada vem do braço
 // (pullBy) e a câmera é posicionada pelo rig; sem ele, tudo segue como no mouse e teclado.
 // Colisão: Collision.collideBody contra world.platforms (caixas, caixas giradas e setores anelares) + world.guard
@@ -106,8 +108,8 @@ class Player{
   // em VR a mira é do controle, então o braço puxa mesmo durante o uso
   get canPull(){ return !this.mantle&&!this.dead&&(!this.aimConflict||!!this.xr)&&this.pull<.995&&this.hands.some(h=>h.inContact&&h.isGrabbing); }
   get aimConflict(){ return this.isHanging&&this.hands.some(h=>h.aiming); }
-  // braço travado: pendurado com a outra mão ocupada por item
-  get lockOff(){ return this.isHanging&&this.hands.some(h=>h.occupied); }
+  // braço travado: pendurado com a outra mão ocupada por item (a picareta cravada é âncora, não item na mão)
+  get lockOff(){ return this.isHanging&&this.hands.some(h=>h.occupied&&h.anchor!=='axe'); }
   // pendurado numa borda, mas baixo demais para subir: a UI sugere puxar
   get needsPull(){ return this.isHanging&&!this.mantle&&this.pull<PULL_MANTLE&&this.hands.some(h=>h.inContact&&h.surface.userData.plat); }
   setGrab(i,down){
@@ -133,10 +135,11 @@ class Player{
   _cast(){ const hits=this.ray.intersectObjects(this.world.raycastTargets,false); return hits.find(h=>h.object.userData.alive!==false)||null; }
   // VR: 1) o que o controle aponta de perto; 2) braço estendido: do ombro passando pela mão;
   // 3) o que está atrás da mão vista da cabeça. 2 e 3 vão até o mesmo alcance do desktop (this.reach)
-  _grabHit(h){
+  // ok(objeto): o que conta como alvo (mão: userData.grab; picareta: isAxeSurface)
+  _grabHit(h,ok=o=>!!o.userData.grab){
     if(!this.xr) return this.aim(this.reach);
     const i=this.hands.indexOf(h), xr=this.xr;
-    const grab=()=>{ const hit=this._cast(); return hit&&hit.object.userData.grab?hit:null; };
+    const grab=()=>{ const hit=this._cast(); return hit&&ok(hit.object)?hit:null; };
     let hit=null;
     if(xr.ray(i,_p,_q)){ this.ray.set(_p,_q); this.ray.far=xr.grabReach; hit=grab(); if(hit) return hit; }
     if(!xr.handPos(i,_p)) return null;
@@ -204,6 +207,32 @@ class Player{
     this.emit('grab',h);
     return true;
   }
+  // ---------- picareta ----------
+  // alvo da picareta da mão i: mesmo raio e alcance do agarre, só superfícies axe
+  axeTarget(i){ const h=this.hands[i]; if(!h) return null; const hit=this._grabHit(h,isAxeSurface); return hit&&isAxeSurface(hit.object)?hit:null; }
+  // crava a picareta da mão i no ponto `hit`; falha sem cobrar nada ('state' | 'surface' | 'reach' | 'stamina' | 'slip')
+  anchorAxe(i,hit){
+    const h=this.hands[i];
+    if(!h||this.dead||this.mantle||h.inContact||h.cooldown>0||h.exhausted) return {ok:false,reason:'state'};
+    if(!hit||!isAxeSurface(hit.object)) return {ok:false,reason:'surface'};
+    if(!this.xr&&hit.distance>this.reach+1e-6) return {ok:false,reason:'reach'};
+    const cost=5*this.attributes.effective.gripDrainMultiplier;
+    if(h.stamina<cost) return {ok:false,reason:'stamina'};
+    // caindo rápido, escorrega como a mão (mesma regra do _tryGrab)
+    const fall=-this.velocity.y;
+    if(!this.isClimbing&&fall>12){ h.stamina=Math.max(0,h.stamina-25); h.cooldown=.35; this.stats.recordSlip(); this.emit('slip',h); return {ok:false,reason:'slip'}; }
+    h.stamina=Math.max(0,h.stamina-cost-Math.max(0,fall-4)*2.2);
+    h.inContact=true; h.isGrabbing=true; h.anchor='axe'; h.surface=hit.object; h.point.copy(hit.point);
+    const u=hit.object.userData, wn=u.wallNormal;
+    if(u.normalAt) u.normalAt(hit.point,h.normal); else if(wn) h.normal.copy(wn); else h.normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+    this._fitPull(); this.world.touch(hit.object);
+    this.emit('axeAnchor',h);
+    return {ok:true,reason:null};
+  }
+  // desprende a picareta da mão i (não mexe em pegada de mão nua)
+  releaseAxe(i){ const h=this.hands[i]; if(!h||h.anchor!=='axe') return; h.isGrabbing=false; if(h.inContact) this._release(h); }
+  // a picareta da mão h foi arrancada (exaustão, vento, superfície que sumiu)
+  _dislodge(h){ if(h.anchor==='axe') this.emit('axeDislodged',h); }
   _release(h){
     h.inContact=false; h.anchor=null; h.surface=null; h.pull=0;
     if(!this.isClimbing){ this.pull=this.pullTarget=0; if(this.velocity.length()>7) this.velocity.setLength(7); }
@@ -234,7 +263,7 @@ class Player{
     if(this.dead) return;
     this.hands.forEach(h=>{
       if(h.cooldown>0) h.cooldown-=dt;
-      if(h.inContact&&h.surface.userData.alive===false){ this._release(h); this.emit('crumble',h); }
+      if(h.inContact&&h.surface.userData.alive===false){ this._dislodge(h); this._release(h); this.emit('crumble',h); }
     });
     this.hands.forEach(h=>{ if(h.isGrabbing&&!h.inContact) this._tryGrab(h); });
     this._prev.copy(this.position);
@@ -304,7 +333,7 @@ class Player{
   _climb(dt,input,held){
     // fluxo forte demais: arranca as mãos (o corpo segue com o ar no quadro seguinte)
     const wf=this.windF.length();
-    if(wf>WIND_TEAR){ held.forEach(h=>{ this._release(h); h.cooldown=.6; }); this.emit('windTear'); this._free(dt,input); return; }
+    if(wf>WIND_TEAR){ held.forEach(h=>{ this._dislodge(h); this._release(h); h.cooldown=.6; }); this.emit('windTear'); this._free(dt,input); return; }
     const eye=this.eyePos(_e), tgt=_t.set(0,0,0);
     this._pullUp(dt,held);
     for(const h of held) tgt.add(this._anchor(h,eye));
@@ -327,9 +356,9 @@ class Player{
     // pegada: custo base + esforço de puxar; com os braços no limite, a pegada escorrega depressa
     const base=held.length===2?3:(this.lockOff?6:9), crit=clamp((this.pullFatigue-FATIGUE_CRIT)/(1-FATIGUE_CRIT),0,1);
     for(const h of held){
-      let d=base+this.effort*3+crit*14+wf*WIND_DRAIN+(h.surface.userData.gripCost||0); if(input.x) d+=1.5;   // gripCost: rachadura (dedos entalados)
+      let d=base+this.effort*3+crit*14+wf*WIND_DRAIN+(h.anchor==='axe'?0:(h.surface.userData.gripCost||0)); if(input.x) d+=1.5;   // gripCost: rachadura (dedos entalados; a picareta não paga)
       h.stamina=Math.max(0,h.stamina-d*dt*this.attributes.effective.gripDrainMultiplier);
-      if(h.stamina<=0){ h.exhausted=true; this._release(h); this.emit('exhausted',h); }
+      if(h.stamina<=0){ h.exhausted=true; this._dislodge(h); this._release(h); this.emit('exhausted',h); }
     }
     if(this.isClimbing&&!this.mantle&&this.pull>=.97&&this.pulledNow){ const led=this.canMantle(); if(led) this._startMantle(led); }
   }
@@ -403,7 +432,12 @@ class Player{
       const inHand=xr&&!h.inContact&&xr.handPose(i,m.position,m.quaternion);
       if(pose){
         hm.vmLocal=null;
-        if(!inHand){ m.position.copy(this.camera.localToWorld(_p.copy(pose.pos).add(_q.set(bobX*.6,bobY*.6,0))));
+        if(h.anchor==='axe'&&h.inContact&&!inHand){
+          // picareta cravada: a raiz é resolvida DEPOIS do hm.update, pela ponta na âncora (ver o fim do quadro);
+          // aqui só a composição local (pulso/base/pegada) do quadro, igual à de qualquer item
+          if(!(this.axeVisuals&&this.axeVisuals[i])){ const tgt=_p.copy(h.point).addScaledVector(_q.subVectors(camPos,h.point).normalize(),.16); tgt.y-=.2;
+            m.position.lerp(tgt,1-Math.exp(-42*dt)); m.quaternion.copy(camQ); m.rotateX(-.15); }
+        } else if(!inHand){ m.position.copy(this.camera.localToWorld(_p.copy(pose.pos).add(_q.set(bobX*.6,bobY*.6,0))));
           m.quaternion.copy(camQ); m.rotateX(.25); }
         m.rotateZ(pose.roll||0);
         hm.wrist.rotation.set(pose.wrist.x,pose.wrist.y,pose.wrist.z); hm.setBase(pose.base);

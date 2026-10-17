@@ -37,6 +37,10 @@
 .slot.pulse{ animation:slotpulse .5s ease-out; }
 @keyframes slotpulse{ from{ background:rgba(227,179,65,.45); } }
 .hand.busy{ opacity:.45; }
+/* picareta cravada: ícone pequeno sobre a barra de estamina daquela mão (a barra continua a capacidade efetiva) */
+.hand{ position:relative; }
+.hand.axe::after{ content:''; position:absolute; right:-6px; top:-6px; width:16px; height:16px; opacity:.9;
+  background:no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='%23e8dcc4'%3E%3Cg transform='rotate(-30 16 16)'%3E%3Crect x='14.6' y='8' width='2.8' height='21' rx='1.2'/%3E%3Cpath d='M16 6.5c-5 0-9.5 1.5-12.5 5l1 1.2c3-1.8 7-2.6 11.5-2.6h8.5V6.5z'/%3E%3C/g%3E%3C/svg%3E"); }
 #vig{ position:absolute; inset:0; opacity:0; background:radial-gradient(ellipse at center, transparent 42%, rgba(110,8,8,.88) 100%); }
 /* fadiga dos braços: escurece e desfoca só as bordas (visão afunilando); a opacidade vem do Player.fatigueFx */
 #strain{ position:absolute; inset:0; opacity:0;

@@ -58,13 +58,14 @@ class VRHud{
     if(!this.inv.visible||!this.wrist.visible) return -1;
     this.inv.updateWorldMatrix(true,false); const l=this.inv.worldToLocal(tip.clone());
     if(Math.abs(l.z)>.04||Math.abs(l.y)>.0325||Math.abs(l.x)>=.1) return -1;
-    return Math.floor((l.x+.1)/.05);
+    return Math.min((this.invN||4)-1,Math.floor((l.x+.1)/(.2/(this.invN||4))));
   }
   updateInventory(items,hover){
     if(!this.inv.visible) return;
     const inv=items.inv, key=inv.version+'|'+items.left.sel+'|'+items.sel+'|'+hover+'|'+Object.keys(this.icons).length;
     if(key===this.invKey) return; this.invKey=key;
-    const x=this.invCanvas.getContext('2d'), W=512, H=160, sw=W/4;
+    this.invN=inv.slots.length;   // uma caixa por entrada da mochila
+    const x=this.invCanvas.getContext('2d'), W=512, H=160, sw=W/this.invN;
     x.clearRect(0,0,W,H);
     inv.slots.forEach((s,i)=>{
       const bx=i*sw+6, sel=items.isSelected(i), hov=hover===i;
@@ -72,8 +73,8 @@ class VRHud{
       x.strokeStyle=sel||hov?'#f0c870':'rgba(216,207,184,.35)'; x.lineWidth=sel?5:3; x.strokeRect(bx,6,sw-12,H-12);
       x.fillStyle='#7d7566'; x.font='500 24px "Barlow Condensed", sans-serif'; x.textAlign='left'; x.textBaseline='top'; x.fillText(String(i+1),bx+8,10);
       if(!s) return;
-      const img=this._icon(s.id); if(img) x.drawImage(img,bx+(sw-12)/2-36,22,72,72);
-      x.textAlign='center'; x.fillStyle='#e8dfc8'; x.font='500 26px "Barlow Condensed", sans-serif';
+      const ic=Math.min(72,sw-36), img=this._icon(s.id); if(img) x.drawImage(img,bx+(sw-12)/2-ic/2,22+(72-ic)/2,ic,ic);
+      x.textAlign='center'; x.fillStyle='#e8dfc8'; x.font=`500 ${this.invN>4?21:26}px "Barlow Condensed", sans-serif`;
       x.fillText(ITEM_DEFS[s.id].stack?`${ITEM_DEFS[s.id].name} ×${s.count}`:ITEM_DEFS[s.id].name,bx+(sw-12)/2,104);
     });
     this.invTex.needsUpdate=true;

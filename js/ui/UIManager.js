@@ -123,6 +123,8 @@ class UIManager{
       'nail-bad':`<path d="M12 5v14M5 12h14" stroke="${NO}" stroke-width="1.4" opacity=".7"/><path d="M8 8l8 8" stroke="${NO}" stroke-width="1.6"/>`,
       impact:`<path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4" stroke="${B}" stroke-width="1.5"/><circle cx="12" cy="12" r="1.5" fill="${B}"/>`,
       fragile:`<path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4M6.3 6.3l2.4 2.4M17.7 17.7l-2.4-2.4M17.7 6.3l-2.4 2.4M6.3 17.7l2.4-2.4" stroke="${B}" stroke-width="1.5"/><circle cx="12" cy="12" r="1.5" fill="${B}"/>`,
+      axe:`<path d="M7 17l7.5-7.5M10.5 6.5c2.6-1.6 5.6-1.4 7.5.4" stroke="${OK}" stroke-width="1.7" fill="none" stroke-linecap="round"/><circle cx="12" cy="12" r="1.6" fill="${OK}"/>`,
+      'axe-bad':`<path d="M8 8l8 8M16 8l-8 8" stroke="${NO}" stroke-width="1.4" opacity=".75"/>`,
       'hammer-nail':`<circle cx="12" cy="12" r="7" fill="none" stroke="${S}" stroke-width="1.6"/><path d="M12 8.5v7M8.5 12h7" stroke="${S}" stroke-width="1.6"/>`
     }[mode]||'';
     this.$('ring').innerHTML=`<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">${svg}</svg>`;
@@ -130,14 +132,18 @@ class UIManager{
   // ---------- inventário: estado dos slots ----------
   // derivado só de Inventory/ItemSystem/Player (nada é guardado aqui)
   //  empty · eq (na mão) · out (pilha esgotada) · lock (mão direita agarrada: select() recusaria) · ready
-  slotInfo(items,player,i){
+  // k (atalho) diz a mão; sem k, a mão sai do vínculo (perHand: a mão que o tiver equipado)
+  slotInfo(items,player,i,k=-1){
     const s=items.inv.slots[i]; if(!s) return {k:'empty',label:'Vazio'};
-    if(items.isSelected(i)){
-      const k=items.inv.bindingOf(s.id), side=k>=0&&k<2?'left':'right', ph=items.phaseFor(side);
+    const kSide=k>=0?(k<2?'left':'right'):null;
+    if(kSide?items.isSelected(i,kSide):items.isSelected(i)){
+      const side=kSide||(items.isSelected(i,'left')&&items.isSelected(i,'right')?'both':items.isSelected(i,'left')?'left':items.isSelected(i,'right')?'right':items.sideOf(i));
+      if(side==='both') return {k:'eq',label:'Nas duas mãos'};
+      const ph=items.phaseFor(side);
       return {k:'eq',label:ph==='equipping'?'Pegando':ph==='holstering'?'Guardando':`Na mão ${side==='left'?'esquerda':'direita'}`};
     }
     if(ITEM_DEFS[s.id].stack&&s.count<=0) return {k:'out',label:'Esgotado'};
-    const k=items.inv.bindingOf(s.id), hand=k>=0&&k<2?player.leftHand:player.rightHand;
+    const hand=(kSide||items.sideOf(i))==='left'?player.leftHand:player.rightHand;
     if(hand.inContact) return {k:'lock',label:'Mão ocupada'};
     return {k:'ready',label:'Guardado'};
   }
@@ -152,7 +158,7 @@ class UIManager{
     if(this._invKey===key) return; this._invKey=key;
     const bar=this.$('slots'); bar.textContent='';
     for(let k=0;k<inv.quick;k++){
-      const i=inv.boundSlot(k), s=i>=0?inv.slots[i]:null, st=s?this.slotInfo(items,player,i):{k:'empty',label:'Vazio'}, L=QUICK_KEYS[k].label;
+      const i=inv.boundSlot(k), s=i>=0?inv.slots[i]:null, st=s?this.slotInfo(items,player,i,k):{k:'empty',label:'Vazio'}, L=QUICK_KEYS[k].label;
       const d=document.createElement('div');
       d.className='slot'+(s?'':' empty')+(st.k==='eq'?' sel':'')+(st.k==='out'?' out':'')+(st.k==='lock'?' lock':'');
       d.dataset.k=k; d.dataset.hand=k<2?'left':'right'; d.classList.add(k<2?'left-hand':'right-hand'); d.setAttribute('role','listitem');
@@ -540,7 +546,7 @@ class UIManager{
       rect.setAttribute('y',String(48*(1-s))); rect.setAttribute('height',String(48*s));
       el.style.color=staminaColor(h.stamina);
       el.classList.toggle('closed',h.isGrabbing||!!h.occupied); el.classList.toggle('contact',h.inContact);
-      el.classList.toggle('busy',!!h.occupied);
+      el.classList.toggle('busy',!!h.occupied&&h.anchor!=='axe'); el.classList.toggle('axe',h.anchor==='axe');   // picareta cravada: mão de escalada, com ícone
       el.classList.toggle('critical',h.stamina<15&&(h.inContact||h.exhausted));
     });
     const pr=this.$('prompt');

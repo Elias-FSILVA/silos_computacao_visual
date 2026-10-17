@@ -219,6 +219,12 @@ const TEX={}, MAT={}, GEO={}, FINISH={}, UVSCALE_MATS=new Set();
   // rachadura profunda (Climbs.js): o fundo da fenda quase preto e as bordas lascadas, mais claras, que pegam a luz
   MAT.crackDeep=new THREE.MeshBasicMaterial({color:0x0b0a09,side:THREE.DoubleSide});
   MAT.crackLip=new THREE.MeshStandardMaterial({color:0x4a4640,roughness:1,side:THREE.DoubleSide});
+  // faixa de rocha exposta (Climbs._rockBand): só a picareta crava — escura e granulada, distinta do concreto
+  TEX.rockBand=canvasTex(128,128,(g,w,h)=>{ g.fillStyle='#4a443b'; g.fillRect(0,0,w,h);
+    for(let i=0;i<900;i++){ const v=45+Math.random()*70|0; g.fillStyle=`rgb(${v},${v-3},${v-7})`; g.fillRect(Math.random()*w,Math.random()*h,1+Math.random()*3,1+Math.random()*3); }
+    g.strokeStyle='rgba(8,7,6,.8)'; g.lineWidth=1.2; for(let i=0;i<14;i++){ g.beginPath(); let x=Math.random()*w, y=Math.random()*h; g.moveTo(x,y); for(let k=0;k<5;k++){ x+=(Math.random()-.5)*26; y+=(Math.random()-.5)*26; g.lineTo(x,y); } g.stroke(); } });
+  TEX.rockBand.wrapS=TEX.rockBand.wrapT=THREE.RepeatWrapping;
+  MAT.rockBand=new THREE.MeshStandardMaterial({map:TEX.rockBand,roughness:1,side:THREE.DoubleSide});
   MAT.bolt=new THREE.MeshStandardMaterial({color:0x6b5a44,roughness:.6,metalness:.6});
   MAT.grate=new THREE.MeshStandardMaterial({map:TEX.grate,alphaTest:.5,side:THREE.DoubleSide,metalness:.5,roughness:.6});
   MAT.rust=new THREE.MeshStandardMaterial({color:0x8a4a22,roughness:.7,metalness:.4});

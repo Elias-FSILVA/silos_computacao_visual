@@ -8,11 +8,18 @@
 //   'walk'  borda → borda no mesmo nível, encostadas      'climbup'  borda → borda agarrável mais alta (em pé, agarra e sobe)
 // As alas entram como teletransportes (o caminho dentro delas — puzzle, piso, escada, elevador, fluxo de ar — é conferido à parte).
 // customWings(at,cp) → lista de alas (outro mapa); o.standClamp(q,hold) → onde o corpo para junto à parede (outro poço)
+// o.axes (0|1|2): picaretas disponíveis. Com ≥1, as amostras das faixas de rocha (só picareta, sem grab) viram nós e toda
+// aresta que chega numa faixa é 'axe'; com 1 picareta, faixa → faixa é proibida (a outra mão precisa de um apoio comum
+// ou rachadura entre dois golpes); com 2, é permitida. Sem o.axes, o grafo é o de sempre.
 module.exports=function grafo(world,customWings,o={}){
   const V=world.spawnPoint.constructor, REACH_OK=2.0, REACH_LOW=1.7;
   const holds=[...world.grabbables.filter(m=>m.userData.type==='hold').map(m=>({k:'h',p:m.position,n:m.userData.wallNormal||new V(),crumble:!!m.userData.crumble,socket:false,extra:!!m.userData.extra,rung:!!m.userData.rung,m})),
                ...world.grabbables.filter(m=>m.userData.samples).flatMap(m=>m.userData.samples.map(s=>({k:'h',p:s.p,n:s.n,crumble:false,socket:false,cont:m.userData.type,m}))),
-               ...world.sockets.map(s=>({k:'h',p:s.p,n:s.n,crumble:false,socket:true,sk:s.sk}))];
+               ...world.sockets.map(s=>({k:'h',p:s.p,n:s.n,crumble:false,socket:true,sk:s.sk})),
+               ...((o.axes|0)>0?world.raycastTargets.filter(m=>m.userData.type==='rockband'&&m.userData.axe&&!m.userData.grab).flatMap(m=>m.userData.samples.map(s=>({k:'h',p:s.p,n:s.n,crumble:false,socket:false,cont:'rockband',axeOnly:true,m}))):[])];
+  const AXES=o.axes|0;
+  // tipo da aresta até a agarra j (faixa: 'axe'); null = proibida (faixa → faixa com uma picareta só)
+  const via=(fromAxe,j,c)=>!holds[j].axeOnly?c:(fromAxe&&AXES<2?null:'axe');
   const KINDS=new Set(['rest','sill','cache','exit','tunnel','platform','gallery','tank','shelf','landing','grate','bridge']);
   const isFloor=p=>p.kind==='floor'&&p.top===0&&p.minX<=-3.5&&p.maxX>=3.5&&p.minZ<=-3.5&&p.maxZ>=3.5;   // piso do fundo do poço
   const plats=world.platforms.filter(p=>(p.climbable&&p.kind!=='pipe')||KINDS.has(p.kind)||isFloor(p));
@@ -31,27 +38,29 @@ module.exports=function grafo(world,customWings,o={}){
   for(let i=0;i<N;i++){
     const A=holds[i], eh=eyeOf(A,false), ep=eyeOf(A,true);
     holdsNear(A.p.y-2.5,A.p.y+2.5,j=>{ if(i===j) return; const B=holds[j], dh=eh.distanceTo(B.p), dp=ep.distanceTo(B.p);
-      if(dp<=REACH_OK+.02) adj[i].push([j,dh<=REACH_OK?'hang':(dp<=REACH_LOW?'pull':'pullmax')]); });
+      if(dp<=REACH_OK+.02){ const c=via(!!A.axeOnly,j,dh<=REACH_OK?'hang':(dp<=REACH_LOW?'pull':'pullmax')); if(c) adj[i].push([j,c]); } });
     for(let k=0;k<M;k++){ const pd=plats[k]; if(pd.top<A.p.y-3||solidBottom(pd)>A.p.y+3) continue; if(dist3(ep,pd)<=REACH_OK&&ep.y>=solidBottom(pd)-1.3-.06) adj[i].push([N+k,'mantle']); }
   }
   for(let k=0;k<M;k++){ const pd=plats[k];
     // em pé: o olho fica sobre o ponto da borda mais perto da agarra; dentro do poço o corpo encosta na parede em r = R − RAD
     holdsNear(pd.top-.5,pd.top+3.7,j=>{ const B=holds[j], q=solidClampIn(pd,B.p.x,B.p.z,0,{}), r=Math.hypot(q.x,q.z), lim=SHAFT_R-RAD;
       if(o.standClamp) o.standClamp(q,B); else if(Math.hypot(B.p.x,B.p.z)<SHAFT_R+.1&&r>lim){ q.x*=lim/r; q.z*=lim/r; }
-      const e=new V(q.x,pd.top+1.6,q.z); if(e.distanceTo(B.p)<=REACH_OK) adj[N+k].push([j,'stand']); });
+      const e=new V(q.x,pd.top+1.6,q.z); if(e.distanceTo(B.p)<=REACH_OK) adj[N+k].push([j,via(false,j,'stand')]); });
     for(let l=0;l<M;l++){ if(l===k) continue; const B=plats[l]; if(Math.abs(pd.top-B.top)<.05&&footDist(pd,B)<.5) adj[N+k].push([N+l,'walk']);
       // em pé, uma borda agarrável mais alta ao alcance: agarra e sobe (como de um andaime para o tubo)
       else if(B.climbable&&B.top-pd.top>.5&&B.top-pd.top<=2.2){ const c=centroid(B), q=solidClampIn(pd,c.x,c.z,.3,{}), e=new V(q.x,pd.top+1.6,q.z);
         if(dist3(e,B)<=REACH_OK&&e.y>=solidBottom(B)-1.3) adj[N+k].push([N+l,'climbup']); } }
   }
   const idxP=pd=>N+plats.indexOf(pd);
-  // busca em largura (0-1: arestas que exigem prego custam 1). opts: allowed (Set de tipos), noCrumble, noSockets, tele [[a,b]]
+  // busca em largura (0-1: arestas que exigem prego custam 1). opts: allowed (Set de tipos), noCrumble, noSockets, tele [[a,b]],
+  // skip(v) → true para tirar o nó v do grafo (ex.: cordas)
   function search(starts,opts={}){
     const allowed=opts.allowed||new Set(['hang','pull','pullmax','stand','mantle','walk','climbup']), dd=new Array(N+M).fill(1e9), prev=new Array(N+M).fill(-1), q=[];
     const ex=new Map(); (opts.tele||[]).forEach(([a,b])=>{ (ex.get(a)||ex.set(a,[]).get(a)).push(b); });
     starts.forEach(s=>{ dd[s]=0; q.push(s); });
     while(q.length){ const u=q.shift();
       for(const [v,c] of adj[u]){ if(!allowed.has(c)) continue; if(v<N){ if(opts.noCrumble&&holds[v].crumble) continue; if(opts.noSockets&&holds[v].socket) continue; }
+        if(opts.skip&&opts.skip(v)) continue;
         const w=dd[u]+(v<N&&holds[v].socket?1:0); if(w<dd[v]){ dd[v]=w; prev[v]=u; if(w>dd[u]) q.push(v); else q.unshift(v); } }
       for(const v of (ex.get(u)||[])) if(dd[u]<dd[v]){ dd[v]=dd[u]; prev[v]=u; q.unshift(v); } }
     return {dd,prev,path:t=>{ const p=[]; for(let v=t;v>=0;v=prev[v]) p.unshift(v); return p; }};

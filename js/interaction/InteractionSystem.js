@@ -17,6 +17,9 @@ class InteractionSystem{
     const hit=p.aim(3.0); if(!hit) return res;
     const ud=hit.object.userData, obj=ud.interactable, ctx=this.ctx(hit);
     if(obj&&hit.distance<=2.4&&!(p.xr&&obj instanceof KeyButton)){ const c=obj.canInteract(ctx); if(c){ res.reticle=c.reticle||'pickup'; if(c.prompt) res.prompt='F|'+c.prompt; return res; } }
+    // picareta pronta numa das mãos: o retículo diz se dá para cravar ali (superfície axe ao alcance) ou não
+    const axe=[items.left,items].find(h=>h&&h.equipped==='climbing_axe'&&h.phase==='idle');
+    if(axe){ res.reticle=p.axeTarget(axe.handIndex)?'axe':'axe-bad'; return res; }
     const id=items.activeItem;
     if(id){
       if(obj){ const c=obj.canUseItem(id,ctx); if(c){ res.reticle=c.reticle; return res; } }
