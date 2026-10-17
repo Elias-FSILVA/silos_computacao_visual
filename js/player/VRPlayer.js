@@ -161,7 +161,7 @@ class VRPlayer{
   // estação de melhoria: dois cartões, selecionar e depois Escolher (evita escolha acidental); Ignorar não consome
   showStation(v){
     const g=this.g, sel=v.sel, o=sel>=0?v.offers[sel]:null;
-    this._menu({title:v.station.label,text:v.station.ahead,
+    this._menu({title:v.station.label,text:STATION_RULE,
       lines:[...(o?[['+',o.benefit],['−',o.tradeoff]]:[['','Selecione uma melhoria']]),['Ativas',`${v.count}/${v.max}`]],
       buttons:[...v.offers.map((c,i)=>({label:`${sel===i?'▶ ':''}${i+1} · ${c.name}`,action:()=>g.selectStationOffer(i)})),
         {label:o?`Escolher: ${o.name}`:'Escolher',disabled:!o,action:()=>g.confirmStation()},

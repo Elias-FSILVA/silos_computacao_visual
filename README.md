@@ -43,7 +43,7 @@ Você está no fundo de um silo industrial gigantesco: um cilindro de 400 m de a
 | Interagir | F | gatilho direito |
 | Usar item | botão do mouse da mão que segura o item | gatilho da mão que segura o item |
 | Picareta: cravar / soltar | segurar / soltar o botão daquela mão | segurar / soltar o gatilho (ou pinça) |
-| Estação de melhoria | F; 1/2 seleciona, Enter escolhe, Esc ignora | gatilho direito; selecionar e depois Escolher |
+| Estação de melhoria | F; clique ou 1/2 seleciona, clique de novo ou Enter escolhe, Esc ignora | gatilho direito; selecionar e depois Escolher |
 | Mochila / inventário | Tab, depois 1 a 4 | Y (inventário no pulso) |
 | Guardar item | X (guarda as mãos livres; a picareta cravada fica) | A esquerdo (idem) |
 | Pílula | Q | levar o frasco à boca |

@@ -62,7 +62,7 @@ dl.break dd{ margin:0; font-variant-numeric:tabular-nums; }
 @media (max-width:560px){ .row{ grid-template-columns:110px 1fr 42px; font-size:18px; } }
 
 /* ---------- estação de melhoria (painel modal sobre a partida congelada) ---------- */
-#stationPanel{ position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); width:min(760px,92vw); z-index:30;
+#stationPanel{ pointer-events:auto; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); width:min(760px,92vw); z-index:30;
   background:rgba(10,9,7,.94); border:1px solid rgba(227,179,65,.35); padding:22px 24px 16px; color:var(--bone);
   font-family:"Barlow Condensed",sans-serif; box-shadow:0 20px 60px rgba(0,0,0,.6); }
 #stationPanel .sp-kicker{ font-size:14px; letter-spacing:.14em; text-transform:uppercase; color:var(--dust); }

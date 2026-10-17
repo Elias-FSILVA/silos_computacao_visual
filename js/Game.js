@@ -218,6 +218,7 @@ class Game{
   selectStationOffer(i){ const o=this.stationOpen; if(!o) return; const n=this.stations.offers(o.id).length; if(i<0||i>=n) return; o.sel=i;
     const v=this.stationView(o.id); this.ui.showStation(v); if(this.vr.active&&this.vr.showStation) this.vr.showStation(v); }
   // mouse: 1º clique seleciona; clicar de novo no cartão já selecionado escolhe (teclado continua 1/2 + Enter)
+  clickStationOffer(i){ const o=this.stationOpen; if(!o) return; if(o.sel===i) this.confirmStation(); else this.selectStationOffer(i); }
   confirmStation(){ const o=this.stationOpen; if(!o||o.sel<0) return; const p=this.stations.offers(o.id)[o.sel]; if(p) this.chooseStation(p); }
   chooseStation(perkId){
     const o=this.stationOpen; if(!o) return;

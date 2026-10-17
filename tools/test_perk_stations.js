@@ -19,7 +19,7 @@ test('MAX_RUN_PERKS = 3 e STATION_DEFS E1/E2/E3 nos descansos certos',()=>{
   assert.equal(need('MAX_RUN_PERKS'),3); const D=need('STATION_DEFS');
   assert.deepEqual(['E1','E2','E3'].map(k=>D[k].cp),['cp4','cp8','cp14']);
   assert.deepEqual(['E1','E2','E3'].map(k=>D[k].label),['Sala de controle','Mezanino','Cabine de guincho']);
-  for(const k of ['E1','E2','E3']){ assert.equal(D[k].id,k); assert.equal(D[k].order.length,4); assert.ok(D[k].ahead.startsWith('Adiante:')); }
+  for(const k of ['E1','E2','E3']){ assert.equal(D[k].id,k); assert.equal(D[k].order.length,4); assert.equal(D[k].ahead,undefined,'sem dica do que vem adiante'); }
 });
 test('tabela completa da §4.2 (ativos ao chegar × estação)',()=>{
   const rows=[[[],{E1:['launch','recovery'],E2:['grip','recovery'],E3:['light','grip']}],
@@ -145,11 +145,12 @@ const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
 test('index.html tem o painel da estação, os ícones de perks no HUD e "Melhorias" na mochila',()=>{
   for(const id of ['stationPanel','perkHud','packPerks']) assert.ok(html.includes(`id="${id}"`),id);
 });
-test('painel: nome, Adiante, 2 cartões (benefício/contrapartida/prévia), ativos e n/3, Escolher e Ignorar',()=>{
+test('painel: nome, regra da estação, 2 cartões (benefício/contrapartida/prévia), ativos e n/3, Escolher e Ignorar',()=>{
   const {g}=stationGame(); g.player.attributes.addPerk('powerful_launch'); g.openStation('E3');
   const {ui,el}=fakeUI(), v=g.stationView('E3'); ui.showStation(v); const h=el('stationPanel').innerHTML;
   assert.equal(el('stationPanel').hidden,false);
-  for(const t of ['Cabine de guincho','Adiante:','Corpo leve','25% menos gravidade pessoal.','40% menos stamina máxima por mão.','Pegada econômica','Escolher','Ignorar','1/3','Impulso potente','100 → 60','18 → 13,5'])
+  assert.ok(!/Adiante/.test(h),'sem dica do que vem adiante');
+  for(const t of ['Cabine de guincho','Vale até o fim da subida','Corpo leve','25% menos gravidade pessoal.','40% menos stamina máxima por mão.','Pegada econômica','Escolher','Ignorar','1/3','Impulso potente','100 → 60','18 → 13,5'])
     assert.ok(h.includes(t),'falta: '+t);
   assert.ok(!/class="pcard[^"]*sel/.test(h),'nada selecionado ainda'); assert.ok(/data-act="confirm"[^>]*disabled/.test(h),'Escolher desabilitado sem seleção');
   ui.showStation({...v,sel:1}); assert.ok(/class="pcard sel"[^>]*data-i="1"/.test(el('stationPanel').innerHTML),'cartão 2 selecionado');
@@ -160,6 +161,24 @@ test('escolha em dois passos: 1/2 selecionam, Enter confirma; Enter sem seleçã
   key('Enter'); assert.equal(g.state,'station'); assert.equal(p.attributes.activePerks.length,0);
   key('Digit2'); assert.equal(g.stationOpen.sel,1); key('Enter'); assert.equal(g.state,'play'); assert.equal(p.attributes.hasPerk('quick_recovery'),true);
   const b=stationGame(); b.g.openStation('E2'); b.g._stationKey({code:'Escape',repeat:false,preventDefault(){}}); assert.equal(b.g.state,'play'); assert.equal(b.g.stations.isUsed('E2'),false);
+});
+test('mouse: o painel recebe cliques apesar do HUD (pointer-events)',()=>{
+  const css=fs.readFileSync(path.join(ROOT,'css/screens.css'),'utf8');
+  const rule=(css.match(/#stationPanel\{[^}]*\}/)||[''])[0];
+  assert.ok(/pointer-events:\s*auto/.test(rule),'#stationPanel precisa de pointer-events:auto (o #hud usa none)');
+  const ix=html.indexOf('id="stationPanel"'), hud=html.indexOf('id="hud"'); assert.ok(ix>hud,'painel dentro do #hud: herda pointer-events:none');
+});
+test('mouse: clique seleciona, 2º clique no mesmo cartão escolhe, clique em outro troca',()=>{
+  const {g,p}=stationGame(); g.openStation('E1');
+  g.clickStationOffer(0); assert.equal(g.stationOpen.sel,0); assert.equal(g.state,'station');
+  g.clickStationOffer(1); assert.equal(g.stationOpen.sel,1,'troca'); assert.equal(p.attributes.activePerks.length,0);
+  g.clickStationOffer(1); assert.equal(g.state,'play'); assert.equal(p.attributes.hasPerk('quick_recovery'),true);
+  const b=stationGame(); b.g.openStation('E2'); b.g.clickStationOffer(5); assert.equal(b.g.stationOpen.sel,-1,'fora do intervalo ignora');
+});
+test('mouse: o listener do painel usa clickStationOffer e a legenda ensina o clique',()=>{
+  const src=fs.readFileSync(path.join(ROOT,'js/Game.js'),'utf8'); assert.ok(/clickStationOffer\(\+b\.dataset\.i\)/.test(src));
+  const {g}=stationGame(); g.openStation('E1'); const {ui,el}=fakeUI(); ui.showStation(g.stationView('E1'));
+  assert.ok(/clique/i.test(el('stationPanel').innerHTML),'legenda cita o mouse');
 });
 test('HUD mostra os ícones dos perks ativos (até 3 pelo jogo) e a mochila lista "Melhorias"; UI só lê',()=>{
   const {ui,el}=fakeUI(); const a=attrs(S.grip,S.light);
@@ -183,7 +202,7 @@ test('VR: painel da estação no menu flutuante, em dois passos (selecionar → 
   const {g,p}=stationGame(); const specs=[]; let closed=0;
   const vr=Object.create(Hg.G('VRPlayer').prototype); Object.assign(vr,{g,active:true,_menu:s=>specs.push(s),closeMenu(){ closed++; }}); g.vr=vr;
   g.openStation('E1'); let sp=specs.at(-1);
-  assert.equal(sp.title,'Sala de controle'); assert.ok(sp.text.startsWith('Adiante:'));
+  assert.equal(sp.title,'Sala de controle'); assert.ok(!/Adiante/.test(sp.text)&&/fim da subida/.test(sp.text),sp.text);
   const lab=sp.buttons.map(b=>b.label); assert.ok(lab[0].includes('Impulso potente')&&lab[1].includes('Recuperação rápida'),lab.join('|'));
   const esc=sp.buttons.find(b=>b.label.startsWith('Escolher')); assert.equal(esc.disabled,true,'Escolher só depois de selecionar');
   sp.buttons[1].action(); sp=specs.at(-1); assert.ok(sp.buttons[1].label.startsWith('▶'),'selecionado marcado');

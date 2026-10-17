@@ -8,12 +8,13 @@
 //   (o console pode passar do limite — aí a estação mostra o aviso e não é consumida)
 // ============================================================================
 const MAX_RUN_PERKS=3;
+const STATION_RULE='Vale até o fim da subida. Ignorar não gasta a estação.';   // texto fixo do painel (desktop e VR)
 const STATION_DEFS=Object.freeze({
-  E1:Object.freeze({id:'E1',cp:'cp4',label:'Sala de controle',ahead:'Adiante: andaimes e saltos sobre o poço',
+  E1:Object.freeze({id:'E1',cp:'cp4',label:'Sala de controle',
     order:Object.freeze(['powerful_launch','quick_recovery','economical_grip','light_body'])}),
-  E2:Object.freeze({id:'E2',cp:'cp8',label:'Mezanino',ahead:'Adiante: rachaduras longas e o vão de prego',
+  E2:Object.freeze({id:'E2',cp:'cp8',label:'Mezanino',
     order:Object.freeze(['economical_grip','quick_recovery','powerful_launch','light_body'])}),
-  E3:Object.freeze({id:'E3',cp:'cp14',label:'Cabine de guincho',ahead:'Adiante: a subida final, com vento e chapas',
+  E3:Object.freeze({id:'E3',cp:'cp14',label:'Cabine de guincho',
     order:Object.freeze(['light_body','economical_grip','quick_recovery','powerful_launch'])})
 });
 class PerkStations{

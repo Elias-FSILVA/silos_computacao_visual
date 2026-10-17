@@ -151,12 +151,12 @@ class UIManager{
       `<span class="pk">${i+1}</span>${perkIcon(o.id)}<span class="pn">${o.name}</span>`+
       `<span class="pb">+ ${o.benefit}</span><span class="pt">− ${o.tradeoff}</span><ul class="pp">${lines(o.preview)}</ul></button>`).join('');
     const act=v.active.length?v.active.map(id=>`${perkIcon(id)}<span>${PERK_DEFS[id].name}</span>`).join(' · '):'nenhuma';
-    P.innerHTML=`<div class="sp-head"><span class="sp-kicker">Estação de melhoria</span><h2>${v.station.label}</h2><p class="sp-ahead">${v.station.ahead}</p></div>`+
+    P.innerHTML=`<div class="sp-head"><span class="sp-kicker">Estação de melhoria</span><h2>${v.station.label}</h2><p class="sp-ahead">${STATION_RULE}</p></div>`+
       `<div class="sp-cards">${cards}</div>`+
       `<div class="sp-foot"><span class="sp-active">Ativas: ${act} <b>${v.count}/${v.max}</b></span>`+
       `<button type="button" class="mbtn" data-act="confirm"${v.sel<0?' disabled':''}>Escolher <kbd>Enter</kbd></button>`+
       `<button type="button" class="mbtn ghost" data-act="ignore">Ignorar <kbd>Esc</kbd></button></div>`+
-      `<p class="sp-legend"><kbd>1</kbd> <kbd>2</kbd> selecionam · <kbd>Enter</kbd> confirma · <kbd>Esc</kbd> ignora (a estação continua disponível)</p>`;
+      `<p class="sp-legend">Clique num cartão ou use <kbd>1</kbd> <kbd>2</kbd> · clique de novo ou <kbd>Enter</kbd> para escolher · <kbd>Esc</kbd> ignora</p>`;
     P.hidden=false; if(typeof document!=='undefined'&&document.body) document.body.classList.add('station-open');
   }
   hideStation(){ const P=this.$('stationPanel'); P.hidden=true; P.innerHTML=''; if(typeof document!=='undefined'&&document.body) document.body.classList.remove('station-open'); }
