@@ -43,6 +43,7 @@ Models.load('items/martelo.glb').then(gltf => {
 | Arquivo | Autor | Fonte | Licença |
 |---|---|---|---|
 | `items/martelo.glb` | Quaternius | Poly Pizza | CC0 (confirmar na página do modelo) |
+| `items/climbing_axe_low_poly.glb` (picareta, "Climbing Axe (Low Poly)") | [Tiko](https://sketchfab.com/tikoavp) | [Sketchfab](https://sketchfab.com/3d-models/climbing-axe-low-poly-d74bb6a3aad146b5892a28ec5001a5f8) | [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/) (exige crédito; detalhes e SHA-256 em `items/climbing_axe_low_poly.CREDITS.txt`) |
 | `player/hand_lowpoly_rigged.glb` | ? | gerado ("procedural hand builder") | confirmar |
 | `player/hand_lowpoly_rigged_left.glb` | ? | gerado ("procedural hand builder") | confirmar |
 | `map/escada.glb` → `map/otimizados/escada.glb` (escada de manutenção danificada) | trillobit3s indie games | [Sketchfab](https://sketchfab.com/3d-models/ladder-5e2d8495523e41aeb7c991e48f141f56) | CC-BY-4.0 (exige crédito) |

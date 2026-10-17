@@ -42,7 +42,7 @@ class Hand{
 const _e=new V3(), _t=new V3(), _d=new V3(), _f=new V3(), _r=new V3(), _mv=new V3(), _p=new V3(), _q=new V3(), _n=new V3(), _c0=new THREE.Vector2(0,0), _wq=new THREE.Quaternion();
 // gesto de apertar botão (painel): duração e distância pulso→ponta do indicador
 const PRESS_T=.34, PRESS_TIP=-HandModel.indexTip(1,new V3()).z;
-const _pm=new THREE.Matrix4(), _pqa=new THREE.Quaternion(), _pqb=new THREE.Quaternion(), _pup=new V3(), _px=new V3(1,0,0);
+const _axeM=new THREE.Matrix4(), _pm=new THREE.Matrix4(), _pqa=new THREE.Quaternion(), _pqb=new THREE.Quaternion(), _pup=new V3(), _px=new V3(1,0,0);
 
 class Player{
   constructor(scene,camera,world,{perkCatalog=PERK_DEFS}={}){
@@ -62,6 +62,7 @@ class Player{
   on(t,f){ (this.listeners[t]=this.listeners[t]||[]).push(f); }
   emit(t,d){ (this.listeners[t]||[]).forEach(f=>f(d)); }
   reset(){
+    this._axeContact=[null,null];   // ContactFrame visual da picareta cravada, por mão (AxeContactPose)
     this._normalMotion=[]; this._normalVelocity=new V3(); this._normalClimbOffset=new V3(); this._normalClimbPull=0; this._normalPullDriven=false;
     this.attributes.clearPerks();
     const w=this.world;
@@ -81,6 +82,7 @@ class Player{
   }
   // Descontinuidade de debug: cancelar intenção/âncoras, nunca resetar recursos ou métricas da run.
   clearDebugTransient(){
+    this._axeContact=[null,null];
     for(const h of this.hands){h.inContact=false;h.isGrabbing=false;h.anchor=null;h.surface=null;h.pull=0;h.aiming=false;}
     this.mantle=null;this.press=[null,null];this.point=[false,false];
     this.pull=this.pullTarget=this.pullIn=this.effort=this.jolt=0;this.pulledNow=false;
@@ -544,6 +546,14 @@ class Player{
       hm.wasContact=h.inContact;
       const low=Math.max(1-h.stamina/this.maxStamina,this.fatigueFx*.8); hm.tint(low*low*.3);
       hm.update(dt);
+      // restrição final: ponta da picareta cravada exatamente na âncora física (Hand.point/normal), orientada pela
+      // normal e independente da câmera. Só move a raiz visual; nada da física é lido de volta.
+      const vis=pose&&h.anchor==='axe'&&h.inContact&&this.axeVisuals?this.axeVisuals[i]:null;
+      if(vis){
+        let f=this._axeContact[i];
+        if(!f||f.surface!==h.surface||f.inst!==vis){ f=this._axeContact[i]=AxeContactPose.capture(h.point,h.normal,vis.refs); f.surface=h.surface; f.inst=vis; }
+        AxeContactPose.solve(f,h.point,h.normal,vis.refs,_axeM); AxeContactPose.applyHandRoot(m,vis.canonical,_axeM);
+      } else this._axeContact[i]=null;
     });
   }
   // desktop: a mão sai do repouso, leva a ponta do indicador ao botão, aperta 1 cm e volta.

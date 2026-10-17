@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const THREE=require('three');
 const ctx=vm.createContext({THREE,console,performance,Models:{get(){return null}},HandModel:{BASE_FLAT:[0,0,0]},V3:THREE.Vector3,smooth:x=>x,lerp:(a,b,t)=>a+(b-a)*t,clamp:(x,a,b)=>Math.max(a,Math.min(b,x))});
-for(const f of ['js/core/utils.js','js/items/Inventory.js','js/player/Handedness.js','js/items/itemDefs.js','js/items/ItemSystem.js']) vm.runInContext(fs.readFileSync(path.join(__dirname,'..',f),'utf8'),ctx,{filename:f});
+for(const f of ['js/core/utils.js','js/items/Inventory.js','js/player/Handedness.js','js/items/climbingAxeAsset.js','js/items/itemDefs.js','js/items/ItemSystem.js']) vm.runInContext(fs.readFileSync(path.join(__dirname,'..',f),'utf8'),ctx,{filename:f});
 const run=vm.runInContext(`(()=>{
  const g={player:{dead:false,rightHand:{inContact:false,occupied:false},leftHand:{inContact:false,occupied:false},hands:[],handModels:[{socket:new THREE.Group()},{socket:new THREE.Group()}]},audio:{equip(){},holster(){},deny(){},swing(){},pill(){}},ui:{msg(){}},interaction:{itemTarget(){return null}}};
  g.player.hands=[g.player.leftHand,g.player.rightHand]; g.player.handModels.forEach(h=>h.socket=new THREE.Group());

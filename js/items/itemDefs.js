@@ -70,6 +70,7 @@ const ITEM_DEFS={
   pills:{name:'Pílulas',stack:true,make:makePills,pickup:makePills,held:[.2,-.22,-.33],grip:'bottle',base:[0,0,-Math.PI/2],item:{p:[.004,-.034,-.072],r:[0,0,Math.PI/2],s:.75}},
   card:{name:'Cartão de acesso',stack:false,make:makeCard,pickup:makeCard,held:[.2,-.2,-.33],grip:'pinch',base:[0,0,-.55],item:{p:[-.028,-.058,-.13],r:[-Math.PI/2,0,0]}},
   // perHand: um atalho por grupo de mão (1–2 e 3–4); cada mão equipada reserva uma unidade
-  climbing_axe:{name:'Picareta',stack:true,maxStack:2,perHand:true,make:makeClimbingAxe,pickup:makeClimbingAxe,held:[.24,-.24,-.4],grip:'fist',base:[-.5,0,-Math.PI/2],item:{p:[-.025,-.03,-.078],r:[0,0,Math.PI/2]}}
+  // make(side): GLB de Tiko via ClimbingAxeAsset (normalização própria, refs por mão); sem o GLB, a feita por código com aviso
+  climbing_axe:{name:'Picareta',stack:true,maxStack:2,perHand:true,make:side=>ClimbingAxeAsset.create({side,usage:'hand',fallback:makeClimbingAxe}).canonical,pickup:()=>ClimbingAxeAsset.pickup(makeClimbingAxe),held:[.24,-.24,-.4],grip:'fist',base:[-.5,0,-Math.PI/2],item:{p:[-.025,-.03,-.078],r:[0,0,Math.PI/2]}}
 };
 function itemLabel(id,count){ const d=ITEM_DEFS[id]; if(id==='nails') return count===1?'1 prego':`${count} pregos`; if(id==='pills') return count===1?'1 pílula':`${count} pílulas`; if(id==='climbing_axe') return count===1?'picareta':`${count} picaretas`; return d.name.toLowerCase(); }

@@ -56,8 +56,10 @@ class ItemSystem{
   _mount(id){
     if(this.mesh){ this.pivot.remove(this.mesh); this.mesh=null; }
     const hand=this.player.handModels[this.handIndex].socket; if(this.pivot.parent!==hand) hand.add(this.pivot);
+    const vis=this.player.axeVisuals=this.player.axeVisuals||[null,null]; vis[this.handIndex]=null;   // instância da picareta desta mão (B: ancoragem visual)
     if(!id) return;
-    const d=ITEM_DEFS[id]; this.mesh=d.make();
+    const d=ITEM_DEFS[id]; this.mesh=d.make(this.side);
+    if(this.mesh.userData.axeInstance) vis[this.handIndex]=this.mesh.userData.axeInstance;
     if(d.item.chiral&&this.side<0) Handedness.mirrorMesh(this.mesh);   // item com lado: geometria refletida, nunca escala negativa
     Handedness.mountTransform(d.item,this.side,this.mesh);
     this.pivot.add(this.mesh);

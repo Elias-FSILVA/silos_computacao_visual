@@ -91,6 +91,7 @@ O `vercel.json` já configura tudo: a Vercel roda `npm ci` e `npm run build` e p
 - Crava **só** em superfícies marcadas: **rachaduras** (que a mão nua também agarra) e **faixas de rocha** escuras com lâmpada amarela (R1 a 145 m, R2 a 237 m, R3 a 324 m), onde a mão nua não se segura. Não crava em parede comum, chapa, corda, cano, prego, porta, puzzle nem nos vãos de prego.
 - Segure o botão (ou o gatilho) para cravar e manter; solte para desprender. O retículo indica se dá para cravar ali. Fixar custa 5 de stamina (× o gasto de pegada dos perks). Pendurada, ela gasta como a mão, mas sem o custo extra da rachadura. A cravada é uma âncora: puxar, mantle e salto agarrado funcionam como com a mão.
 - Exausta, a picareta é arrancada (som de raspão) e só volta a cravar com a mão recuperada. Cravada, ela não pode ser guardada nem trocada ("A picareta está cravada"). A mão com picareta não agarra apoios comuns: guarde para usar a mão nua.
+- Modelo 3D: "Climbing Axe (Low Poly)" de [Tiko](https://sketchfab.com/tikoavp), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — crédito completo em `assets/models/items/climbing_axe_low_poly.CREDITS.txt`.
 
 ### Estações de melhoria (perks)
 

@@ -12,7 +12,7 @@ const ctx=vm.createContext({THREE,console,performance:perf,document,Models:{get(
 const load=f=>vm.runInContext(fs.readFileSync(path.join(ROOT,f),'utf8'),ctx,{filename:f});
 let handednessLoaded=true;
 try{ load('js/player/Handedness.js'); }catch(e){ handednessLoaded=false; }
-for(const f of ['js/core/utils.js','js/items/itemDefs.js','js/items/Inventory.js']) load(f);
+for(const f of ['js/core/utils.js','js/items/climbingAxeAsset.js','js/items/itemDefs.js','js/items/Inventory.js']) load(f);
 load('js/items/ItemSystem.js'); load('js/player/HandModel.js'); load('js/Game.js');
 const G=vm.runInContext('({V3,ITEM_DEFS,HandModel,ItemSystem,Inventory,get Handedness(){ return typeof Handedness!=="undefined"?Handedness:undefined; }})',ctx);
 
