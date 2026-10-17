@@ -83,6 +83,8 @@ O `vercel.json` já configura tudo: a Vercel roda `npm ci` e `npm run build` e p
 
 - Cada mão tem estado próprio: usar, segurar ou soltar o botão de uma mão nunca mexe no item da outra. Pausa, mochila e console soltam os botões das duas mãos.
 - A mão com item comum não agarra. A **outra mão escala e puxa normalmente, inclusive pelo mouse**. O mouse só deixa de puxar durante o uso ativo de um item que mira (golpe do martelo, colocar prego, cartão, golpe da picareta). Pendurado num braço com a outra mão ocupada, o braço fica travado e gasta menos pegada (como antes, agora para as duas mãos).
+- Cada item está em **uma mão só** (exceto a picareta, que tem duas unidades). Pegar com uma mão o item que está na outra o transfere: ele sai da outra mão, sem duplicar. Se a outra mão estiver no meio do uso (golpe, colocar, tomar), a troca é recusada com aviso.
+- Item que acaba (última pílula, último prego) **some da mochila e do atalho**; a mão que o segurava esvazia ao fim da animação. Coletar de novo cria uma entrada nova.
 - Poses e itens são desenhados no espaço da mão direita e espelhados para a esquerda (`js/player/Handedness.js`), sem escala negativa.
 
 ### Picareta (Climbing Axe)
@@ -159,6 +161,7 @@ node tools/test_final.js        # os quatro finais
 node tools/test_scripts.js      # ordem dos scripts no index.html
 node tools/test_setores.js      # janela de renderização com o Three.js real: colisão e raycast intactos, estados, histerese, liberação
 node tools/test_developer_navigation.js  # goto/back atômicos, cancelamento nas duas mãos, console real
+node tools/test_items_ownership.js      # item em uma mão só (troca sem duplicar), esgotados somem da mochila
 node tools/test_debug_simulation.js      # noclip: voo, congelamento real, porta por dt, bloqueio de ações/overlays/XR
 node tools/test_navigation_progression.js # gatilhos protegidos e rearme só por locomoção normal
 node tools/test_debug_ranking.js         # run assistida fora do ranking (Game + Ranking), aviso no resultado e HUD

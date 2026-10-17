@@ -80,6 +80,13 @@ class ItemSystem{
     if(d.perHand&&root._freeUnits(slot.id)<=0){ this.g.audio.deny(); this.g.ui.msg(`Você só tem uma ${d.name.toLowerCase()}`,1.6); return; }
     if(this.phase!=='idle'&&this.phase!=='empty'){ this.next=i; return; }
     if(this.hand.inContact){ this.g.ui.msg(`A mão ${this.handIndex===0?'esquerda':'direita'} está segurando.`,1.4); return; }
+    // posse única: um item (que não seja perHand) está em uma mão só; pegá-lo com esta mão o tira da outra
+    const other=this.handIndex===1?this.left:this.g.items;
+    if(!d.perHand&&other&&other!==this&&other.equipped===slot.id){
+      if(other.phase!=='idle'&&other.phase!=='equipping'&&other.phase!=='holstering'){
+        this.g.audio.deny(); this.g.ui.msg(`A mão ${other.handIndex===0?'esquerda':'direita'} está usando ${d.name.toLowerCase()}.`,1.4); return; }
+      other._release();
+    }
     if(this.equipped){ this.next=i; this.holster(); return; }
     this._equip(i);
   }
@@ -99,6 +106,11 @@ class ItemSystem{
   _equip(i){
     this.sel=i; this.equipped=this.inv.slots[i].id; this.phase='equipping'; this.t=0; this.next=-1;
     const p=this.player; this.hand.occupied=true; this.hand.isGrabbing=false; this._mount(this.equipped); this.g.audio.equip();
+  }
+  // esvazia a mão na hora, sem animação (item passou para a outra mão ou acabou)
+  _release(){
+    this.phase='empty'; this.equipped=null; this.sel=-1; this.next=-1; this.pending=null; this.useHeld=false; this.t=0;
+    this._mount(null); this.hand.occupied=false; this._canon.visible=false; this.pose.visible=false; this._syncAim();
   }
   holster(){ if(!this.equipped||this.phase==='holstering') return; if(this.axeLocked){ this._denyLocked(); return; } this.phase='holstering'; this.t=0; this.g.audio.holster(); }
   // X: guarda as mãos livres (a picareta cravada fica)
@@ -184,6 +196,11 @@ class ItemSystem{
   _updateLocal(dt){
     if(this.phase==='empty'){ this._canon.visible=false; this.pose.visible=false; this.hand.aiming=false; return; }
     if(this.player.dead){ return; }
+    // o item acabou (última pílula/prego): a entrada sumiu; a animação em curso termina e a mão esvazia
+    if(this.equipped&&!this.inv.has(this.equipped)){
+      this.sel=-1;
+      if(this.phase==='idle'||this.phase==='equipping'){ this._release(); return; }
+    }
     // a âncora é do Player: se sumiu por fora (pausa, morte, vento, exaustão, salto, mantle), a fase acompanha
     if(this.phase==='anchored'&&this.hand.anchor!=='axe'){ this.phase=this.hand.exhausted?'dislodged':'idle'; this.t=0; }
     this.t+=dt; const id=this.equipped, d=ITEM_DEFS[id], T=this._tmp, idle=T.idle.set(...d.held), rest=T.rest.copy(POSE_REST), hip=T.hip.copy(POSE_HIP), P=this._canon; let k;

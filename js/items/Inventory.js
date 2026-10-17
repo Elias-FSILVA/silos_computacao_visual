@@ -80,7 +80,13 @@ class Inventory{
   slotOf(id){ return this.slots.findIndex(s=>s&&s.id===id); }
   count(id){ const s=this.slots.find(s=>s&&s.id===id); return s?s.count:0; }
   has(id){ return this.slotOf(id)>=0; }
-  take(id,n=1){ const s=this.slots.find(s=>s&&s.id===id); if(!s||s.count<n) return false; s.count-=n; this.version++; return true; }
+  // tira n unidades; a última unidade libera a entrada e os atalhos do item (nada de pilha "×0" na mochila)
+  take(id,n=1){
+    const i=this.slotOf(id), s=i>=0?this.slots[i]:null; if(!s||s.count<n) return false;
+    s.count-=n;
+    if(s.count<=0){ this.slots[i]=null; this.binds=this.binds.map(b=>b===id?null:b); }
+    this.version++; return true;
+  }
   // ---- capacidade ----
   get usedSlots(){ return this.slots.reduce((n,s)=>n+(s?1:0),0); }
   get freeSlots(){ return this.size-this.usedSlots; }
