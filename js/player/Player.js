@@ -11,8 +11,13 @@
 // Puxada: agarrado e segurando o botão, arrastar o mouse para baixo ergue o corpo (pull 0 = pendurado,
 // 1 = queixo na borda). O corpo segue a puxada com inércia, cede devagar sem esforço e a fadiga dos braços
 // (pullFatigue) reduz a eficiência, faz a câmera/mão tremer e, no nível crítico, drena a pegada.
-// Com item na mão direita (pregos, martelo…), o braço que segura trava na altura atual (lockOff):
-// não cede, o mouse fica livre para mirar, mas a fadiga sobe aos poucos.
+// Regras por mão: a mão com item comum não agarra; a outra mão escala e puxa normalmente (inclusive pelo mouse).
+// Braço travado (lockOff): pendurado com a outra mão ocupada por item (não cravado), o braço que segura trava na altura
+// atual: não cede, gasta a pegada de um braço travado (6/s, não 9/s) e a fadiga sobe aos poucos. Não bloqueia a puxada.
+// Conflito de entrada (aimConflict): só enquanto uma mão faz um uso ativo que MIRA (hand.aiming, escrito pelo
+// ItemSystem: golpe do martelo, colocar prego, cartão) o mouse mira em vez de puxar. Só no desktop; no VR a mira é
+// do controle. Sem ferramentas, nenhum dos dois acontece.
+// hand.anchor: 'hand' (pegada da mão nua), 'axe' (picareta cravada) ou null.
 // Modo VR (opcional): com `xr` (VRPlayer) ligado, mira e agarre saem dos controles, a puxada vem do braço
 // (pullBy) e a câmera é posicionada pelo rig; sem ele, tudo segue como no mouse e teclado.
 // Colisão: Collision.collideBody contra world.platforms (caixas, caixas giradas e setores anelares) + world.guard
@@ -29,7 +34,7 @@ const PLAYER_PHYSICS={wallJumpControl:2.4,airControl:4.2,coyoteTime:.12};
 const REDUCED_MOTION=(()=>{ try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } })();
 class Hand{
   constructor(name,side){ this.name=name; this.side=side; this.point=new V3(); this.normal=new V3(); this.reset(); }
-  reset(){ this.occupied=false; this.isGrabbing=false; this.inContact=false; this.surface=null; this.stamina=PLAYER_BASE_ATTRIBUTES.maxStamina; this.cooldown=0; this.pull=0; this.exhausted=false; }
+  reset(){ this.occupied=false; this.aiming=false; this.anchor=null; this.isGrabbing=false; this.inContact=false; this.surface=null; this.stamina=PLAYER_BASE_ATTRIBUTES.maxStamina; this.cooldown=0; this.pull=0; this.exhausted=false; }
   get state(){ return this.isGrabbing?'closed':'open'; }
 }
 const _e=new V3(), _t=new V3(), _d=new V3(), _f=new V3(), _r=new V3(), _mv=new V3(), _p=new V3(), _q=new V3(), _n=new V3(), _c0=new THREE.Vector2(0,0), _wq=new THREE.Quaternion();
@@ -66,7 +71,6 @@ class Player{
     this.pull=0; this.pullTarget=0; this.pullIn=0; this.effort=0; this.jolt=0;
     this.pullFatigue=0; this.fatigueFx=0; this.restT=0; this.fatigueWarned=false; this.fxT=0; this.pulledNow=false;
     this.hands.forEach(h=>h.reset());
-    this.itemPose=null;
     this.press=[null,null]; this.point=[false,false];   // gesto do indicador (painel); point: VR, mão perto do painel
     this.stats.reset();
     this.viewmodelVisible=true;
@@ -98,10 +102,12 @@ class Player{
     const vy=this.velocity.y; this.velocity.y=0; this._collide(false); this.velocity.y=vy;
     return true;
   }
-  // com um item na mão direita o braço que segura fica travado (lockOff): o mouse volta a mirar livremente
-  // em VR a mira é do controle, então o braço livre puxa mesmo com item na mão direita
-  get canPull(){ return !this.mantle&&!this.dead&&(!this.lockOff||!!this.xr)&&this.pull<.995&&this.hands.some(h=>h.inContact&&h.isGrabbing); }
-  get lockOff(){ return this.rightHand.occupied&&this.isHanging; }
+  // conflito de entrada: durante um uso ativo que mira, o mouse mira e não puxa
+  // em VR a mira é do controle, então o braço puxa mesmo durante o uso
+  get canPull(){ return !this.mantle&&!this.dead&&(!this.aimConflict||!!this.xr)&&this.pull<.995&&this.hands.some(h=>h.inContact&&h.isGrabbing); }
+  get aimConflict(){ return this.isHanging&&this.hands.some(h=>h.aiming); }
+  // braço travado: pendurado com a outra mão ocupada por item
+  get lockOff(){ return this.isHanging&&this.hands.some(h=>h.occupied); }
   // pendurado numa borda, mas baixo demais para subir: a UI sugere puxar
   get needsPull(){ return this.isHanging&&!this.mantle&&this.pull<PULL_MANTLE&&this.hands.some(h=>h.inContact&&h.surface.userData.plat); }
   setGrab(i,down){
@@ -189,7 +195,7 @@ class Player{
       h.stamina=Math.max(0,h.stamina-25); h.cooldown=.35; this.stats.recordSlip(); this.emit('slip',h); return false;
     }
     h.stamina=Math.max(0,h.stamina-Math.max(0,fall-4)*2.2);
-    h.inContact=true; h.surface=hit.object; h.point.copy(hit.point);
+    h.inContact=true; h.anchor='hand'; h.surface=hit.object; h.point.copy(hit.point);
     const u=hit.object.userData, wn=u.wallNormal;
     if(u.normalAt) u.normalAt(hit.point,h.normal);          // apoio contínuo (rachadura, cano, corda): normal no ponto agarrado
     else if(wn) h.normal.copy(wn); else h.normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
@@ -199,7 +205,7 @@ class Player{
     return true;
   }
   _release(h){
-    h.inContact=false; h.surface=null; h.pull=0;
+    h.inContact=false; h.anchor=null; h.surface=null; h.pull=0;
     if(!this.isClimbing){ this.pull=this.pullTarget=0; if(this.velocity.length()>7) this.velocity.setLength(7); }
   }
   // [pendurado, puxado] abaixo da pegada; puxado na parede = olhos um pouco acima da pegada (peito na borda)
@@ -392,7 +398,7 @@ class Player{
     const xr=this.xr, camPos=_n.setFromMatrixPosition(this.camera.matrixWorld), camQ=this.camera.getWorldQuaternion(_wq);
     this.hands.forEach((h,i)=>{
       const hm=this.handModels[i], m=hm.root; m.visible=this.viewmodelVisible&&!this.dead;
-      const pose=h.occupied&&this.itemPoses?this.itemPoses[i]:(h.occupied&&i===1?this.itemPose:null);
+      const pose=h.occupied&&this.itemPoses?this.itemPoses[i]:null;   // já no lado certo (Handedness.toSide)
       // VR: a mão solta (ou com item) fica no controle (ou na mão rastreada)
       const inHand=xr&&!h.inContact&&xr.handPose(i,m.position,m.quaternion);
       if(pose){

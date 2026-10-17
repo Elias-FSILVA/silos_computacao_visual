@@ -13,7 +13,7 @@ class InteractionSystem{
     const p=this.g.player, items=this.g.items, res={reticle:'dot',prompt:''};
     if(p.dead) return res;
     if(p.canMantle()) res.prompt='Espaço|Subir';
-    else if(p.needsPull) res.prompt=p.lockOff&&!p.xr?'X|Guarde o item para puxar':'Mouse ↓|Puxe o corpo para subir';
+    else if(p.needsPull) res.prompt=p.aimConflict&&!p.xr?'Botão|Solte o item para puxar':'Mouse ↓|Puxe o corpo para subir';
     const hit=p.aim(3.0); if(!hit) return res;
     const ud=hit.object.userData, obj=ud.interactable, ctx=this.ctx(hit);
     if(obj&&hit.distance<=2.4&&!(p.xr&&obj instanceof KeyButton)){ const c=obj.canInteract(ctx); if(c){ res.reticle=c.reticle||'pickup'; if(c.prompt) res.prompt='F|'+c.prompt; return res; } }

@@ -41,9 +41,9 @@ Você está no fundo de um silo industrial gigantesco: um cilindro de 400 m de a
 | Andar | WASD | analógico esquerdo |
 | Pular / subir na borda | Espaço | A |
 | Interagir | F | gatilho direito |
-| Usar item | botão direito com o item na mão | gatilho direito |
+| Usar item | botão do mouse da mão que segura o item | gatilho da mão que segura o item |
 | Mochila / inventário | Tab, depois 1 a 4 | Y (inventário no pulso) |
-| Guardar item | X | X |
+| Guardar item | X (guarda as duas mãos) | A esquerdo (idem) |
 | Pílula | Q | levar o frasco à boca |
 | Pausa | Esc | clique no analógico esquerdo |
 
@@ -76,6 +76,12 @@ O `vercel.json` já configura tudo: a Vercel roda `npm ci` e `npm run build` e p
 - Cada mão apoiada gasta **12 de stamina** no impulso e espera **220 ms** para agarrar novamente. Sem força suficiente, mantém a pegada. Não há salto extra no vazio.
 - **Bordas:** primeiro puxe o corpo; Espaço finaliza a subida (mantle). Uma puxada completa também pode iniciar o mantle. Soltar as mãos sem pular continua sendo uma ação diferente do impulso.
 - Fadiga crítica já provoca cedidas antes da exaustão; uma mão sem stamina solta a pegada. Plataformas permitem recuperar stamina e fadiga.
+
+### Itens nas duas mãos
+
+- Cada mão tem estado próprio: usar, segurar ou soltar o botão de uma mão nunca mexe no item da outra. Pausa, mochila e console soltam os botões das duas mãos.
+- A mão com item comum não agarra. A **outra mão escala e puxa normalmente, inclusive pelo mouse**. O mouse só deixa de puxar durante o uso ativo de um item que mira (golpe do martelo, colocar prego, cartão, golpe da picareta). Pendurado num braço com a outra mão ocupada, o braço fica travado e gasta menos pegada (como antes, agora para as duas mãos).
+- Poses e itens são desenhados no espaço da mão direita e espelhados para a esquerda (`js/player/Handedness.js`), sem escala negativa.
 
 ### Referência e escopo desta etapa
 

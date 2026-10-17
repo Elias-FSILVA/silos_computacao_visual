@@ -1,17 +1,21 @@
 'use strict';
 // ============================================================================
-// js/items/ItemSystem.js — equipar, guardar, usar; item visível na mão direita
+// js/items/ItemSystem.js — equipar, guardar, usar; uma instância por mão (a direita guarda a esquerda em `left`)
 // estado: equipped, phase (empty|equipping|idle|holstering|swing|place|consume), t
-// A cada quadro preenche `pose` (lida pelo Player): posição do pulso, flexão do pulso (wrist),
-// orientação da mão (base), pegada (grip, misturável com grip2/blend), squeeze e tremor.
+// A cada quadro calcula `_canon` no espaço da mão DIREITA e escreve em `pose` (lida pelo Player) o seu lado,
+// via Handedness.toSide: posição do pulso, flexão do pulso (wrist), orientação da mão (base), pegada (grip,
+// misturável com grip2/blend), squeeze e tremor. Nenhuma pose ou animação tem sinal por mão.
 // ============================================================================
 const POSE_REST=new V3(.22,-.22,-.42), POSE_HIP=new V3(.32,-.62,-.22);
 const DUR={equipping:.55,holstering:.45,swing:.62,place:.5,consume:.6};
-const _itemIdle=new V3(), _itemTo=new V3(), _itemRest=new V3(), _itemHip=new V3();
+// itens que miram pelo mouse: o uso ativo deles é um conflito de entrada com a puxada (Player.aimConflict)
+const AIMING_ITEMS={hammer:true,nails:true,card:true};
 class ItemSystem{
   constructor(game,handIndex=1,sharedInventory=null){
-    this.g=game; this.handIndex=handIndex; this.hand=game.player.hands[handIndex];
-    this.inv=sharedInventory||new Inventory(4); this.pivot=new THREE.Group(); this.mesh=null; this.reset();
+    this.g=game; this.handIndex=handIndex; this.side=Handedness.sideOf(handIndex); this.hand=game.player.hands[handIndex];
+    this.inv=sharedInventory||new Inventory(4); this.pivot=new THREE.Group(); this.mesh=null;
+    this._tmp={idle:new V3(),to:new V3(),rest:new V3(),hip:new V3()};   // temporários de pose: um conjunto por mão
+    this.reset();
     if(handIndex===1){ this.left=new ItemSystem(game,0,this.inv); game.player.inventory=this.inv; }
   }
   get player(){ return this.g.player; }
@@ -19,8 +23,9 @@ class ItemSystem{
     if(this.handIndex===1) this.inv.reset();
     this.sel=-1; this.equipped=null; this.phase='empty'; this.t=0; this.pending=null; this.useHeld=false; this.next=-1; this.hinted=false;
     this._mount(null);
-    this.pose={pos:new V3(this.handIndex===0?-POSE_REST.x:POSE_REST.x,POSE_REST.y,POSE_REST.z),roll:0,visible:false,wrist:new V3(),base:HandModel.BASE_FLAT,grip:'relaxed',grip2:null,blend:0,squeeze:0,tremor:0};
-    this.player.itemPoses=this.player.itemPoses||[]; this.player.itemPoses[this.handIndex]=this.pose; this.player[this.handIndex===0?'leftHand':'rightHand'].occupied=false;
+    this._canon={pos:POSE_REST.clone(),roll:0,visible:false,wrist:new V3(),base:HandModel.BASE_FLAT,grip:'relaxed',grip2:null,blend:0,squeeze:0,tremor:0};
+    this.pose=Handedness.toSide(this._canon,this.side,{pos:new V3(),wrist:new V3()});
+    this.player.itemPoses=this.player.itemPoses||[]; this.player.itemPoses[this.handIndex]=this.pose; this.hand.occupied=false; this.hand.aiming=false;
     if(this.handIndex===1&&this.left) this.left.reset();
   }
   get activeItem(){ return (this.phase==='idle'||this.phase==='swing'||this.phase==='place')?this.equipped:null; }
@@ -35,8 +40,9 @@ class ItemSystem{
     if(this.mesh){ this.pivot.remove(this.mesh); this.mesh=null; }
     const hand=this.player.handModels[this.handIndex].socket; if(this.pivot.parent!==hand) hand.add(this.pivot);
     if(!id) return;
-    const d=ITEM_DEFS[id]; this.mesh=d.make(); this.mesh.position.set(...d.item.p); this.mesh.rotation.set(...d.item.r);
-    if(d.item.s) this.mesh.scale.setScalar(d.item.s);
+    const d=ITEM_DEFS[id]; this.mesh=d.make();
+    if(d.item.chiral&&this.side<0) Handedness.mirrorMesh(this.mesh);   // item com lado: geometria refletida, nunca escala negativa
+    Handedness.mountTransform(d.item,this.side,this.mesh);
     this.pivot.add(this.mesh);
   }
   onPickup(id,count){
@@ -72,8 +78,19 @@ class ItemSystem{
     const p=this.player; this.hand.occupied=true; this.hand.isGrabbing=false; this._mount(this.equipped); this.g.audio.equip();
   }
   holster(){ if(!this.equipped||this.phase==='holstering') return; this.phase='holstering'; this.t=0; this.g.audio.holster(); }
-  holsterAll(){ this.holster(); if(this.left) this.left.holster(); }
-  use(down){ this.useHeld=down; if(down) this._tryUse(); if(this.handIndex===1&&this.left) this.left.useHeld=down; }
+  // X: guarda as duas mãos
+  holsterAll(){ for(const h of [this,this.left]) if(h) h.holster(); }
+  // o botão de uma mão só mexe no item daquela mão
+  use(down){
+    this.useHeld=down; if(down) this._tryUse();
+    this._syncAim();
+  }
+  // pausa, mochila e console: solta o botão das duas mãos (não desprende nada preso à parede)
+  releaseUse(){ this.useHeld=false; this._syncAim(); if(this.left){ this.left.useHeld=false; this.left._syncAim(); } }
+  // uso ativo que mira (golpe, colocar, botão segurado): a mão disputa o mouse com a puxada
+  get aimingNow(){
+    return !!this.equipped&&!!AIMING_ITEMS[this.equipped]&&(this.phase==='swing'||this.phase==='place'||(this.useHeld&&this.phase==='idle')); }
+  _syncAim(){ this.hand.aiming=this.aimingNow; }
   quick(id){ // pílula sem precisar equipar (tecla Q)
     if(id!=='pills') return;
     if(this.inv.count('pills')<=0){ this.g.ui.msg('Nenhuma pílula.',1.3); return; }
@@ -96,7 +113,7 @@ class ItemSystem{
       this.pending=tg; this._start('place');
     }
   }
-  _start(ph){ this.phase=ph; this.t=0; this.impacted=false; if(ph==='swing') this.g.audio.swing(); }
+  _start(ph){ this.phase=ph; this.t=0; this.impacted=false; if(ph==='swing') this.g.audio.swing(); this._syncAim(); }
   _impact(){
     const tg=this.pending; this.pending=null;
     if(this.phase==='swing') this._hammerHit(tg);
@@ -123,9 +140,9 @@ class ItemSystem{
   strike(tg,side='right'){ const hand=side==='left'?this.left:this; if(hand.phase!=='idle'||hand.equipped!=='hammer') return false; hand._hammerHit(tg); return hand.landed; }
   update(dt){ if(this.handIndex===1&&this.left) this.left._updateLocal(dt); this._updateLocal(dt); }
   _updateLocal(dt){
-    if(this.phase==='empty'){ this.pose.visible=false; return; }
+    if(this.phase==='empty'){ this._canon.visible=false; this.pose.visible=false; this.hand.aiming=false; return; }
     if(this.player.dead){ return; }
-    this.t+=dt; const id=this.equipped, d=ITEM_DEFS[id], idle=_itemIdle.set(...d.held), rest=this.handIndex===0?_itemRest.set(-POSE_REST.x,POSE_REST.y,POSE_REST.z):_itemRest.copy(POSE_REST), hip=this.handIndex===0?_itemHip.set(-POSE_HIP.x,POSE_HIP.y,POSE_HIP.z):_itemHip.copy(POSE_HIP); if(this.handIndex===0) idle.x=-idle.x; const P=this.pose; let k;
+    this.t+=dt; const id=this.equipped, d=ITEM_DEFS[id], T=this._tmp, idle=T.idle.set(...d.held), rest=T.rest.copy(POSE_REST), hip=T.hip.copy(POSE_HIP), P=this._canon; let k;
     P.roll=0; P.wrist.set(0,0,0); P.base=d.base; P.grip=d.grip; P.grip2=null; P.blend=0; P.squeeze=0; P.tremor=0;
     switch(this.phase){
       case 'equipping': {
@@ -160,7 +177,7 @@ class ItemSystem{
         break; }
       case 'place': case 'consume': {
         const dur=DUR[this.phase], half=dur/2, t=this.t, place=this.phase==='place';
-        const to=place?_itemTo.set(.06,-.1,-.56):_itemTo.set(.05,-.14,-.2);
+        const to=place?T.to.set(.06,-.1,-.56):T.to.set(.05,-.14,-.2);
         const go=t<half?smooth(t/half):1-smooth(Math.min(1,(t-half)/half));
         P.pos.lerpVectors(idle,to,go);
         if(t>=half&&!this.impacted){ this.impacted=true; this._impact(); }
@@ -189,5 +206,6 @@ class ItemSystem{
     }
     if(!P.visible&&P.grip===d.grip&&this.phase!=='equipping') P.grip='relaxed';   // sem item à vista, a mão relaxa
     if(this.mesh) this.mesh.visible=P.visible;
+    Handedness.toSide(P,this.side,this.pose); this._syncAim();
   }
 }

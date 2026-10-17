@@ -173,7 +173,7 @@ class VRPlayer{
     if(L){
       if(L.d.stick){ g.pause(); return; }
       if(Math.hypot(L.sx,L.sy)>VR_TUNE.deadzone){ mx=L.sx; my=-L.sy; }
-      if(L.d.a) g.items.holster();
+      if(L.d.a) g.items.holsterAll();   // A esquerdo guarda as mãos livres, como o X do desktop
       if(L.d.b) this.toggleInventory();
       // gatilho esquerdo: aperta o número sob o indicador esquerdo; com hand tracking, a pinça pula
       if(L.d.trigger){ if(this.keyHover[0]) this._pressKey(0); else if(this.invOpen&&this.invHover>=0){ g.items.select(this.invHover); this._haptic(0,.3,20); } else if(g.items.equippedFor('left')) g.items.useHand('left',true); else if(L.tracked) jumpRequested=true; }

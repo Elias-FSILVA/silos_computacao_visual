@@ -38,7 +38,7 @@ const looks=[], grabs=[];
 const g=Object.create(Game.prototype);
 Object.assign(g,{renderer:{domElement:canvas},ui,settings:{data:{sensitivity:1,invertY:false}},timer:new TimerSystem(),
   player:{dead:false,on(){},releaseAll(){},look(dx){ looks.push(dx); },setGrab(i,d){ grabs.push([i,d]); }},
-  items:{equipped:null,use(){},equippedFor:()=>null,useHand(){},holsterAll(){}},audio:{setRumble(){},setHum(){},setTension(){}},resetRun(){},interaction:{keypadAimed:()=>false},
+  items:{equipped:null,use(){},releaseUse(){},equippedFor:()=>null,useHand(){},holsterAll(){}},audio:{setRumble(){},setHum(){},setTension(){}},resetRun(){},interaction:{keypadAimed:()=>false},
   vr:{busy:false,active:false,closeMenu(){},showPause(){},ready:Promise.resolve(false)},
   spectator:{exits:0,exit(){ this.exits++; g.state='menu'; },look(){},key(){}},cinematic:{skip(){}},world:{},
   state:'menu',keys:{},gameBtn:{},_lockGuard:0,_lockReq:0,_resuming:false,wasLocked:false});

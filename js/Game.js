@@ -79,7 +79,7 @@ class Game{
     if(!this.settings.data.devConsoleEnabled||this.vr.active||this.ui.$('devConsole').hidden===false) return;
     if(!['play','paused','menu'].includes(this.state)) return;
     this.devConsoleReturnState=this.state; this._devConsoleWasPlaying=this.state==='play';
-    if(this._devConsoleWasPlaying){ this.state='console'; this.timer.pause(); this._lockGuard=performance.now()+500; this.unlock(); }
+    if(this._devConsoleWasPlaying){ this.state='console'; this.timer.pause(); this.items.releaseUse(); this.gameBtn={}; this._lockGuard=performance.now()+500; this.unlock(); }
     this.keys={}; this.ui.$('devConsole').hidden=false; this.ui.$('devConsoleInput').focus();
   }
   closeDevConsole(){
@@ -146,7 +146,7 @@ class Game{
   }
   pause(){
     if(this.state!=='play') return;
-    this.state='paused'; this._resuming=false; this.timer.pause(); this.player.releaseAll(); this.items.use(false); this.keys={};
+    this.state='paused'; this._resuming=false; this.timer.pause(); this.player.releaseAll(); this.items.releaseUse(); this.keys={};
     this.ui.setPack(false);
     this.unlock(); this.ui.clearMsg(); this.ui.$('pauseErr').textContent=''; this.ui.show('pause'); this.audio.setRumble(.02); this.pausedAt=performance.now();
     if(this.vr.active) this.vr.showPause();
@@ -169,7 +169,7 @@ class Game{
   openInventory(){
     if(this.state!=='play'||this.player.dead) return;
     this.state='inventory'; this._lockGuard=performance.now()+400;   // o estado muda antes do unlock: o pointerlockchange não vira pausa
-    this.timer.pause(); this.items.use(false); this.gameBtn={};      // soltar botões durante a mochila não mexe nas mãos
+    this.timer.pause(); this.items.releaseUse(); this.gameBtn={}; this.keys={};      // soltar botões durante a mochila não mexe nas mãos; teclas não ficam presas
     this.ui.hideNote(); this.audio.setRumble(.02);
     this.ui.setPack(true,this.items,this.player);
     this.unlock();
