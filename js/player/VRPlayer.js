@@ -86,6 +86,8 @@ class VRPlayer{
   // precisa ser chamado dentro de um clique (gesto do usuário)
   enter(onStart){
     if(!navigator.xr||this.busy) return;
+    const nav=this.g.debugNavigation;   // noclip é só desktop: desligar antes de entrar no headset
+    if(nav&&nav.canEnterXR&&!nav.canEnterXR()){ this.g.ui.msg('Desligue o noclip antes de entrar em VR.',3); return; }
     this.entering=true;
     navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','hand-tracking']}).then(s=>
       // chão real quando o Quest tem a área de jogo configurada; senão, origem na cabeça
@@ -146,12 +148,13 @@ class VRPlayer{
   }
   showResult(){
     const g=this.g, r=g.lastRun; if(!r) return;
+    const assisted=r.assisted||r.competitiveEligible===false;   // debug: sem botão de salvar
     this._menu({title:r.result==='finish'?'Subida completa':r.result==='mass'?'A massa te alcançou':'Você caiu',
       tone:r.result==='finish'?'win':'danger',
-      text:g.saved?(g.savedIndex>=0?`Posição ${g.savedIndex+1} no ranking.`:'Fora do top 20.'):r.name,
+      text:assisted?ASSISTED_RUN_MSG:g.saved?(g.savedIndex>=0?`Posição ${g.savedIndex+1} no ranking.`:'Fora do top 20.'):r.name,
       lines:[['Tempo',fmtTime(r.time)],['Altura',`${Math.floor(r.height)} m de ${TOP} m`],['Pontuação',`${fmtInt(r.breakdown.total)} pts`]],
       buttons:[
-        {label:g.saved?'Pontuação salva':'Salvar pontuação',disabled:g.saved,action:()=>{ g.saveScore(); this.showResult(); }},
+        assisted?{label:'Não competitiva',disabled:true,action:()=>{}}:{label:g.saved?'Pontuação salva':'Salvar pontuação',disabled:g.saved,action:()=>{ g.saveScore(); this.showResult(); }},
         {label:'Tentar de novo',action:()=>g.retry()},
         {label:'Sair do VR',action:()=>this.exit()}]});
   }

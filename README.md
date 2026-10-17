@@ -130,6 +130,15 @@ Os ajustes finos do VR (ganho da puxada, alcance do agarre, encaixe da mão no c
 
 **Modo espectador.** É uma câmera livre para voar pelo mapa inteiro, com paredes transparentes, nomes das partes e régua de altura. Para abrir, use a tecla F2 no menu ou abra o endereço com `?espectador` no final. Os comandos estão em [COMO_RODAR.txt](COMO_RODAR.txt).
 
+**Navegação de debug (console).** Ative o console em Configurações e abra com `~`. Só no desktop (VR recusa), numa partida viva em jogo ou pausa:
+
+- `goto list` lista os destinos reais (todos os checkpoints e os atalhos `subida1`…`subida4`, `bombas`, `mezanino`, `arquivo`) com altura e o que fica preservado; `goto <id>` leva o corpo inteiro para um apoio seguro. Um destino sem apoio seguro no momento (por exemplo `atalho`) é recusado com o motivo, sem mexer em nada.
+- `back` volta uma vez à posição de antes do último `goto`. Se aquele ponto não for mais seguro (porta, elevador ou piso mudaram), usa uma correção local anunciada como fallback; se não houver nenhuma, recusa e mantém o registro.
+- `noclip`, `noclip on` / `off`, `noclip speed <1–50>` (padrão 10 m/s). Em voo, WASD segue a vista, Space sobe, Ctrl desce e Shift multiplica por 4. Física, timer, puzzles, massa, portas e elevador ficam congelados; itens, agarre, pulo e interação ficam bloqueados. Pausa, mochila e console interrompem o voo e voltam a ele com o timer parado. `noclip off` desliga onde você estiver, como no CS/Half-Life: no ar, fora do mapa ou dentro de parede. Não há teleporte nem recusa; a física normal volta daquele ponto (você pode cair, ficar preso ou morrer) e o console avisa o risco da posição (sem apoio, dentro de geometria, massa, pás). Os gatilhos continuam protegidos até você sair e reentrar.
+- Marcos, salas, tela do Arquivo e o limiar da massa não disparam por teleporte nem voo. Depois do salto, eles ficam protegidos até você sair e reentrar na região andando, escalando ou pulando normalmente. `status` lista cada gatilho protegido e o que falta para rearmá-lo. Ficar parado, o vento, o elevador ou a gravidade não rearmam.
+- Qualquer `goto`, `back` ou `noclip on` marca a run como **assistida** até a próxima run: o HUD mostra RUN ASSISTIDA (e NOCLIP quando ligado), o resultado avisa “pontuação não competitiva” e a pontuação nunca entra no ranking, nem pelo desktop nem pelo VR. Ajustar a velocidade, consultar e errar comandos não marcam.
+- O Quest não foi testado com esses comandos; eles são recusados em VR.
+
 **Ajuste da escalada.** Os trechos de subida depois da passarela ficam em `js/world/Climbs.js` (`_subida1` … `_subida4`), escritos em coordenadas polares (ângulo na parede, altura); lá também estão as peças (rachadura, corda, cano, escada, saliência, andaime, passarela, tubo, chapa, luminária). As linhas de tijolos usam `CLIMB` em `js/world/levelData.js` (distância entre tijolos e tijolos que desmoronam). Os ventiladores ficam em `EXHAUST.fan` e `INSUF.fan`. Depois de mexer numa subida, rode `node tools/test_ritmo.js`.
 
 **Geometria e colisão.** O poço, os pisos e as passarelas circulares são setores anelares; os objetos fora das direções cardeais são caixas giradas. As três formas convivem em `world.platforms`, e `js/world/Collision.js` resolve o corpo do jogador contra todas elas. A parede do poço só se atravessa pelas aberturas, garantido por `world.guard`.
@@ -148,6 +157,10 @@ node tools/test_espectador.js
 node tools/test_final.js        # os quatro finais
 node tools/test_scripts.js      # ordem dos scripts no index.html
 node tools/test_setores.js      # janela de renderização com o Three.js real: colisão e raycast intactos, estados, histerese, liberação
+node tools/test_developer_navigation.js  # goto/back atômicos, cancelamento nas duas mãos, console real
+node tools/test_debug_simulation.js      # noclip: voo, congelamento real, porta por dt, bloqueio de ações/overlays/XR
+node tools/test_navigation_progression.js # gatilhos protegidos e rearme só por locomoção normal
+node tools/test_debug_ranking.js         # run assistida fora do ranking (Game + Ranking), aviso no resultado e HUD
 ```
 
 ### Desempenho, distância de renderização e VR

@@ -30,6 +30,7 @@ class InteractionSystem{
   }
   // hand: mão preferida para o gesto de apertar botão (F = direita, clique esquerdo = esquerda)
   interact(hand=1){
+    const nav=this.g.debugNavigation; if(nav&&nav.allowsGameplayAction&&!nav.allowsGameplayAction()) return;   // voo de debug: sem coleta/botões
     const ui=this.g.ui; if(ui.noteOpen){ ui.hideNote(); return; }
     const hit=this.g.player.aim(2.4); if(!hit) return;
     const obj=hit.object.userData.interactable; if(!obj) return;

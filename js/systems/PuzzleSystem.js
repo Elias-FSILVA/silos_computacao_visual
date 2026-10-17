@@ -13,7 +13,7 @@ class ContainmentPuzzle{
     this.active=false; this.solved=false; this.failed=false; this.timeRemaining=this.duration;
     this.requiredActions=['code']; this.completedActions=[];
     this.phase='idle'; this.t=0; this.input=''; this.flash=null; this.nextBoom=0; this.lockIdx=0; this.grace=0; this.flood=null;
-    this.lampT=0; this._screen();
+    this.lampT=0; this._doorReturn=null; this._screen();
   }
   get timeLeft(){ return Math.max(0,this.timeRemaining); }
   // ---------- entrada do teclado físico ----------
@@ -77,6 +77,12 @@ class ContainmentPuzzle{
   presenceAt(pos){const R=this.room;return {inRoom:inBox(pos,R.zoneRoom),inDuctHigh:inBox(pos,R.zoneDuct)&&pos.y>this.H+3.2};}
   update(dt){
     const g=this.g, p=g.player, R=this.room, pos=p.position;
+    // Retorno físico do impacto: só tempo de simulação, nunca callback de parede durante pause/voo.
+    if(this._doorReturn){
+      const pending=this._doorReturn;pending.remaining-=dt;
+      if(this.phase==='breached')this._doorReturn=null;
+      else if(pending.remaining<=1e-9){this._setDoor(R.entry,pending.y);this._doorReturn=null;}
+    }
     const seen=(g.presence&&g.presence.read('containment:'+this.id))||this.presenceAt(pos);
     // luminárias da sala: uma pisca, a outra nunca falha (parte da pista)
     this.lampT+=dt; const fl=(Math.sin(this.lampT*17)+Math.sin(this.lampT*5.3)>.5)?.1:1;
@@ -130,7 +136,7 @@ class ContainmentPuzzle{
     this.nextBoom=failing?1.3+Math.random()*.6:late?3+Math.random()*2:7+Math.random()*5;
     const d=this.room.entry, seen=(g.presence&&g.presence.read('containment:'+this.id))||this.presenceAt(g.player.position),near=seen.inRoom;
     g.audio.thump(near?1:.45); if(near) g.player.addShake(failing?.45:.3);
-    this._setDoor(d,d.y+(Math.random()*.03)); setTimeout(()=>{ if(this.phase!=='breached') this._setDoor(d,d.closedY+(failing?.08:0)); },90);
+    this._setDoor(d,d.y+(Math.random()*.03)); this._doorReturn={remaining:.09,y:d.closedY+(failing?.08:0)};
     g.fx.spawn('dust',this.room.doorTop,new V3(0,-.2,-1),5);
   }
   _updateFlood(dt){

@@ -9,6 +9,8 @@
 #timeN{ font-size:30px; font-weight:600; font-variant-numeric:tabular-nums; }
 #scoreN{ font-size:20px; color:var(--dust); font-variant-numeric:tabular-nums; }
 #cpN{ font-size:17px; color:var(--dust); margin-top:4px; }
+#debugBadge{ position:absolute; left:50%; top:calc(env(safe-area-inset-top,0px) + 14px); transform:translateX(-50%); padding:3px 10px; border:1px solid var(--flesh); color:var(--flesh); font-size:13px; font-weight:700; letter-spacing:.12em; background:rgba(0,0,0,.55); pointer-events:none; }
+#debugBadge[hidden]{ display:none; }
 #reticle{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:flex; align-items:center; gap:26px; }
 #ring{ width:24px; height:24px; }
 #ring svg{ display:block; }

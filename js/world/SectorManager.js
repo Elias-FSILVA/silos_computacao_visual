@@ -274,6 +274,14 @@ class SectorManager{
     if(this.t>=this.cfg.updateInterval){ const step=Math.min(this.t,.5); this.t=0; if(!this.full) this._evaluate(step); this._pickLights(); }
     this._lightsFrame(dt);
   }
+  // Salto espacial: foco/visibilidade no destino antes do render, sem consumir dt físico ou full view.
+  refreshFocus(){
+    if(!this.enabled)return;
+    if(this.world.root!==this.root)this.rebuild();
+    this.g.camera.getWorldPosition(this.focus);this.t=0;
+    if(!this.full)this._evaluate(0);
+    this._pickLights();this._lightsFrame(0);
+  }
   _inRoom(id,p){ const r=this.world.puzzleRooms[id]; if(!r) return false; return [r.zoneRoom,...(r.zones||[]),r.zoneDuct,r.zoneExit].filter(Boolean).some(z=>inZone(p,z)); }
   _evaluate(dt){
     const P=this.P, f=this.focus, reg=this.region=RenderProfile.region(f.y,id=>this._inRoom(id,f));

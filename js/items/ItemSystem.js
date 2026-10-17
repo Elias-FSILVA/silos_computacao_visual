@@ -102,19 +102,29 @@ class ItemSystem{
   // X: guarda as mãos livres (a picareta cravada fica)
   holsterAll(){ for(const h of [this,this.left]) if(h&&!h.axeLocked) h.holster(); }
   // o botão de uma mão só mexe no item daquela mão
+  // voo de debug (noclip): nenhum uso, consumo ou impacto — guarda no ponto de ação, além das teclas
+  _debugBlocked(){ const n=this.g.debugNavigation; return !!(n&&n.allowsGameplayAction&&!n.allowsGameplayAction()); }
   use(down){
+    if(down&&this._debugBlocked()) return;
     this.useHeld=down; if(down) this._tryUse();
     else if(this.phase==='anchored'){ this.player.releaseAxe(this.handIndex); this.phase='idle'; this.t=0; this.g.audio.axeScrape(); this._vrFeedback('release'); }
     this._syncAim();
   }
   // pausa, mochila e console: solta o botão das duas mãos (não desprende nada preso à parede)
   releaseUse(){ this.useHeld=false; this._syncAim(); if(this.left){ this.left.useHeld=false; this.left._syncAim(); } }
+  // Debug cancela a ação inteira, diferente de releaseUse (que não cancela impactos nem desprende).
+  cancelPendingForDebug(){
+    for(const owner of this.left?[this.left,this]:[this]){
+      owner.pending=null;owner.next=-1;owner.useHeld=false;owner.impacted=false;owner.landed=false;owner.t=0;
+      owner.phase=owner.equipped?'idle':'empty';owner._updateLocal(0);owner._syncAim();
+    }
+  }
   // uso ativo que mira (golpe, colocar, botão segurado): a mão disputa o mouse com a puxada
   get aimingNow(){ if(this.equipped==='climbing_axe') return this.phase==='striking';
     return !!this.equipped&&!!AIMING_ITEMS[this.equipped]&&(this.phase==='swing'||this.phase==='place'||(this.useHeld&&this.phase==='idle')); }
   _syncAim(){ this.hand.aiming=this.aimingNow; }
   quick(id){ // pílula sem precisar equipar (tecla Q)
-    if(id!=='pills') return;
+    if(id!=='pills'||this._debugBlocked()) return;
     if(this.inv.count('pills')<=0){ this.g.ui.msg('Nenhuma pílula.',1.3); return; }
     this.inv.take('pills'); this.player.restoreStamina(); this.g.audio.pill(); this.g.ui.msg('O tremor nas mãos passa.',2);
   }
@@ -160,14 +170,14 @@ class ItemSystem{
   }
   // VR: prego encostado na parede (detectado pelo VRPlayer) — mesma colocação do botão, sem o clique
   place(tg,side='right'){
-    const hand=side==='left'?this.left:this;
+    const hand=side==='left'?this.left:this; if(this._debugBlocked()) return false;
     if(hand.phase!=='idle'||hand.equipped!=='nails'||!tg||!tg.valid||this.inv.count('nails')<=0) return false;
     hand.pending=tg; hand._start('place'); return true;
   }
   // VR: frasco levado à boca (detectado pelo VRPlayer) — mesmo consumo do botão: animação, uma pílula, cura das mãos
-  consume(side='right'){ const hand=side==='left'?this.left:this; if(hand.phase!=='idle'||hand.equipped!=='pills'||this.inv.count('pills')<=0) return false; hand._start('consume'); return true; }
+  consume(side='right'){ const hand=side==='left'?this.left:this; if(this._debugBlocked()||hand.phase!=='idle'||hand.equipped!=='pills'||this.inv.count('pills')<=0) return false; hand._start('consume'); return true; }
   // VR: pancada física do martelo (num prego ou numa parede quebrável, detectada pelo VRPlayer) — mesmo efeito do golpe, sem a animação
-  strike(tg,side='right'){ const hand=side==='left'?this.left:this; if(hand.phase!=='idle'||hand.equipped!=='hammer') return false; hand._hammerHit(tg); return hand.landed; }
+  strike(tg,side='right'){ const hand=side==='left'?this.left:this; if(this._debugBlocked()||hand.phase!=='idle'||hand.equipped!=='hammer') return false; hand._hammerHit(tg); return hand.landed; }
   update(dt){ if(this.handIndex===1&&this.left) this.left._updateLocal(dt); this._updateLocal(dt); }
   _updateLocal(dt){
     if(this.phase==='empty'){ this._canon.visible=false; this.pose.visible=false; this.hand.aiming=false; return; }

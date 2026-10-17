@@ -117,6 +117,7 @@ class UIManager{
     [['Altura',r.breakdown.height],['Marcos',r.breakdown.checkpoints],['Destinos',r.breakdown.puzzle||0],['Segredos',r.breakdown.secrets||0],['Velocidade',r.breakdown.speed],['Desempenho',r.breakdown.performance],['Penalidades',-r.breakdown.penalties]]
       .forEach(([k,v])=>{ const dt=document.createElement('dt'); dt.textContent=k; const dd=document.createElement('dd'); dd.textContent=(v<0?'−':'')+fmtInt(Math.abs(v)); br.append(dt,dd); });
     this.$('resSaved').textContent=''; const b=this.$('btnSave'); b.disabled=false; b.textContent='Salvar pontuação';
+    if(r.assisted||r.competitiveEligible===false){ b.disabled=true; b.textContent='Não competitiva'; this.$('resSaved').textContent=ASSISTED_RUN_MSG; }   // debug: score só diagnóstico
     this.show('result');
   }
   // ---------- cinematic ----------
@@ -585,6 +586,8 @@ class UIManager{
     this.$('timeN').textContent=fmtTime(gs.time);
     this.$('scoreN').textContent=`${fmtInt(gs.score)} pts`;
     this.$('cpN').textContent=gs.currentCheckpoint?`Último marco: ${gs.currentCheckpoint}`:'';
+    const db=this.$('debugBadge'), dbg=gs.debug, on=!!(dbg&&dbg.assisted), dt=on?(dbg.noclip?'RUN ASSISTIDA · NOCLIP':'RUN ASSISTIDA'):'';   // run de debug: aviso fixo, não só um toast
+    if(db.hidden===on) db.hidden=!on; if(db.textContent!==dt) db.textContent=dt;
     if(gs.checkpointJustCollected){ const c=gs.checkpointJustCollected; this.toast(c.optional?'Rota arriscada':'Marco alcançado',`${c.label}  +${c.bonus}`); }
     this.setReticle(look.reticle);
     player.hands.forEach((h,i)=>{

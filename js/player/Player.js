@@ -79,6 +79,17 @@ class Player{
     this.viewmodelVisible=true;
     this.windAir=null; this.windG=0; this.windLevel=0; this.windFan=null; this.windF.set(0,0,0);
   }
+  // Descontinuidade de debug: cancelar intenção/âncoras, nunca resetar recursos ou métricas da run.
+  clearDebugTransient(){
+    for(const h of this.hands){h.inContact=false;h.isGrabbing=false;h.anchor=null;h.surface=null;h.pull=0;h.aiming=false;}
+    this.mantle=null;this.press=[null,null];this.point=[false,false];
+    this.pull=this.pullTarget=this.pullIn=this.effort=this.jolt=0;this.pulledNow=false;
+    this.velocity.set(0,0,0);this._prev.copy(this.position);this.grounded=false;this.fellOff=false;this.coyoteT=0;this.landDip=0;this.shake=0;
+    this.windAir=null;this.windG=this.windLevel=0;this.windFan=null;this.windF.set(0,0,0);
+    this._normalMotion=[];this._normalVelocity.set(0,0,0);this._normalClimbOffset.set(0,0,0);this._normalClimbPull=0;this._normalPullDriven=false;
+    this._bob=0;this._vmT=0;
+    this.handModels.forEach(hm=>{hm.vmLocal=new V3(hm.side*.22,-.22,-.36);hm.wasContact=false;});
+  }
   // ---------- estado derivado ----------
   get maxStamina(){ return this.attributes.effective.maxStamina; }
   get stamina(){ return clamp(Math.min(this.leftHand.stamina,this.rightHand.stamina),0,this.maxStamina); }
@@ -127,7 +138,7 @@ class Player{
   // pendurado numa borda, mas baixo demais para subir: a UI sugere puxar
   get needsPull(){ return this.isHanging&&!this.mantle&&this.pull<PULL_MANTLE&&this.hands.some(h=>h.inContact&&h.surface.userData.plat); }
   setGrab(i,down){
-    const h=this.hands[i]; if(!h||this.dead) return;
+    const h=this.hands[i]; if(!h||this.dead||(down&&this.debugFrozen)) return;   // voo de debug: nenhum agarre novo
     h.isGrabbing=down;
     if(!down&&h.inContact) this._release(h);
     if(down&&!h.inContact) this._tryGrab(h);
@@ -179,7 +190,7 @@ class Player{
     this.emit('mantle');
   }
   jump(input={x:0,y:0}){
-    if(this.dead||this.mantle) return;
+    if(this.dead||this.mantle||this.debugFrozen) return;
     const attributes=this.attributes.effective;
     const held=this.hands.filter(h=>h.inContact);
     if(held.length){
