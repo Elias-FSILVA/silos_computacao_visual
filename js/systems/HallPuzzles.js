@@ -33,13 +33,13 @@ class HallPuzzle{
   // zonas que contam como "dentro" (a sala, os braços, o duto e as salas-filhas)
   insideZones(){ const R=this.room, w=this.g.world, kids=(R.children||[]).map(id=>w.puzzleRooms[id]).filter(Boolean);
     return [R.zoneRoom,...(R.zones||[]),R.zoneDuct,...kids.flatMap(k=>[k.zoneRoom,...(k.zones||[])])].filter(Boolean); }
+  presenceAt(pos){const R=this.room;return {inHall:inBox(pos,R.zoneRoom)&&(R.triggerZ==null||pos.z<R.triggerZ),inside:this.insideZones().some(z=>inBox(pos,z))};}
   update(dt){
     this.t+=dt; const g=this.g, R=this.room, pos=g.player.position;
     if(R.parent){ if(this.logic.update) this.logic.update(dt); return; }    // sala-filha: a mãe cuida da massa
-    const inHall=inBox(pos,R.zoneRoom)&&(R.triggerZ==null||pos.z<R.triggerZ);
-    const inside=this.insideZones().some(z=>inBox(pos,z));
+    const seen=(g.presence&&g.presence.read('hall:'+this.id))||this.presenceAt(pos),{inHall,inside}=seen;
     if(this.phase==='idle'){
-      if(inHall&&!this.solved){ this.phase='inside'; g.mass.setHold(R.cap,Math.max(.6,(R.cap-g.mass.y)/3.5)); }
+      if(inHall&&!seen.$protected&&!this.solved){ this.phase='inside'; g.mass.setHold(R.cap,Math.max(.6,(R.cap-g.mass.y)/3.5)); }
     } else if(this.phase==='inside'){
       if(!inside){ this.phase=this.solved?'done':'idle'; g.mass.releaseHold(); }
     }
@@ -222,11 +222,12 @@ class HubLogic{
       return ` Dica: ligue só ${sol.join(' e ')} e depois feche o barramento.`; }
     return '';
   }
+  presenceAt(pos){const z=this.p.room.zones&&this.p.room.zones[0];return {powerEntry:!!z&&inBox(pos,z)};}
   update(){
     if(this._wasLocked&&!this.locked) this._show('REARMADO'); this._wasLocked=this.locked;
     // primeira vez na Casa de Força sem energia: diz o objetivo e onde está a regra
-    const z=this.p.room.zones&&this.p.room.zones[0];
-    if(!this.entered&&!this.power&&z&&inBox(this.p.g.player.position,z)){ this.entered=true;
+    const g=this.p.g,seen=(g.presence&&g.presence.read('hub:'+this.p.id+':power-entry'))||this.presenceAt(g.player.position);
+    if(!this.entered&&!this.power&&!seen.$protected&&seen.powerEntry){ this.entered=true;
       this.p.msg(`Casa de Força sem energia. Para religar a luz e o elevador: ligue geradores que somem ${POWER.demand} MW (sem dois vizinhos) e feche o barramento. O quadro ao lado da porta explica.`,8); }
   }
 }

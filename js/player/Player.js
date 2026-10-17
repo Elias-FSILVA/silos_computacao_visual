@@ -62,6 +62,7 @@ class Player{
   on(t,f){ (this.listeners[t]=this.listeners[t]||[]).push(f); }
   emit(t,d){ (this.listeners[t]||[]).forEach(f=>f(d)); }
   reset(){
+    this._normalMotion=[]; this._normalVelocity=new V3(); this._normalClimbOffset=new V3(); this._normalClimbPull=0; this._normalPullDriven=false;
     this.attributes.clearPerks();
     const w=this.world;
     this.position.copy(w.spawnPoint); this.velocity.set(0,0,0); this._prev.copy(this.position);
@@ -101,8 +102,21 @@ class Player{
   stepBy(d){
     if(this.dead||this.mantle||!this.grounded||this.isClimbing) return false;
     this._prev.copy(this.position); this.position.add(d);
+    const proposed=this.trackNormalMotion?this.position.clone():null;
     const vy=this.velocity.y; this.velocity.y=0; this._collide(false); this.velocity.y=vy;
+    if(proposed)this._normalResolved(proposed,d);
     return true;
+  }
+  // Evidência de locomoção, não delta de câmera/input. Semântica física permanece no caminho original.
+  consumeNormalMotion(){const segments=this._normalMotion||[];this._normalMotion=[];return {segments};}
+  _normalSegment(from,to){if(this.trackNormalMotion&&from.distanceToSquared(to)>1e-12)this._normalMotion.push({from:from.clone(),to:to.clone(),source:'normal'});}
+  _normalResolved(proposed,control){
+    if(!this.trackNormalMotion||control.lengthSq()<1e-12||this.position.clone().sub(this._prev).dot(control)<=1e-12)return;
+    // Contrafactual: a mesma colisão, sem a contribuição locomotora demonstrada. Vento/gravidade ficam nos dois lados.
+    const passive=proposed.clone().sub(control),vel=this.velocity.clone();
+    collideBody(this.world.platforms,passive,vel,this._prev,this._colOpt);
+    passive.x=clamp(passive.x,-SILO_R,SILO_R);passive.z=clamp(passive.z,-SILO_R,SILO_R);
+    this._normalSegment(passive,this.position);
   }
   // conflito de entrada: durante um uso ativo que mira, o mouse mira e não puxa
   // em VR a mira é do controle, então o braço puxa mesmo durante o uso
@@ -179,8 +193,9 @@ class Player{
       _mv.set(0,0,0).addScaledVector(_f,input.y).addScaledVector(_r,input.x); if(_mv.lengthSq()>1) _mv.normalize();
       held.forEach(h=>{ h.stamina-=attributes.wallJumpStaminaCost; this._release(h); h.cooldown=.22; });
       this.velocity.set(_mv.x*PLAYER_PHYSICS.wallJumpControl,attributes.wallJumpSpeed,_mv.z*PLAYER_PHYSICS.wallJumpControl);
+      if(this.trackNormalMotion)this._normalVelocity.copy(this.velocity);
       this.grounded=false; this.coyoteT=0; this.stats.recordJump(true); this.emit('walljump');
-    } else if(this.grounded||this.coyoteT>0){ this.velocity.y=attributes.jumpSpeed; this.grounded=false; this.coyoteT=0; this.stats.recordJump(); this.emit('jump'); }
+    } else if(this.grounded||this.coyoteT>0){ this.velocity.y=attributes.jumpSpeed; if(this.trackNormalMotion)this._normalVelocity.y=attributes.jumpSpeed; this.grounded=false; this.coyoteT=0; this.stats.recordJump(); this.emit('jump'); }
   }
   restoreStamina(){ this.hands.forEach(h=>{ h.stamina=this.maxStamina; h.exhausted=false; }); this.stats.pillsUsed++; }
   die(reason){
@@ -252,6 +267,7 @@ class Player{
   // nem ao agarrar algo na altura do rosto (o corpo depois cede sozinho se não houver esforço).
   _fitPull(){
     const held=this.hands.filter(h=>h.inContact); if(!held.length) return;
+    if(this.trackNormalMotion){this._normalVelocity.set(0,0,0);this._normalClimbOffset.set(0,0,0);this._normalClimbPull=0;this._normalPullDriven=false;}
     let base=0, span=0;
     for(const h of held){ const [hang,pulled]=Player._span(h); base+=h.point.y-hang; span+=hang-pulled; }
     base/=held.length; span/=held.length; if(held.length===1) base-=.12;
@@ -313,7 +329,9 @@ class Player{
   }
   _mantle(dt){
     const m=this.mantle; m.t+=dt/.45; const k=Math.min(1,m.t), e=smooth(k);
+    const normalFrom=this.trackNormalMotion?this.position.clone():null;
     this.position.lerpVectors(m.from,m.to,e); this.position.y+=Math.sin(k*Math.PI)*.2;
+    if(normalFrom)this._normalSegment(normalFrom,this.position);
     if(k>=1){ this.mantle=null; this.velocity.set(0,0,0); this.grounded=true; }
   }
   _free(dt,input){
@@ -322,19 +340,28 @@ class Player{
     const v=this.velocity;
     if(this.grounded){ const k=Math.min(1,dt*12); v.x+=(_mv.x*3.4-v.x)*k; v.z+=(_mv.z*3.4-v.z)*k; }
     else { v.x+=_mv.x*PLAYER_PHYSICS.airControl*dt; v.z+=_mv.z*PLAYER_PHYSICS.airControl*dt; v.x*=1-.10*dt; v.z*=1-.10*dt; }
+    if(this.trackNormalMotion){
+      const n=this._normalVelocity;
+      if(this.grounded){const k=Math.min(1,dt*12);n.x+=(_mv.x*3.4-n.x)*k;n.z+=(_mv.z*3.4-n.z)*k;}
+      else {n.x=(n.x+_mv.x*PLAYER_PHYSICS.airControl*dt)*(1-.10*dt);n.z=(n.z+_mv.z*PLAYER_PHYSICS.airControl*dt)*(1-.10*dt);}
+    }
     // vento: acelera rumo à velocidade do ar ao longo do fluxo (o arrasto cresce com a força do fluxo: g)
     const a=this.windAir;
     if(a){ const u=a.length(); if(u>1e-4){ const nx=a.x/u, ny=a.y/u, nz=a.z/u, vn=v.x*nx+v.y*ny+v.z*nz, g=this.windG;
       v.x+=WIND_K*(a.x-g*vn*nx)*dt; v.y+=WIND_K*(a.y-g*vn*ny)*dt; v.z+=WIND_K*(a.z-g*vn*nz)*dt; } }
     v.y-=this.attributes.effective.gravity*dt;
+    if(this.trackNormalMotion&&a){const u=a.length();if(u>1e-4){const axis=a.clone().divideScalar(u),n=this._normalVelocity;n.addScaledVector(axis,-WIND_K*this.windG*n.dot(axis)*dt);}}
     this.position.addScaledVector(v,dt);
+    const proposed=this.trackNormalMotion?this.position.clone():null;
     this._collide(true);
+    if(proposed){this._normalResolved(proposed,this._normalVelocity.clone().multiplyScalar(dt));for(const k of ['x','y','z'])if(Math.abs(this.velocity[k])<1e-8)this._normalVelocity[k]=0;}
+
   }
   _climb(dt,input,held){
     // fluxo forte demais: arranca as mãos (o corpo segue com o ar no quadro seguinte)
     const wf=this.windF.length();
     if(wf>WIND_TEAR){ held.forEach(h=>{ this._dislodge(h); this._release(h); h.cooldown=.6; }); this.emit('windTear'); this._free(dt,input); return; }
-    const eye=this.eyePos(_e), tgt=_t.set(0,0,0);
+    const eye=this.eyePos(_e), tgt=_t.set(0,0,0),normalPullBefore=this.pull,commandedPull=this.pullIn>0;
     this._pullUp(dt,held);
     for(const h of held) tgt.add(this._anchor(h,eye));
     tgt.divideScalar(held.length);
@@ -347,12 +374,41 @@ class Player{
     const K=held.length===2?55:38, D=2*Math.sqrt(K)*.62, v=this.velocity;
     v.x+=((tgt.x-eye.x)*K-v.x*D)*dt; v.y+=((tgt.y-eye.y)*K-v.y*D)*dt; v.z+=((tgt.z-eye.z)*K-v.z*D)*dt;
     eye.addScaledVector(v,dt);
+    // Snapshot somente para proveniência, antes da projeção não linear do braço.
+    const normalProposed=this.trackNormalMotion?{eye:eye.clone(),velocity:v.clone()}:null;
     for(const h of held){
       _d.subVectors(eye,h.point); const L=_d.length();
       if(L>1.15){ _d.multiplyScalar(1/L); eye.copy(h.point).addScaledVector(_d,1.15); const vr=v.dot(_d); if(vr>0) v.addScaledVector(_d,-vr); }
     }
     this.position.set(eye.x,eye.y-EYE,eye.z);
     this._collide(false);
+    if(normalProposed){
+      const n=this._normalVelocity,offset=this._normalClimbOffset;
+      // Diferença entre a mola física e a contrafactual sem comandos voluntários.
+      // O offset é histórico; sua derivada sozinha não atravessa corretamente tether/colisão.
+      n.multiplyScalar(Math.max(0,1-D*dt));n.addScaledVector(offset,-K*dt);
+      const right=new V3(Math.cos(this.yaw),0,-Math.sin(this.yaw));
+      n.addScaledVector(right,input.x*.32*K*dt);
+      if(commandedPull&&held.some(h=>h.isGrabbing))this._normalPullDriven=true;
+      if(this._normalPullDriven)this._normalClimbPull=Math.max(0,this._normalClimbPull+this.pull-normalPullBefore);
+      const span=held.reduce((sum,h)=>{const [a,b]=Player._span(h);return sum+a-b;},0)/held.length;
+      n.y+=this._normalClimbPull*span*K*dt;
+      const passiveEye=normalProposed.eye.sub(offset).addScaledVector(n,-dt);
+      const passiveVelocity=normalProposed.velocity.sub(n);
+      // Resolver o contrafactual pela MESMA restrição, sem tocar no estado físico.
+      for(const h of held){
+        const d=passiveEye.clone().sub(h.point),length=d.length();
+        if(length>1.15){d.divideScalar(length);passiveEye.copy(h.point).addScaledVector(d,1.15);const vr=passiveVelocity.dot(d);if(vr>0)passiveVelocity.addScaledVector(d,-vr);}
+      }
+      const passive=passiveEye;passive.y-=EYE;
+      const passivePrev=this._prev.clone().sub(offset);
+      collideBody(this.world.platforms,passive,passiveVelocity,passivePrev,this._colOpt);
+      passive.x=clamp(passive.x,-SILO_R,SILO_R);passive.z=clamp(passive.z,-SILO_R,SILO_R);
+      const nextOffset=this.position.clone().sub(passive),control=nextOffset.clone().sub(offset);
+      n.copy(this.velocity).sub(passiveVelocity);offset.copy(nextOffset);
+      if(control.lengthSq()>1e-12&&this.position.clone().sub(this._prev).dot(control)>1e-12)this._normalSegment(this.position.clone().sub(control),this.position);
+    }
+
     // pegada: custo base + esforço de puxar; com os braços no limite, a pegada escorrega depressa
     const base=held.length===2?3:(this.lockOff?6:9), crit=clamp((this.pullFatigue-FATIGUE_CRIT)/(1-FATIGUE_CRIT),0,1);
     for(const h of held){

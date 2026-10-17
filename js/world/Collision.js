@@ -160,3 +160,40 @@ function collideBody(plats,p,v,prev,o){
   if(o&&o.guard) o.guard(p,prev,v);
   return {landed,landVy};
 }
+
+// Consultas não mutantes usadas pela navegação de desenvolvimento. Não alteram o resolvedor normal.
+function _segmentDistance2D(x,z,ax,az,bx,bz){
+  const dx=bx-ax,dz=bz-az,den=dx*dx+dz*dz,t=den?clamp(((x-ax)*dx+(z-az)*dz)/den,0,1):0;
+  return Math.hypot(x-ax-dx*t,z-az-dz*t);
+}
+function _arcBoundaryDistance(A,x,z){
+  const dx=x-A.cx,dz=z-A.cz,r=Math.hypot(dx,dz),th=Math.atan2(dz,dx),insideAngle=A.span>=TAU-1e-8||wrap2(th-A.a0)<=A.span;
+  let d=Infinity;
+  for(const radius of [A.r0,A.r1]){
+    if(radius===0) continue;
+    if(insideAngle) d=Math.min(d,Math.abs(r-radius));
+    else for(const a of [A.a0,A.a0+A.span]) d=Math.min(d,Math.hypot(dx-radius*Math.cos(a),dz-radius*Math.sin(a)));
+  }
+  if(A.span<TAU-1e-8) for(const a of [A.a0,A.a0+A.span]) d=Math.min(d,_segmentDistance2D(dx,dz,A.r0*Math.cos(a),A.r0*Math.sin(a),A.r1*Math.cos(a),A.r1*Math.sin(a)));
+  return d;
+}
+function solidCircleOverlap(b,x,z,radius=RAD){
+  if(b.arc) return solidInXZ(b,x,z,0)||_arcBoundaryDistance(b.arc,x,z)<radius-1e-6;
+  let lx=x,lz=z,x0=b.minX,x1=b.maxX,z0=b.minZ,z1=b.maxZ;
+  if(b.obb){const O=b.obb,dx=x-O.cx,dz=z-O.cz;lx=dx*O.c+dz*O.s;lz=-dx*O.s+dz*O.c;x0=-O.hx;x1=O.hx;z0=-O.hz;z1=O.hz;}
+  return Math.hypot(lx-clamp(lx,x0,x1),lz-clamp(lz,z0,z1))<radius-1e-6;
+}
+function solidSupportsCircle(b,x,z,radius=RAD){
+  if(!solidInXZ(b,x,z,0)) return false;
+  if(b.arc) return _arcBoundaryDistance(b.arc,x,z)>=radius-1e-3;
+  if(b.obb){ const O=b.obb,dx=x-O.cx,dz=z-O.cz;return O.hx-Math.abs(dx*O.c+dz*O.s)>=radius-1e-3&&O.hz-Math.abs(-dx*O.s+dz*O.c)>=radius-1e-3; }
+  return Math.min(x-b.minX,b.maxX-x,z-b.minZ,b.maxZ-z)>=radius-1e-3;
+}
+function bodyObstaclesAt(world,p){
+  return world.platforms.filter(b=>p.y<b.top-1e-3&&p.y+BODY_H>solidBottom(b)+1e-3&&solidCircleOverlap(b,p.x,p.z));
+}
+function bodyClearAt(world,p){
+  if(!p||![p.x,p.y,p.z].every(Number.isFinite))return {ok:false,reason:'Coordenadas inválidas'};
+  const hit=bodyObstaclesAt(world,p)[0];
+  return hit?{ok:false,reason:'Corpo intersecta geometria'}:{ok:true,reason:''};
+}

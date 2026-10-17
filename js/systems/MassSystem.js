@@ -22,7 +22,8 @@ class MassSystem{
   get contained(){ return !!(this.hold&&!this.hold.breach); }
   update(dt,elapsed,player){
     let ev=null;
-    if(!this.active&&(player.position.y>1.6||elapsed>18)){ this.active=true; ev='activated'; }
+    const seen=this.presence&&this.presence.read('mass:height');
+    if(!this.active&&((seen?seen.above&&!seen.$protected:player.position.y>1.6)||elapsed>18)){ this.active=true; ev='activated'; }
     if(this.active&&this.hold){
       const h=this.hold; if(this.y<h.cap) this.y=Math.min(h.cap,this.y+Math.max(.3,h.surge)*dt); else this.y=h.cap;
       this.speed=0; this.riseTime+=dt;

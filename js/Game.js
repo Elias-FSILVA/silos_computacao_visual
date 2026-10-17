@@ -477,6 +477,7 @@ class Game{
     if(this.vr.active){ this.vr.update(dt); if(this.state!=='play') return; input=this.vr.input; }
     this.world.update(dt,this.player);
     this.player.update(dt,input);
+    if(this.presence)this.presence.update(this.player.consumeNormalMotion());
     this._windFx(dt);
     this.items.update(dt); this.fx.update(dt);
     this.timer.update(dt);

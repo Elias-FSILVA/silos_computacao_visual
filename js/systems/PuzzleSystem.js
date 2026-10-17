@@ -74,13 +74,15 @@ class ContainmentPuzzle{
     s.tex.needsUpdate=true;
   }
   // ---------- atualização ----------
+  presenceAt(pos){const R=this.room;return {inRoom:inBox(pos,R.zoneRoom),inDuctHigh:inBox(pos,R.zoneDuct)&&pos.y>this.H+3.2};}
   update(dt){
     const g=this.g, p=g.player, R=this.room, pos=p.position;
+    const seen=(g.presence&&g.presence.read('containment:'+this.id))||this.presenceAt(pos);
     // luminárias da sala: uma pisca, a outra nunca falha (parte da pista)
     this.lampT+=dt; const fl=(Math.sin(this.lampT*17)+Math.sin(this.lampT*5.3)>.5)?.1:1;
     R.lampFlicker.light.intensity=1.0*fl; R.lampFlicker.mat.color.setRGB(.25+.75*fl,.24+.71*fl,.2+.58*fl);
     if(this.flash&&this.flash.t<99){ this.flash.t-=dt; if(this.flash.t<=0){ this.flash=null; this._screen(); } }
-    if(this.phase==='idle'){ if(inBox(pos,R.zoneRoom)) this._trigger(); return; }
+    if(this.phase==='idle'){ if(!seen.$protected&&seen.inRoom) this._trigger(); return; }
     this.t+=dt;
     // alarme pulsando
     if(!this.solved){ const k=(Math.sin(this.t*(this.failed?9:5))+1)/2; R.alarm.light.intensity=.4+k*1.6; R.alarm.mat.color.setRGB(.25+.7*k,.03,.02); }
@@ -107,7 +109,7 @@ class ContainmentPuzzle{
         break; }
       case 'open': {
         this._booms(dt);
-        if(inBox(pos,R.zoneDuct)&&pos.y>this.H+3.2){ this.phase='sealing'; this.t=0; g.audio.motor(2); }
+        if(!seen.$protected&&seen.inDuctHigh){ this.phase='sealing'; this.t=0; g.audio.motor(2); }
         break; }
       case 'sealing': {
         const k=Math.min(1,this.t/2); this._setDoor(R.exit,lerp(R.exit.openY,R.exit.closedY,smooth(k)));
@@ -126,7 +128,7 @@ class ContainmentPuzzle{
     this.nextBoom-=dt; if(this.nextBoom>0) return;
     const late=!this.solved&&this.timeRemaining<30, failing=this.phase==='failing';
     this.nextBoom=failing?1.3+Math.random()*.6:late?3+Math.random()*2:7+Math.random()*5;
-    const d=this.room.entry, near=inBox(g.player.position,this.room.zoneRoom);
+    const d=this.room.entry, seen=(g.presence&&g.presence.read('containment:'+this.id))||this.presenceAt(g.player.position),near=seen.inRoom;
     g.audio.thump(near?1:.45); if(near) g.player.addShake(failing?.45:.3);
     this._setDoor(d,d.y+(Math.random()*.03)); setTimeout(()=>{ if(this.phase!=='breached') this._setDoor(d,d.closedY+(failing?.08:0)); },90);
     g.fx.spawn('dust',this.room.doorTop,new V3(0,-.2,-1),5);
@@ -154,13 +156,14 @@ class MazePuzzle{
     this.requiredActions=['exit']; this.completedActions=[]; this.phase='idle'; this.t=0;
   }
   get timeLeft(){ return null; }
+  presenceAt(pos){const R=this.room;return {inRoom:inBox(pos,R.zoneRoom)&&pos.z<R.triggerZ,inRoomVolume:inBox(pos,R.zoneRoom),inDuct:inBox(pos,R.zoneDuct),canSolve:inBox(pos,R.zoneExit)&&pos.y>R.baseY+1.5};}
   update(dt){
-    const g=this.g, R=this.room, pos=g.player.position, inRoom=inBox(pos,R.zoneRoom)&&pos.z<R.triggerZ;
+    const g=this.g, R=this.room, pos=g.player.position,seen=(g.presence&&g.presence.read('maze:'+this.id))||this.presenceAt(pos),{inRoom}=seen;
     if(this.phase==='idle'){
-      if(inRoom&&!this.solved){ this.phase='inside'; const m=g.mass; m.setHold(R.cap,Math.max(.6,(R.cap-m.y)/3.5)); }
+      if(inRoom&&!seen.$protected&&!this.solved){ this.phase='inside'; const m=g.mass; m.setHold(R.cap,Math.max(.6,(R.cap-m.y)/3.5)); }
     } else if(this.phase==='inside'){
-      if(inBox(pos,R.zoneExit)&&pos.y>R.baseY+1.5) this._solve();
-      else if(!inBox(pos,R.zoneRoom)&&!inBox(pos,R.zoneDuct)){ this.phase='idle'; g.mass.releaseHold(); }   // voltou ao poço sem resolver
+      if(!seen.$protected&&seen.canSolve) this._solve();
+      else if(!seen.inRoomVolume&&!seen.inDuct){ this.phase='idle'; g.mass.releaseHold(); }   // voltou ao poço sem resolver
     }
   }
   _solve(){
