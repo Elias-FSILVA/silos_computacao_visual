@@ -43,6 +43,7 @@ Você está no fundo de um silo industrial gigantesco: um cilindro de 400 m de a
 | Interagir | F | gatilho direito |
 | Usar item | botão do mouse da mão que segura o item | gatilho da mão que segura o item |
 | Picareta: cravar / soltar | segurar / soltar o botão daquela mão | segurar / soltar o gatilho (ou pinça) |
+| Estação de melhoria | F; 1/2 seleciona, Enter escolhe, Esc ignora | gatilho direito; selecionar e depois Escolher |
 | Mochila / inventário | Tab, depois 1 a 4 | Y (inventário no pulso) |
 | Guardar item | X (guarda as mãos livres; a picareta cravada fica) | A esquerdo (idem) |
 | Pílula | Q | levar o frasco à boca |
@@ -91,6 +92,13 @@ O `vercel.json` já configura tudo: a Vercel roda `npm ci` e `npm run build` e p
 - Segure o botão (ou o gatilho) para cravar e manter; solte para desprender. O retículo indica se dá para cravar ali. Fixar custa 5 de stamina (× o gasto de pegada dos perks). Pendurada, ela gasta como a mão, mas sem o custo extra da rachadura. A cravada é uma âncora: puxar, mantle e salto agarrado funcionam como com a mão.
 - Exausta, a picareta é arrancada (som de raspão) e só volta a cravar com a mão recuperada. Cravada, ela não pode ser guardada nem trocada ("A picareta está cravada"). A mão com picareta não agarra apoios comuns: guarde para usar a mão nua.
 
+### Estações de melhoria (perks)
+
+- Três estações físicas: **Sala de controle** (76,6 m), **Mezanino** (188,6 m) e **Cabine de guincho** (331 m). Cada uma oferece 2 melhorias com contrapartida, sempre as mesmas para a mesma situação. *Corpo leve* só aparece na última.
+- Uma escolha por estação, no máximo **3 melhorias por subida**. Ignorar não consome a estação. Escolher não restaura stamina.
+- Morte, fim ou reinício da subida limpam as melhorias e liberam as estações; pausa, mochila, console e checkpoints preservam. O console de desenvolvimento pode ativar as 4 para testes (`perks` mostra `n/3`).
+- HUD: um ícone por melhoria ativa perto do retículo; na mochila, a área "Melhorias" mostra benefício e contrapartida. No VR, os ícones ficam no pulso.
+
 ### Referência e escopo desta etapa
 
 [White Knuckle](https://whiteknuckle.net/) é descrito oficialmente como *speed-climbing* com movimento preciso e gestão de recursos. [Relatos da comunidade](https://steamcommunity.com/app/3195790/discussions/0/838377222874139765/) descrevem saltos encadeados entre agarrões: tratar o salto como algo necessariamente raro não é uma reprodução confirmada da referência. Os valores de Silos são ajustes próprios, não parâmetros extraídos daquele jogo.
@@ -104,6 +112,8 @@ node tools/test_player.js     # Player real + vetores/raycast Three.js, sem rend
 for test in tools/test_*.js; do node "$test" || exit 1; done
 npm run build
 ```
+
+Suítes desta etapa: `test_hand_visuals.js` (espelhamento e mãos independentes), `test_climbing_axe.js` (superfícies, inventário, física, estados e VR por mock), `test_axe_routes.js` (faixas e caixas no grafo de alcance) e `test_perk_stations.js` (ofertas, estações no mundo, painel e VR por mock).
 
 Playtest sugerido: agarrado a uma parede, salte sem WASD e confira a subida sem recuo; repita com A/D mirando outra agarra. Alterne mãos, compare com duas mãos apoiadas e teste uma borda antes/depois da puxada. Em Quest, confira A e pinça esquerda com/sem analógico. Testes automáticos não substituem a avaliação de sensação e conforto no headset.
 

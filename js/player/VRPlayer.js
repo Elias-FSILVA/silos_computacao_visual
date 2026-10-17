@@ -155,6 +155,15 @@ class VRPlayer{
         {label:'Tentar de novo',action:()=>g.retry()},
         {label:'Sair do VR',action:()=>this.exit()}]});
   }
+  // estação de melhoria: dois cartões, selecionar e depois Escolher (evita escolha acidental); Ignorar não consome
+  showStation(v){
+    const g=this.g, sel=v.sel, o=sel>=0?v.offers[sel]:null;
+    this._menu({title:v.station.label,text:v.station.ahead,
+      lines:[...(o?[['+',o.benefit],['−',o.tradeoff]]:[['','Selecione uma melhoria']]),['Ativas',`${v.count}/${v.max}`]],
+      buttons:[...v.offers.map((c,i)=>({label:`${sel===i?'▶ ':''}${i+1} · ${c.name}`,action:()=>g.selectStationOffer(i)})),
+        {label:o?`Escolher: ${o.name}`:'Escolher',disabled:!o,action:()=>g.confirmStation()},
+        {label:'Ignorar',action:()=>g.closeStation()}]});
+  }
   _menu(spec){ this.menu.show(spec,this.rig,this.camera); }
   closeMenu(){ this.menu.close(); this.pointer.scale.set(1,1,1); }
   // fade/texto da IntroCinematic (a câmera fica parada em VR)

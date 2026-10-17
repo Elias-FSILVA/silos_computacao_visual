@@ -134,3 +134,11 @@ body.inv-open #reticle, body.inv-open #prompt, body.inv-open #inv{ visibility:hi
   #packVeil,#pack,#packWrap .ps.flash{ animation:none; }
   #packWrap .ps,#packWrap .ps.store,#packWrap .ps.quick{ transition:none; }
 }
+/* mochila: melhorias ativas (nome, benefício, contrapartida) */
+#packPerks{ position:absolute; top:50%; right:calc(50% + var(--pk)*.5 + 20px); transform:translateY(-50%); width:min(240px,22vw);
+  display:flex; flex-direction:column; gap:8px; font-family:"Barlow Condensed",sans-serif; }
+#packPerks .hn{ font-family:"Big Shoulders Stencil Display",Impact,sans-serif; font-weight:800; font-size:26px; color:var(--sodium); }
+#packPerks .perk-row{ display:grid; grid-template-columns:22px 1fr; column-gap:6px; font-size:15px; color:var(--dust); }
+#packPerks .perk-svg{ width:20px; height:20px; color:var(--bone); grid-row:span 3; }
+#packPerks .pn{ font-size:18px; color:var(--bone); }
+#packPerks .pb{ color:#9fd28a; } #packPerks .pt{ color:#e48b78; }

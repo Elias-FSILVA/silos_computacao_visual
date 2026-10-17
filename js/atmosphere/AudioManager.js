@@ -83,6 +83,7 @@ class AudioManager{
   // picareta: crava (impacto seco), ricocheteia (tilintar metálico), solta/arranca (raspão)
   axeBite(){ this.noise(.09,900,.35,'lowpass'); this.tone(120,.12,.18,'square',70); this.noise(.04,3200,.08); }
   axeTink(){ this.tone(2600,.18,.05,'triangle'); this.tone(3900,.12,.025,'sine',null,.02); }
+  stationConfirm(){ this.tone(520,.12,.06,'triangle'); this.tone(780,.22,.06,'triangle',null,.1); this.noise(.08,2600,.05,'bandpass',1,.1); }
   axeScrape(){ this.noise(.28,1800,.12,'bandpass',1.4); this.tone(300,.2,.04,'sawtooth',140); }
   denied(){ this.tone(180,.2,.08,'square'); this.tone(140,.3,.08,'square',null,.2); }
   granted(){ this.tone(660,.15,.07,'square'); this.tone(990,.3,.07,'square',null,.15); }

@@ -22,9 +22,10 @@ class DevConsole{
       return `Estado: ${game.state}\nPosição: x ${pos.x.toFixed(1)}, y ${pos.y.toFixed(1)}, z ${pos.z.toFixed(1)} · altura ${pos.y.toFixed(1)} m\nStamina: ${hands.map(h=>`${Math.round(h.stamina)}/${p.maxStamina}`).join(' · ')}`;
     }
     if(command==='perks'&&args.length===0){
-      const active=game.player.attributes.activePerks;
-      if(!active.length) return 'Perks ativos: nenhum';
-      return `Perks ativos: ${active.map(id=>`${id} — ${PERK_DEFS[id].name}`).join('; ')}`;
+      const active=game.player.attributes.activePerks, max=(game.stations&&game.stations.max)||3, n=`${active.length}/${max}`;
+      if(!active.length) return `Perks ativos: nenhum (${n})`;
+      const warn=active.length>max?` · aviso: acima do limite das estações (${max}); só o console passa dele`:'';
+      return `Perks ativos (${n}): ${active.map(id=>`${id} — ${PERK_DEFS[id].name}`).join('; ')}${warn}`;
     }
     if(command==='perk'){
       const [action,id,...extra]=args, attrs=game.player.attributes;

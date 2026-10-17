@@ -25,6 +25,7 @@ class Game{
     this.mass=new MassSystem(this.scene);
     this.fx=new FxSystem(this.scene);
     this.items=new ItemSystem(this);
+    this.stations=new PerkStations(this.player.attributes); this.stationOpen=null;   // estações de melhoria (estado da partida)
     this.interaction=new InteractionSystem(this);
     this.puzzles=new PuzzleSystem(this);
     this.timer=new TimerSystem(); this.score=new ScoreSystem(); this.checkpoints=new CheckpointSystem(this.world); this.ranking=new Ranking();
@@ -106,6 +107,7 @@ class Game{
   resetRun(){
     this.world.reset(); this.player.reset(); this.items.reset(); this.mass.reset(); this.timer.reset(); this.score.reset();
     this.fx.clear(); this.puzzles.reset(); this._zones(); this.audio.silence();
+    this.stations.reset(); this.stationOpen=null; this._syncStations();
     this.checkpoints.reset(); this.atmosphere.reset(); this.result=null; this.saved=false; this.savedIndex=-1; this.vt=0;
     this.ui.hideNote(); this.ui.resetPack(); this.keys={}; this.gameBtn={};   // resetPack: fecha a mochila e esquece as posições dos itens
     this.flashOn=null; this.flashAuto=false; this.flashlight.intensity=0;
@@ -187,11 +189,61 @@ class Game{
     }
     this.ui.packKey(e);
   }
+  // ---------- estações de melhoria ----------
+  // abrir congela a partida como a mochila (timer parado, botões soltos, mouse solto); limite/sem opções só avisam
+  openStation(id){
+    if(this.state!=='play'||this.player.dead) return;
+    const c=this.stations.canChoose(id);
+    if(!c.ok){
+      if(c.reason==='used') this.ui.msg('Estação esgotada',1.4);
+      else if(c.reason==='limit') this.ui.msg(`Limite de ${this.stations.max} melhorias por subida atingido.`,2);
+      else this.ui.msg('Nenhuma melhoria disponível aqui.',1.6);
+      if(this.audio.deny) this.audio.deny(); return;
+    }
+    this.state='station'; this.stationOpen={id,sel:-1}; this._lockGuard=performance.now()+400;
+    this.timer.pause(); this.items.releaseUse(); this.gameBtn={}; this.keys={};
+    const v=this.stationView(id); this.ui.hideNote(); this.ui.showStation(v); if(this.vr.active&&this.vr.showStation) this.vr.showStation(v);
+    this.unlock();
+  }
+  // o que o painel mostra (só leitura: PERK_DEFS, atributos efetivos e a prévia de PlayerAttributes)
+  stationView(id){
+    const d=this.stations.defs[id], a=this.player.attributes;
+    return {station:d,sel:this.stationOpen?this.stationOpen.sel:-1,
+      offers:this.stations.offers(id).map(p=>({id:p,name:PERK_DEFS[p].name,benefit:PERK_DEFS[p].benefit,tradeoff:PERK_DEFS[p].tradeoff,preview:a.preview(p)})),
+      active:a.activePerks,count:a.activePerks.length,max:this.stations.max};
+  }
+  selectStationOffer(i){ const o=this.stationOpen; if(!o) return; const n=this.stations.offers(o.id).length; if(i<0||i>=n) return; o.sel=i;
+    const v=this.stationView(o.id); this.ui.showStation(v); if(this.vr.active&&this.vr.showStation) this.vr.showStation(v); }
+  // mouse: 1º clique seleciona; clicar de novo no cartão já selecionado escolhe (teclado continua 1/2 + Enter)
+  confirmStation(){ const o=this.stationOpen; if(!o||o.sel<0) return; const p=this.stations.offers(o.id)[o.sel]; if(p) this.chooseStation(p); }
+  chooseStation(perkId){
+    const o=this.stationOpen; if(!o) return;
+    const r=this.stations.choose(o.id,perkId);
+    if(!r.ok){ if(this.audio.deny) this.audio.deny(); return; }
+    if(this.audio.stationConfirm) this.audio.stationConfirm();
+    this._syncStations(); this.closeStation();
+    this.ui.msg(`${PERK_DEFS[perkId].name}: ${PERK_DEFS[perkId].benefit} · ${PERK_DEFS[perkId].tradeoff}`,3);
+    if(this.ui.flashPerk) this.ui.flashPerk(perkId);
+  }
+  // Ignorar / Esc: fecha sem consumir
+  closeStation(){
+    if(this.state!=='station') return;
+    this.ui.hideStation(); if(this.vr.active&&this.vr.closeMenu) this.vr.closeMenu(); this.stationOpen=null; this.state='play'; this.timer.resume();
+    this._lockGuard=performance.now()+400; this.lock();
+  }
+  // painel aberto: 1/2 selecionam, Enter confirma (dois passos), Esc ignora
+  _stationKey(e){
+    if(['Digit1','Digit2','Enter','NumpadEnter','Escape'].includes(e.code)&&e.preventDefault) e.preventDefault();
+    if(e.repeat) return;
+    if(e.code==='Digit1') this.selectStationOffer(0); else if(e.code==='Digit2') this.selectStationOffer(1);
+    else if(e.code==='Enter'||e.code==='NumpadEnter') this.confirmStation(); else if(e.code==='Escape') this.closeStation();
+  }
+  _syncStations(){ for(const st of ((this.world&&this.world.stations)||[])) st.setUsed(this.stations.isUsed(st.id)); }
   endRun(result){
     if(this.state!=='play') return;
     this.state='ending'; this.result=result; this.timer.finish();
     const breakdown=this.score.finalize(result,this.timer.time,this.player);
-    this.player.attributes.clearPerks();
+    this.player.attributes.clearPerks(); this.stations.reset(); this._syncStations();
     this.player.releaseAll(); this.unlock(); this.ui.hideNote(); this.ui.setPack(false); this.ui.clearMsg();
     this.audio.siren(false);
     if(result==='finish') this.audio.chime(); else this.audio.boom();
@@ -259,6 +311,9 @@ class Game{
     $('btnPauseSettings').onclick=()=>{ this.settingsReturn='pause'; this.ui.show('settings'); };
     $('btnSetBack').onclick=()=>this.ui.show(this.settingsReturn);
     $('btnRanking').onclick=()=>this.showRanking('menu');
+    // painel da estação: clique seleciona o cartão; Escolher confirma; Ignorar fecha sem consumir
+    $('stationPanel').addEventListener('click',e=>{ const b=e.target&&e.target.closest&&e.target.closest('button'); if(!b||this.state!=='station') return;
+      if(b.dataset.i!==undefined) this.clickStationOffer(+b.dataset.i); else if(b.dataset.act==='confirm') this.confirmStation(); else if(b.dataset.act==='ignore') this.closeStation(); });
     const devInput=$('devConsoleInput'),devOutput=$('devConsoleOutput');
     const runDevCommand=()=>{
       const raw=devInput.value.trim(); if(!raw) return;
@@ -341,6 +396,7 @@ class Game{
       if(typing) return;
       if(this.state==='intro'){ if(['Space','Escape','Enter'].includes(e.code)){ e.preventDefault(); this.cinematic.skip(); } return; }
       if(this.state==='inventory'){ this._inventoryKey(e); return; }
+      if(this.state==='station'){ this._stationKey(e); return; }
       // Esc/P retomam (Esc não conta como gesto para o navegador: se ele recusar a captura, a pausa avisa); repetição do teclado não alterna
       if(this.state==='paused'&&(e.code==='Escape'||e.code==='KeyP')&&!this.ui.$('pause').hidden){ if(!e.repeat&&performance.now()-(this.pausedAt||0)>350) this.resume(); return; }
       if(this.state==='spectate'){ this.keys[e.code]=true; this.spectator.key(e); return; }
@@ -389,6 +445,7 @@ class Game{
       else if(this.state==='intro'){ this.cinematic.update(dt); this._ambient(dt,false); }
       else if(this.state==='menu'){ this._menuCam(dt); this._ambient(dt,false); }
       else if(this.state==='inventory'){ this._ambient(dt,false); this.ui.renderPack(this.items,this.player); }
+      else if(this.state==='station') this._ambient(dt,false);
       else if(this.state==='spectate'){ this.spectator.update(dt); this.fx.update(dt); }
       else this._ambient(dt,false);
       this.mass.visual(this.vt);

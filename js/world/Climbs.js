@@ -127,6 +127,7 @@ Object.assign(World.prototype,{
     if(o.terminal){ const p=P(0,.4); this.terminal(p.x,top,p.z,Math.atan2(-Math.cos(c),-Math.sin(c)),o.terminal); }
     if(o.loot){ const p=P(-.9,.6); this.box(p.x,top,p.z,o.loot); }
     if(o.note){ const p=P(.8,.5); this.note(p.x,top,p.z,o.note); }
+    if(o.station){ const p=P(1.6,.4); this.perkStation(p.x,top,p.z,Math.atan2(-Math.cos(c),-Math.sin(c)),o.station); }
     return pd;
   },
   // cano curvo junto à parede, de a0 a a1 na altura y: atravessa-se de lado, pendurado (agarra em qualquer ponto)
@@ -284,6 +285,7 @@ Object.assign(World.prototype,{
     if(sp.loot){ const p=P(-.6,.75); this.box(p.x,T,p.z,sp.loot); }
     if(sp.note){ const p=P(.55,.55); this.note(p.x,T,p.z,sp.note); }
     if(sp.terminal){ const p=P(0,.45); this.terminal(p.x,T,p.z,Math.atan2(-Math.cos(c),-Math.sin(c)),sp.terminal); }
+    if(sp.station){ const p=P(1.05,.4); this.perkStation(p.x,T,p.z,Math.atan2(-Math.cos(c),-Math.sin(c)),sp.station); }
     if(sp.bridge) this._bridge(c,T);
     const wing=WINGS.find(w=>w.after===sp.id); if(wing) this._wingA(c,T,{id:wing.id,finish:wing.finish,dress:(fr,I)=>this._dressWing(wing,fr,I)});
   },
@@ -309,7 +311,7 @@ Object.assign(World.prototype,{
     this._plate(1.62,2.74,69.35,75.6);
     this._pipeRun(1.80,2.78,70.9); this._routeLamp(1.95,73.0,'rusty');
     this._holds([[2.86,71.9],[3.02,75.2]],{crumble:k});
-    this._catwalk(2.90,3.75,76.6,{label:'Sala de controle',id:'cp4',terminal:NOTES[80],loot:{pills:1,nails:2}});
+    this._catwalk(2.90,3.75,76.6,{label:'Sala de controle',id:'cp4',terminal:NOTES[80],loot:{pills:1,nails:2},station:'E1'});
     // viga de lado a lado: sobe-se nela e atravessa-se o poço por cima até a outra parede
     this._holds([[3.80,78.4],[3.95,82.8]],{crumble:k});
     this.beamA(4.05,84.0);
@@ -343,7 +345,7 @@ Object.assign(World.prototype,{
     this._islet(3.80,181.8);
     this._plate(3.60,4.45,182.2,188.3);
     this._rope(3.94,190.2,182.6,{r:3.95}); this._routeLamp(3.72,186.0,'rusty');
-    this._restAt(4.05,188.6,{label:'Mezanino',id:'cp8',note:NOTES[186],loot:{pills:1,nails:3}});
+    this._restAt(4.05,188.6,{label:'Mezanino',id:'cp8',note:NOTES[186],loot:{pills:1,nails:3},station:'E2'});
     this._holds([[4.30,190.4],[4.56,194.4]],{crumble:k});
     this._catwalk(4.56,4.95,195.8,{d:1.0});      // resto da passarela de acesso ao Pátio
     this._holds([[this._opA('p200_in')+TAU,198.6]]);
@@ -388,7 +390,7 @@ Object.assign(World.prototype,{
     this.beamA(-.30,325.4);
     this._rockBand([[-.22,324.0],[-.295,325.5],[-.37,327.0]],{id:'R3',lampSide:-1});   // R3 · rota alternativa curta para a Cabine de guincho
     this._holds([[-.20,327.3],[0,329.6]],{crumble:k});
-    this._restAt(.15,331.0,{label:'Cabine de guincho',id:'cp14',note:NOTES[340],loot:{nails:3}});
+    this._restAt(.15,331.0,{label:'Cabine de guincho',id:'cp14',note:NOTES[340],loot:{nails:3},station:'E3'});
     this._holds([[.42,332.8],[.58,337.6]],{crumble:k});
     this._pipeBridge(.66,2.42,339.4);
     this._catwalk(2.24,2.95,339.4);

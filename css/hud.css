@@ -60,3 +60,11 @@
 
 
 @media (prefers-reduced-motion: reduce){ .hand.critical{ animation:none; } #toast,#msg{ transition:none; } }
+
+/* melhorias ativas: ícones pequenos, sem texto, ao lado das barras de stamina; o novo pisca uma vez */
+#perkHud{ position:absolute; left:50%; top:calc(50% + 34px); transform:translateX(-50%); display:flex; gap:6px; pointer-events:none; }
+#perkHud .perk-ic{ width:18px; height:18px; color:var(--bone); opacity:.6; }
+#perkHud .perk-svg{ width:100%; height:100%; display:block; }
+#perkHud .perk-ic.flash{ animation:perkFlash 1.1s ease-out 1; }
+@keyframes perkFlash{ 0%{ opacity:1; color:var(--sodium); transform:scale(1.5); } 100%{ opacity:.6; transform:scale(1); } }
+@media (prefers-reduced-motion:reduce){ #perkHud .perk-ic.flash{ animation:none; } }

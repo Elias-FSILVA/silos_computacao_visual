@@ -264,7 +264,7 @@ function game(p){
   ctx.setTimeout=fn=>{scheduled.push(fn);};
   Object.assign(g,{player:p,state:'play',timer:new TimerSystem(),score:new ScoreSystem(),playerName:'Teste',keys:{},
     ui:{$:()=>({}),hideNote(){},setPack(){},clearMsg(){},setHUD(){},showResult(){},show(){},hideScreens(){}},
-    audio:{siren(){},chime(){},boom(){},setRumble(){}},items:{use(){},releaseUse(){}},
+    audio:{siren(){},chime(){},boom(){},setRumble(){}},items:{use(){},releaseUse(){}},stations:{reset(){},isUsed:()=>false},
     vr:{active:false,closeMenu(){},busy:false},renderer:{domElement:{}},scheduled});
   g.timer.start();return g;
 }

@@ -102,6 +102,7 @@ class World{
     this.R=mulberry(1987);
     this.root=new THREE.Group(); this.scene.add(this.root);
     this.platforms=[]; this.checkpoints=[]; this.walls=[]; this.grabbables=[]; this.interactables=[]; this.lamps=[]; this.crumbling=[];
+    this.stations=[];   // estações de melhoria (PerkStation), uma por descanso marcado (E1–E3)
     this.animated=[]; this.movers=[]; this.fans=[]; this.secrets=[]; this.puzzleRooms={}; this.puzzleDefs=[];
     this.darkZones=[];   // salas escuras {zone, dark()}: enquanto dark() e o jogador dentro, a lanterna acende sozinha (Game._flashlight)
     this.maze=null; this.mazeScr=null; this._cam=null; this.cutaway=[]; this._routeGuide=null; this._labels=null;
@@ -350,6 +351,18 @@ class World{
     g.position.set(x,y,z); g.rotation.y=face; this.root.add(g);
     const it=new Note(text,true); b.userData={type:'terminal',interactable:it}; s.userData={type:'terminal',interactable:it};
     this.interactables.push(b,s);
+  }
+  // estação de melhoria: gabinete com tela e lâmpada, de frente para `face` (sem sorteio: não mexe no resto do mapa)
+  perkStation(x,y,z,face,id){
+    const g=new THREE.Group(); g.position.set(x,y,z); g.rotation.y=face; this.root.add(g);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(.55,1.0,.32),MAT.metal); body.position.y=.5; g.add(body);
+    const tex=canvasTex(256,128,(c,w,h)=>{ c.fillStyle='#000'; c.fillRect(0,0,w,h); });
+    const screen=new THREE.Mesh(new THREE.PlaneGeometry(.42,.21),new THREE.MeshBasicMaterial({map:tex})); screen.position.set(0,.74,.162); g.add(screen);
+    const lampMat=new THREE.MeshBasicMaterial({color:0xffb04a}), lamp=new THREE.Mesh(new THREE.BoxGeometry(.12,.06,.06),lampMat); lamp.position.set(0,1.05,.05); g.add(lamp);
+    const st=new PerkStation(id,g,lampMat,tex);
+    body.userData={type:'station',interactable:st}; screen.userData={type:'station',interactable:st};
+    this.interactables.push(body,screen); this.stations.push(st);
+    return st;
   }
   // painel quebrável preenchendo uma abertura da parede curva. Por padrão a pista é sutil (o acabamento da parede em volta
   // num tom um pouco mais quente, parafusos, desalinhamento, som oco); com o.mat (ex.: MAT.concreteCracked) a própria

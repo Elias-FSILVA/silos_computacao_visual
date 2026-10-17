@@ -86,6 +86,28 @@ class NailAnchor extends Interactable{
   }
 }
 
+// estação de melhoria (PerkStations): F (ou a interação do VR) abre o painel do jogo; usada, mostra "SEM CARGA"
+class PerkStation extends Interactable{
+  constructor(id,group,lampMat,screenTex){ super(); this.id=id; this.group=group; this.lampMat=lampMat; this.screen=screenTex; this.used=null; this.setUsed(false); }
+  canInteract(){ return {prompt:this.used?'Estação esgotada':'Usar a estação de melhoria',reticle:'pickup'}; }
+  interact(ctx){
+    const g=ctx.game;
+    if(g.stations.isUsed(this.id)){ ctx.ui.msg('Estação esgotada',1.4); if(ctx.audio.deny) ctx.audio.deny(); return; }
+    g.openStation(this.id);
+  }
+  // lâmpada âmbar e tela pronta quando disponível; apagada e "SEM CARGA" depois de usada
+  setUsed(used){
+    if(this.used===used) return; this.used=used;
+    if(this.lampMat&&this.lampMat.color) this.lampMat.color.setHex(used?0x1a1612:0xffb04a);
+    const t=this.screen, u=t&&t.userData; if(!u||!u.ctx) return;
+    const g=u.ctx, w=u.canvas.width, h=u.canvas.height;
+    g.fillStyle=used?'#0d0c0a':'#1d1405'; g.fillRect(0,0,w,h);
+    g.fillStyle=used?'#4a4236':'#ffb04a'; g.font='bold 40px "Barlow Condensed", sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    g.fillText(used?'SEM CARGA':'MELHORIA',w/2,h/2-12);
+    g.font='24px "Barlow Condensed", sans-serif'; g.fillStyle=used?'#3a342b':'#d8a53a'; g.fillText(used?'—':'pronta · F',w/2,h/2+28);
+    t.needsUpdate=true;
+  }
+}
 class Crate extends Interactable{
   constructor(world,body,hinge,loot){ super(); this.world=world; this.body=body; this.hinge=hinge; this.loot=loot; this.opened=false; this.t=0; this.pickups=[]; }
   canInteract(){ return this.opened?null:{prompt:'Abrir a caixa',reticle:'pickup'}; }

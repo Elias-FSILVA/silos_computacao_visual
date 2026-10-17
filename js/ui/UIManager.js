@@ -24,6 +24,18 @@ const ITEM_HINT={
 const PACK_GEO={ R:40, itemD:13, quickD:16 };
 const iconSvg=id=>`<svg viewBox="0 0 32 32" aria-hidden="true"><g fill="currentColor">${ICONS[id]}</g></svg>`;
 
+// rótulos dos atributos que aparecem na prévia da estação
+const PERK_ATTR_LABELS={gravity:'Gravidade',maxStamina:'Stamina máx.',jumpSpeed:'Salto',wallJumpSpeed:'Salto agarrado',wallJumpStaminaCost:'Custo do salto agarrado',
+  reach:'Alcance',tiredReach:'Alcance cansado',gripDrainMultiplier:'Gasto da pegada (×)',groundRecovery:'Recuperação no chão',freeHandRecovery:'Recuperação da mão livre',
+  fatigueGainMultiplier:'Fadiga (×)',fatigueRecoveryMultiplier:'Recuperação da fadiga (×)'};
+// ícones dos perks (SVG por código, currentColor)
+const PERK_ICONS={
+  economical_grip:'<path d="M7 20c0-5 2-8 5-8s5 3 5 8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 12V7M12 12V5M15 12V7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  quick_recovery:'<path d="M12 4v8l5 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 4v4h4" fill="none" stroke="currentColor" stroke-width="2"/>',
+  powerful_launch:'<path d="M12 3l6 7h-4v6h-4v-6H6z" fill="currentColor"/><path d="M8 20h8" stroke="currentColor" stroke-width="2"/>',
+  light_body:'<path d="M12 4c3 3 5 6 5 9a5 5 0 0 1-10 0c0-3 2-6 5-9z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 9v8" stroke="currentColor" stroke-width="1.6"/>'
+};
+function perkIcon(id){ return `<svg class="perk-svg" viewBox="0 0 24 24" aria-hidden="true">${PERK_ICONS[id]||''}</svg>`; }
 class UIManager{
   constructor(){
     this.$=id=>document.getElementById(id);
@@ -128,6 +140,39 @@ class UIManager{
       'hammer-nail':`<circle cx="12" cy="12" r="7" fill="none" stroke="${S}" stroke-width="1.6"/><path d="M12 8.5v7M8.5 12h7" stroke="${S}" stroke-width="1.6"/>`
     }[mode]||'';
     this.$('ring').innerHTML=`<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">${svg}</svg>`;
+  }
+  // ---------- estações de melhoria e perks ativos (só leitura: view do Game, PERK_DEFS, attributes) ----------
+  showStation(v){
+    const P=this.$('stationPanel'), fmt=n=>(Math.round(n*100)/100).toLocaleString('pt-BR');
+    const lines=pv=>pv?Object.keys(pv.after).filter(k=>Math.abs(pv.after[k]-pv.before[k])>1e-9).map(k=>
+      `<li><span>${PERK_ATTR_LABELS[k]||k}</span> <b>${fmt(pv.before[k])} → ${fmt(pv.after[k])}</b></li>`).join(''):'';
+    const cards=v.offers.map((o,i)=>`<button type="button" class="pcard${v.sel===i?' sel':''}" data-i="${i}" aria-pressed="${v.sel===i}">`+
+      `<span class="pk">${i+1}</span>${perkIcon(o.id)}<span class="pn">${o.name}</span>`+
+      `<span class="pb">+ ${o.benefit}</span><span class="pt">− ${o.tradeoff}</span><ul class="pp">${lines(o.preview)}</ul></button>`).join('');
+    const act=v.active.length?v.active.map(id=>`${perkIcon(id)}<span>${PERK_DEFS[id].name}</span>`).join(' · '):'nenhuma';
+    P.innerHTML=`<div class="sp-head"><span class="sp-kicker">Estação de melhoria</span><h2>${v.station.label}</h2><p class="sp-ahead">${v.station.ahead}</p></div>`+
+      `<div class="sp-cards">${cards}</div>`+
+      `<div class="sp-foot"><span class="sp-active">Ativas: ${act} <b>${v.count}/${v.max}</b></span>`+
+      `<button type="button" class="mbtn" data-act="confirm"${v.sel<0?' disabled':''}>Escolher <kbd>Enter</kbd></button>`+
+      `<button type="button" class="mbtn ghost" data-act="ignore">Ignorar <kbd>Esc</kbd></button></div>`+
+      `<p class="sp-legend"><kbd>1</kbd> <kbd>2</kbd> selecionam · <kbd>Enter</kbd> confirma · <kbd>Esc</kbd> ignora (a estação continua disponível)</p>`;
+    P.hidden=false; if(typeof document!=='undefined'&&document.body) document.body.classList.add('station-open');
+  }
+  hideStation(){ const P=this.$('stationPanel'); P.hidden=true; P.innerHTML=''; if(typeof document!=='undefined'&&document.body) document.body.classList.remove('station-open'); }
+  // HUD: um ícone por perk ativo, sem texto; o novo pisca uma vez (flashPerk)
+  renderPerkHud(player){
+    const ids=player.attributes.activePerks, k=ids.join(','); if(this._perkKey===k) return; this._perkKey=k;
+    this.$('perkHud').innerHTML=ids.map(id=>`<span class="perk-ic${this._flashId===id?' flash':''}" title="${PERK_DEFS[id].name}">${perkIcon(id)}</span>`).join('');
+  }
+  flashPerk(id){ this._flashId=id; this._perkKey=null; setTimeout(()=>{ if(this._flashId===id){ this._flashId=null; this._perkKey=null; } },1200); }
+  // mochila: área "Melhorias" com nome, benefício e contrapartida de cada perk ativo
+  renderPackPerks(player){
+    const ids=player.attributes.activePerks, E=this.$('packPerks'), k=ids.join(',');
+    if(this._packPerkKey===k) return; this._packPerkKey=k;
+    if(!ids.length){ E.hidden=true; E.innerHTML=''; return; }
+    E.hidden=false;
+    E.innerHTML='<span class="hn">Melhorias</span>'+ids.map(id=>{ const d=PERK_DEFS[id];
+      return `<div class="perk-row">${perkIcon(id)}<span class="pn">${d.name}</span><span class="pb">+ ${d.benefit}</span><span class="pt">− ${d.tradeoff}</span></div>`; }).join('');
   }
   // ---------- inventário: estado dos slots ----------
   // derivado só de Inventory/ItemSystem/Player (nada é guardado aqui)
@@ -323,6 +368,7 @@ class UIManager{
   }
   renderPack(items,player){
     const pk=this.pk; if(!pk||!this.packOpen) return;
+    this.renderPackPerks(player);
     const inv=items.inv, key=this._slotKey(items,player)+'|'+pk.sel+'|'+(items.equipped||'')+'|'+(player.rightHand.occupied?1:0);
     if(this._packKey===key) return; this._packKey=key;
     if(pk.sel>=0&&!inv.slots[pk.sel]) pk.sel=-1;
@@ -553,6 +599,7 @@ class UIManager{
     if(pr.dataset.k!==look.prompt){ pr.dataset.k=look.prompt||''; pr.textContent='';
       if(look.prompt){ const [k,txt]=look.prompt.split('|'); const kb=document.createElement('kbd'); kb.textContent=k; pr.append(kb,txt); } }
     this.renderInventory(items,player);
+    this.renderPerkHud(player);
     this._announce(items);
     this.$('vig').style.opacity=gs.massDistance!=null?clamp((14-gs.massDistance)/12,0,.85):0;
     // fadiga da puxada: pulsa de leve com o "batimento" quando está crítica

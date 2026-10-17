@@ -23,8 +23,10 @@
   <div id="alt"><span class="n" id="altN">0</span><span class="u">m</span><div id="massN">silêncio abaixo</div></div>
   <div id="run"><div id="timeN">00:00.00</div><div id="scoreN">0 pts</div><div id="cpN"></div></div>
   <div id="reticle"><div class="hand" id="handL"></div><div id="ring"></div><div class="hand" id="handR"></div></div>
+  <div id="perkHud" aria-label="Melhorias ativas"></div>
   <div id="prompt"></div>
   <div id="inv"><div id="slotName"></div><div id="slots" role="list" aria-label="Atalhos de equipamento 1 a 4"></div></div>
+  <div id="stationPanel" role="dialog" aria-modal="true" aria-label="Estação de melhoria" hidden></div>
   <div id="packWrap" hidden>
     <div id="packVeil"></div>
     <div id="pack" role="dialog" aria-label="Inventário">
@@ -34,6 +36,7 @@
       <div id="packStore" role="group" aria-label="Armazenamento: itens no círculo"></div>
       <div id="packQuick" role="group" aria-label="Atalhos de equipamento 1 a 4"></div>
     </div>
+    <div id="packPerks" hidden aria-label="Melhorias ativas"></div>
     <div id="packInfo" aria-live="polite">
       <span id="packPips" aria-hidden="true"></span>
       <span id="packHn" class="hn"></span>
@@ -200,6 +203,7 @@
 <script src="js/player/VRPlayer.js"></script>
 <script src="js/systems/MassSystem.js"></script>
 <script src="js/systems/progress.js"></script>
+<script src="js/systems/PerkStations.js"></script>
 <script src="js/systems/PuzzleSystem.js"></script>
 <script src="js/systems/HallPuzzles.js"></script>
 <script src="js/atmosphere/AtmosphereManager.js"></script>

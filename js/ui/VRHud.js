@@ -88,6 +88,13 @@ class VRHud{
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="96" height="96" style="color:#e8dfc8"><g fill="#e8dfc8">${ICONS[id]}</g></svg>`);
     return null;
   }
+  _perkIcon(id){
+    const k='perk:'+id, c=this.icons[k]; if(c) return c.ready?c.img:null;
+    const img=new Image(), e={img,ready:false}; this.icons[k]=e;
+    img.onload=()=>{ e.ready=true; this.key=''; };
+    img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="72" height="72" style="color:#e8dfc8">${(typeof PERK_ICONS!=='undefined'&&PERK_ICONS[id])||''}</svg>`);
+    return null;
+  }
   update(dt,ui,player,look){
     if(!this.wrist.visible) return;
     this.drawT-=dt; if(this.drawT>0) return; this.drawT=.15;
@@ -95,8 +102,8 @@ class VRHud{
     let prompt='';
     if(look&&look.prompt){ const [k,t]=look.prompt.split('|'); prompt=`${VR_PROMPT_KEYS[k]||k} · ${t}`; }
     const L=[`${$('altN').textContent} m`,$('timeN').textContent,$('massN').textContent,$('slotName').textContent,prompt];
-    const hot=$('massN').classList.contains('hot');
-    const key=L.join('|')+st.join(',')+hot;
+    const hot=$('massN').classList.contains('hot'), perks=player.attributes?player.attributes.activePerks:[];
+    const key=L.join('|')+st.join(',')+hot+'|'+perks.join(',')+'|'+Object.keys(this.icons).length;
     if(key===this.key) return; this.key=key;
     const x=this.canvas.getContext('2d'), W=512, H=320;
     x.clearRect(0,0,W,H); x.fillStyle='rgba(8,7,5,.82)'; x.fillRect(0,0,W,H);
@@ -105,6 +112,8 @@ class VRHud{
     x.font='800 64px "Big Shoulders Stencil Display", sans-serif'; x.fillText(L[0],24,18);
     x.textAlign='right'; x.font='500 40px "Barlow Condensed", sans-serif'; x.fillText(L[1],W-24,30);
     x.textAlign='left'; x.fillStyle=hot?'#ff6a4a':'#bfb6a2'; x.font='500 34px "Barlow Condensed", sans-serif'; x.fillText(L[2],24,100);
+    // melhorias ativas: ícones pequenos abaixo do tempo
+    perks.forEach((id,k)=>{ const img=this._perkIcon(id); if(img) x.drawImage(img,W-24-40*(perks.length-k),82,34,34); });
     // estamina: esquerda | direita
     st.forEach((s,i)=>{ const bx=24+i*236, by=150, bw=216;
       x.fillStyle='rgba(216,207,184,.15)'; x.fillRect(bx,by,bw,22);
