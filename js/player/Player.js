@@ -60,6 +60,7 @@ class Player{
     this.ray=new THREE.Raycaster(); this.listeners={}; this.xr=null;
     this.windF=new V3(); this._colOpt={guard:(p,prev,v)=>{ if(this.world.guard) this.world.guard(p,prev,v); }};
     this.handModels=this.hands.map(h=>new HandModel(h.side)); this.handModels.forEach(hm=>scene.add(hm.root));
+    this.health=new PlayerHealth();   // fonte única do HP (HUD, VR, mãos e console só leem)
     this.reset();
   }
   on(t,f){ (this.listeners[t]=this.listeners[t]||[]).push(f); }
@@ -68,6 +69,7 @@ class Player{
     this._axeContact=[null,null];   // ContactFrame visual da picareta cravada, por mão (AxeContactPose)
     this._normalMotion=[]; this._normalVelocity=new V3(); this._normalClimbOffset=new V3(); this._normalClimbPull=0; this._normalPullDriven=false;
     this.attributes.clearPerks();
+    this.health.reset(); this.handModels.forEach(hm=>{ hm.setWear('healthy',{instant:true}); hm.hurtTremor=0; });
     const w=this.world;
     this.position.copy(w.spawnPoint); this.velocity.set(0,0,0); this._prev.copy(this.position);
     this.yaw=w.spawnYaw; this.pitch=.1;
@@ -216,10 +218,20 @@ class Player{
   restoreStamina(){ this.hands.forEach(h=>{ h.stamina=this.maxStamina; h.exhausted=false; }); this.stats.pillsUsed++; }
   die(reason){
     if(this.dead) return;
+    this.health.zero(reason);
     this.dead=true; this.deathReason=reason; if(reason==='fall'){ this.fellOff=true; this.stats.recordFall(); }
     this.attributes.clearPerks();
     this.releaseAll(); this.emit('death',reason);
   }
+  // única entrada de dano; se zerar, a morte sai pelo die() de sempre
+  damage(amount,source='debug'){
+    if(this.dead) return {applied:0,value:this.health.value,died:false};
+    const r=this.health.damage(amount,{source});
+    if(r.applied>0){ this.emit('damage',{amount:r.applied,source,value:r.value,state:this.health.state}); }
+    if(r.died) this.die(source);
+    return r;
+  }
+  heal(amount,source='debug'){ return this.dead?{applied:0,value:this.health.value}:this.health.heal(amount,{source}); }
   // ---------- mãos ----------
   _tryGrab(h){
     if(h.cooldown>0||h.exhausted||h.occupied||this.mantle||this.dead) return false;
@@ -564,6 +576,7 @@ class Player{
       if(h.inContact&&!hm.wasContact) hm.kick(4);   // tranco ao agarrar
       hm.wasContact=h.inContact;
       const low=Math.max(1-h.stamina/this.maxStamina,this.fatigueFx*.8); hm.tint(low*low*.3);
+      const hs=this.health.state; hm.setWear(hs); hm.hurtTremor=hs==='critical'?HandWear.CRITICAL_TREMOR:0;   // vida: pele e tremor dos dedos
       hm.update(dt);
       // restrição final: ponta da picareta cravada exatamente na âncora física (Hand.point/normal), orientada pela
       // normal e independente da câmera. Só move a raiz visual; nada da física é lido de volta.

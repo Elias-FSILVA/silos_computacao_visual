@@ -11,9 +11,10 @@ const ctx=vm.createContext({THREE,console,performance,Math:Object.assign(Object.
   setBase(){}
   setPose(){}
   tint(value){ this.lastTint=value; }
+  setWear(){}
   update(){}
 }});
-for(const file of ['js/core/utils.js','js/world/Collision.js','js/items/Inventory.js','js/player/perkDefs.js','js/player/PlayerAttributes.js','js/player/PlayerStats.js','js/player/Player.js','js/player/VRPlayer.js','js/Game.js','js/systems/progress.js','js/ui/UIManager.js'])
+for(const file of ['js/core/utils.js','js/world/Collision.js','js/items/Inventory.js','js/player/perkDefs.js','js/player/PlayerAttributes.js','js/player/PlayerStats.js','js/player/PlayerHealth.js','js/player/HandWear.js','js/player/Player.js','js/player/VRPlayer.js','js/Game.js','js/systems/progress.js','js/ui/UIManager.js'])
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),ctx,{filename:file});
 const Player=vm.runInContext('Player',ctx);
 const idle={x:0,y:0};

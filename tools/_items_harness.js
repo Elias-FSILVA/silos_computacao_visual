@@ -9,8 +9,8 @@ module.exports=function harness(extra=[]){
   const ctx=vm.createContext({THREE,console,performance:{now:()=>clock.now},document:{createElement:()=>({width:0,height:0,getContext:()=>noopCtx})},
     Models:{get(){return null},clips(){return []}},NAIL_REACH:1.8,setTimeout:()=>0,Image:class{ set src(v){} },Math:Object.assign(Object.create(Math),{random:()=>.5})});
   const load=f=>vm.runInContext(fs.readFileSync(path.join(ROOT,f),'utf8'),ctx,{filename:f});
-  for(const f of ['js/core/utils.js','js/world/surfaces.js','js/world/Collision.js','js/player/Handedness.js','js/items/climbingAxeAsset.js','js/items/itemDefs.js','js/items/Inventory.js','js/items/ItemSystem.js','js/player/HandModel.js','js/player/AxeContactPose.js',
-    'js/player/perkDefs.js','js/player/PlayerAttributes.js','js/player/PlayerStats.js','js/player/Player.js',...extra]) load(f);
+  for(const f of ['js/core/utils.js','js/world/surfaces.js','js/world/Collision.js','js/player/Handedness.js','js/items/climbingAxeAsset.js','js/items/itemDefs.js','js/items/Inventory.js','js/items/ItemSystem.js','js/player/HandWear.js','js/player/HandModel.js','js/player/AxeContactPose.js',
+    'js/player/perkDefs.js','js/player/PlayerAttributes.js','js/player/PlayerStats.js','js/player/PlayerHealth.js','js/player/Player.js',...extra]) load(f);
   try{ load('js/ui/UIManager.js'); }catch(e){ /* UIManager só é necessário nos testes de interface */ }
   const G=n=>vm.runInContext(n,ctx);
   const audio=new Proxy({calls:[]},{get:(t,k)=>k in t?t[k]:(t[k]=function(){ t.calls.push(k); })});

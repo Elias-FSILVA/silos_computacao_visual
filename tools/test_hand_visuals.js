@@ -13,7 +13,7 @@ const load=f=>vm.runInContext(fs.readFileSync(path.join(ROOT,f),'utf8'),ctx,{fil
 let handednessLoaded=true;
 try{ load('js/player/Handedness.js'); }catch(e){ handednessLoaded=false; }
 for(const f of ['js/core/utils.js','js/items/climbingAxeAsset.js','js/items/itemDefs.js','js/items/Inventory.js']) load(f);
-load('js/items/ItemSystem.js'); load('js/player/HandModel.js'); load('js/Game.js');
+load('js/items/ItemSystem.js'); load('js/player/HandWear.js'); load('js/player/HandModel.js'); load('js/Game.js');
 const G=vm.runInContext('({V3,ITEM_DEFS,HandModel,ItemSystem,Inventory,get Handedness(){ return typeof Handedness!=="undefined"?Handedness:undefined; }})',ctx);
 
 let failures=0,total=0;
@@ -247,7 +247,7 @@ test('montagem espelhada: posição x oposta, rotação (x,−y,−z), escala po
 });
 
 // ---------------------------------------------------------------- viewmodel e VR (Player real)
-for(const f of ['js/world/Collision.js','js/player/perkDefs.js','js/player/PlayerAttributes.js','js/player/PlayerStats.js','js/player/Player.js']) load(f);
+for(const f of ['js/world/Collision.js','js/player/perkDefs.js','js/player/PlayerAttributes.js','js/player/PlayerStats.js','js/player/PlayerHealth.js','js/player/Player.js']) load(f);
 function realPlayer(){
   const Player=vm.runInContext('Player',ctx), cam=new THREE.PerspectiveCamera(), scene=new THREE.Scene(); scene.add(cam);
   const p=new Player(scene,cam,{spawnPoint:new THREE.Vector3(0,5,.5),spawnYaw:0,platforms:[],raycastTargets:[],touch(){}});
@@ -268,6 +268,16 @@ test('viewmodel lê só itemPoses[i] (sem itemPose legado)',()=>{
   it.holsterHand('right'); for(let n=0;n<60;n++) it._updateLocal(1/60);
   p.rightHand.occupied=true; p.itemPoses[1]=undefined; p.itemPose={pos:new THREE.Vector3(),wrist:new THREE.Vector3(1,1,1),base:[1,1,1],roll:0,grip:'fist'};
   p.updateViewmodel(); assert.notEqual(Rh.wrist.rotation.x,1,'itemPose legado ignorado');
+});
+test('vida (Health T3): com 25 HP o socket das duas mãos é igual ao de 100 HP (tremor só nos dedos)',()=>{
+  const run=hp=>{ NOW=0; const p=realPlayer(); p.handModels.forEach(h=>{ h.time=1; }); if(hp<100) p.health.set(hp);
+    const it=itemsFor(p); equip(it,'left','hammer'); equip(it,'right','nails');
+    const out=[], times=[]; for(let k=0;k<60;k++){ NOW+=1000/60; p.updateViewmodel(); times.push(p.handModels[1].time); p.handModels.forEach(h=>{ h.root.updateMatrixWorld(true); out.push(h.socket.matrixWorld.clone()); }); }
+    return {p,out,times}; };
+  const A=run(100), B=run(25);
+  assert.ok(B.times[59]-B.times[0]>.9,'o relógio das mãos avança ~1 s (R-T3 M2): '+(B.times[59]-B.times[0]));
+  assert.ok(B.p.handModels.every(h=>h.hurtTremor>0),'tremor de ferido grave ligado');
+  A.out.forEach((m,i)=>matNear(m,B.out[i],1e-9,'socket '+i));
 });
 test('VR (controles espelhados): ponta do prego e cabeça do martelo da esquerda são o reflexo das da direita',()=>{
   for(const id of ['nails','hammer']){

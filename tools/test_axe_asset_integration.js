@@ -97,6 +97,12 @@ test('B4 600 quadros: duas picaretas cravadas, mãos rigged, olhar varrendo (inc
     if(k%7===0||k>590){expectPinned(G,0,'esq k='+k);expectPinned(G,1,'dir k='+k);}}
   assert.equal(physState(G),before,'viewmodel não altera ponto/normal/stamina/corpo');assert.equal(G.h.audio.calls.length,audio0,'sem sons extras: '+G.h.audio.calls.slice(audio0));
 });
+test('Health T3: com 25 HP (pele crítica e tremor nos dedos) a ponta segue ≤1 mm em 240 quadros, mãos rigged',async()=>{
+  const G=await rigGame();G.p.health.set(25);equipBoth(G);const surf=wall(G);anchor(G,0,new T.Vector3(-.28,1.75,-.7),surf);anchor(G,1,new T.Vector3(.3,1.82,-.7),surf);
+  for(let k=0;k<240;k++){camLook(G,Math.sin(k*.021)*1.2,-1.2+1.6*(.5+.5*Math.sin(k*.013)));G.h.step(G.it,1);G.p.updateViewmodel();
+    if(k%5===0||k>235){expectPinned(G,0,'esq k='+k);expectPinned(G,1,'dir k='+k);}}
+  G.p.handModels.forEach(h=>{assert.equal(h.hurtTremor,G.h.G('HandWear').CRITICAL_TREMOR);assert.equal(h.mat.userData.wear.uWear.value,1);assert.ok(h.rig);});
+});
 test('B4 uma cravada, outra golpeando/ricocheteando/guardando; soltar e cansaço devolvem a ferramenta à mão',async()=>{
   const G=await rigGame();equipBoth(G);const surf=wall(G);anchor(G,0,new T.Vector3(-.25,1.7,-.7),surf);
   G.it.use(true);for(let k=0;k<40;k++){camLook(G,.4*Math.sin(k*.2),-.3);G.h.step(G.it,1);G.p.updateViewmodel();expectPinned(G,0,G.it.phase+' k='+k);}

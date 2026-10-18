@@ -5,9 +5,9 @@ const L=require('./_load.js');
 global.matchMedia=()=>({matches:false});
 THREE.Raycaster=class{ set(){} setFromCamera(){} intersectObjects(){ return []; } };
 L.vm.runInThisContext(`class HandModel{ constructor(side){ this.side=side; this.root=new THREE.Group(); this.socket=new THREE.Group(); this.wrist={rotation:{set(){}}}; }
-  static indexTip(s,v){ return v.set(0,0,-.09); } kick(){} setPose(){} setBase(){} tint(){} update(){} }
+  static indexTip(s,v){ return v.set(0,0,-.09); } kick(){} setPose(){} setBase(){} tint(){} setWear(){} update(){} }
   HandModel.BASE_FLAT=[0,0,0];`);
-['js/player/perkDefs.js','js/player/PlayerAttributes.js','js/player/PlayerStats.js','js/player/Player.js'].forEach(f=>L.load(f));
+['js/player/HandWear.js','js/player/perkDefs.js','js/player/PlayerAttributes.js','js/player/PlayerStats.js','js/player/PlayerHealth.js','js/player/Player.js'].forEach(f=>L.load(f));
 const makePlayer=(world=L.world)=>L.vm.runInThisContext('(s,c,w)=>new Player(s,c,w)')(L.scene,new L.Obj(),world);
 // agarra uma malha (agarra, borda, prego) com a mão i, do jeito que Player._tryGrab faria depois do raycast
 function grab(P,i,mesh,point,normal){

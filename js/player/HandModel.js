@@ -45,6 +45,8 @@ class HandModel{
     this.squeeze=0; this.slack=0; this.tremor=0; this.time=Math.random()*10; this.wasContact=false;
     this.baseTgt=new THREE.Vector3();
     this.rig=null; this._useModel();
+    // desgaste pela vida (HandWear): camada no material final (GLB ou procedural); hurtTremor só nas falanges
+    HandWear.apply(this.mat,{side:s}); this._wear={from:0,to:0,t:1}; this.hurtTremor=0;
     this.setPose('relaxed'); this.x.set(this.tgt); this._apply();
   }
   // Modelo 3D com esqueleto (MODEL_DEFS handR/handL): troca a malha procedural pela do arquivo, e os ossos
@@ -78,8 +80,16 @@ class HandModel{
   snapBase(){ this.base.rotation.set(this.baseTgt.x,this.baseTgt.y,this.baseTgt.z); }
   kick(a){ for(let i=0;i<4;i++){ this.v[i*4+2]+=a; this.v[i*4+3]+=a*.6; } }
   tint(r){ this.mat.emissive.setRGB(r,0,0); }
+  // estado da vida (healthy/hurt/injured/critical/dead): transição linear de 0,25 s no update, ou instantânea
+  setWear(state,{instant=false}={}){
+    const to=HandWear.level(state), u=this.mat.userData.wear.uWear, w=this._wear;
+    if(instant){ u.value=to; w.from=w.to=to; w.t=1; return; }
+    if(to===w.to) return;
+    w.from=u.value; w.to=to; w.t=0;
+  }
   update(dt){
     this.time+=dt;
+    const w=this._wear; if(w.t<1){ w.t=Math.min(1,w.t+dt/HandWear.TWEEN); this.mat.userData.wear.uWear.value=w.from+(w.to-w.from)*w.t; }
     const F=this.f, T=this.tgt, O=HandModel.POSES.open, K=HandModel.STIFF;
     for(let j=0;j<21;j++) F[j]=T[j]+(O[j]-T[j])*this.slack;
     if(this.squeeze){ for(let i=0;i<4;i++){ F[i*4+1]+=this.squeeze*.5; F[i*4+2]+=this.squeeze; F[i*4+3]+=this.squeeze*.6; } F[19]+=this.squeeze*.4; F[20]+=this.squeeze*.4; }
@@ -93,7 +103,7 @@ class HandModel{
     this._apply();
   }
   _apply(){
-    const x=this.x, s=this.side, tr=this.tremor, t=this.time;
+    const x=this.x, s=this.side, tr=Math.max(this.tremor,this.hurtTremor||0), t=this.time;
     this.fingers.forEach((f,i)=>{
       const n=tr?(Math.sin(t*41+i*1.7)+Math.sin(t*27+i*2.9))*.5*tr:0;
       f.root.rotation.y=x[i*4]*s;
@@ -106,7 +116,7 @@ class HandModel{
   }
   // mesmas molas nos ossos do modelo: flexão = +x local; abertura = z local (sinal espelhado entre as mãos)
   _applyRig(){
-    const x=this.x, s=this.side, tr=this.tremor, t=this.time, R=this.rig, rel=HandModel.POSES.relaxed;
+    const x=this.x, s=this.side, tr=Math.max(this.tremor,this.hurtTremor||0), t=this.time, R=this.rig, rel=HandModel.POSES.relaxed;
     R.fingers.forEach((f,i)=>{
       const n=tr?(Math.sin(t*41+i*1.7)+Math.sin(t*27+i*2.9))*.5*tr:0;
       f.forEach(({b,e},j)=>{ b.rotation.set(x[i*4+1+j]+n*(j?.6:1),e.y,j?e.z:e.z-(x[i*4]-rel[i*4])*s); });
