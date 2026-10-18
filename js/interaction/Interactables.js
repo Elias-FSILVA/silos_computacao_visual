@@ -11,6 +11,7 @@ class Interactable{
   useItem(id,ctx){}
 }
 class ConcreteSurface extends Interactable{
+  get kind(){ return 'concrete'; }                  // a picareta reconhece a parede que aceita prego (axeBiteOf)
   canUseItem(id,ctx){
     const h=ctx.hit;
     if(id==='nails'){

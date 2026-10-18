@@ -142,7 +142,7 @@ test('fixar custa 5 × gripDrainMultiplier (5 sem perks; 4,25 com Pegada econôm
   for(const [perks,cost] of [[[],5],[['economical_grip'],4.25]]){
     const p=Hx.realPlayer(); perks.forEach(id=>p.attributes.addPerk(id)); const c=surface('crack'); p.world.raycastTargets=[c]; aimAt(p,c);
     p.rightHand.occupied=true; const hit=p.axeTarget(1); assert.ok(hit,'alvo válido'); const r=p.anchorAxe(1,hit);
-    assert.deepEqual({...r},{ok:true,reason:null}); near(p.rightHand.stamina,100-cost,1e-9,'custo');
+    assert.deepEqual({...r},{ok:true,reason:null,bite:'deep'}); near(p.rightHand.stamina,100-cost,1e-9,'custo');
     const h=p.rightHand; assert.equal(h.inContact,true); assert.equal(h.isGrabbing,true); assert.equal(h.anchor,'axe'); assert.equal(h.surface,c);
   }
 });

@@ -11,6 +11,7 @@
 //   stack     true = empilhável · false/ausente = item único (1 unidade por entrada, sem duplicata)
 //   maxStack  limite da pilha (inteiro ≥ 1); só vale para itens com stack:true
 //   weight    peso por unidade, em unidades de carga (número ≥ 0)
+//   durability  usos que cada unidade aguenta (picareta: fincadas no concreto); a entrada guarda `wear` por unidade
 //
 // PESO: totalWeight / getTotalWeight() é DERIVADO de `slots` a cada consulta (10 entradas: custo desprezível),
 // logo não existe cache nem cópia para ficar desatualizada. Os atalhos (`binds`) guardam só IDs e nunca entram na soma.
@@ -66,13 +67,13 @@ class Inventory{
       if(!d.stack) return {accepted:0,remaining:want,index:i,reason:'duplicate'};
       const room=Math.max(0,limit-this.slots[i].count);
       if(room<=0) return {accepted:0,remaining:want,index:i,reason:'limit'};
-      const n=Math.min(want,room); this.slots[i].count+=n; this.version++;
+      const n=Math.min(want,room); this.slots[i].count+=n; if(this.slots[i].wear) for(let k=0;k<n;k++) this.slots[i].wear.push(0); this.version++;
       return {accepted:n,remaining:want-n,index:i,reason:n<want?'limit':null};
     }
     i=this.slots.findIndex(s=>!s);
     if(i<0) return {accepted:0,remaining:want,index:-1,reason:'full'};
     const n=Math.min(want,limit);
-    this.slots[i]={id,count:n}; this.version++;
+    this.slots[i]={id,count:n}; if(d.durability) this.slots[i].wear=new Array(n).fill(0); this.version++;
     return {accepted:n,remaining:want-n,index:i,reason:n<want?'limit':null};
   }
   // compatível com o contrato antigo: índice da entrada se algo foi guardado, -1 se nada coube
@@ -83,7 +84,19 @@ class Inventory{
   // tira n unidades; a última unidade libera a entrada e os atalhos do item (nada de pilha "×0" na mochila)
   take(id,n=1){
     const i=this.slotOf(id), s=i>=0?this.slots[i]:null; if(!s||s.count<n) return false;
-    s.count-=n;
+    s.count-=n; if(s.wear) s.wear.length=Math.max(0,s.count);
+    if(s.count<=0){ this.slots[i]=null; this.binds=this.binds.map(b=>b===id?null:b); }
+    this.version++; return true;
+  }
+  // ---- desgaste (itens com `durability`; u = índice da unidade na entrada) ----
+  durabilityOf(id){ const d=ITEM_DEFS[id]; return d&&d.durability||0; }
+  durabilityLeft(id,u){ const s=this.slots[this.slotOf(id)]; if(!s||!s.wear||!(u>=0&&u<s.wear.length)) return 0; return Math.max(0,this.durabilityOf(id)-s.wear[u]); }
+  // gasta n da unidade u; devolve o que sobra
+  addWear(id,u,n=1){ const s=this.slots[this.slotOf(id)]; if(!s||!s.wear||!(u>=0&&u<s.wear.length)) return 0; s.wear[u]+=n; this.version++; return this.durabilityLeft(id,u); }
+  // a unidade u quebrou: sai da entrada (as de índice maior descem uma posição); a última libera a entrada e os atalhos
+  breakUnit(id,u){
+    const i=this.slotOf(id), s=i>=0?this.slots[i]:null; if(!s||!s.wear||!(u>=0&&u<s.wear.length)) return false;
+    s.wear.splice(u,1); s.count--;
     if(s.count<=0){ this.slots[i]=null; this.binds=this.binds.map(b=>b===id?null:b); }
     this.version++; return true;
   }

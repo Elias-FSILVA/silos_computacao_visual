@@ -15,6 +15,8 @@
   font-size:15px; font-weight:600; line-height:18px; color:var(--bone); background:var(--black); border:1px solid var(--dust); border-radius:3px; }
 #slots .slot.sel .k{ color:var(--sodium); border-color:var(--sodium); }
 #slots .slot .c{ right:-4px; bottom:-3px; padding:0 4px; background:var(--black); border:1px solid var(--dust); border-radius:9px; font-size:13px; line-height:16px; }
+#slots .slot .dur{ left:7px; right:20px; bottom:4px; }   /* desgaste da picareta: não passa por baixo do contador */
+#slots .slot:has(.dur) .c{ bottom:-3px; }
 #slots .slot.sel{ background:radial-gradient(circle at 50% 38%,rgba(227,179,65,.25),rgba(0,0,0,.6)); }
 .slot.out svg{ opacity:.3; }
 .slot.lock{ opacity:.55; }

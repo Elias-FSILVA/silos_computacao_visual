@@ -4,6 +4,8 @@
 // estado: equipped, phase (empty|equipping|idle|holstering|swing|place|consume), t
 // picareta (climbing_axe): idle = pronta → striking → anchored | bounce; anchored → idle (soltar) | dislodged (exausta)
 //   A âncora física é a do Player (hand.anchor='axe'); aqui só se lê esse estado. Cravada/golpeando não guarda nem troca.
+//   Desgaste: cada mão segura UMA unidade (`unit`, índice na entrada da mochila). Fincada no concreto gasta 1 de
+//   ITEM_DEFS.durability; rocha e rachadura não gastam. A fincada que zera segura; ao sair dela, a picareta quebra.
 // A cada quadro calcula `_canon` no espaço da mão DIREITA e escreve em `pose` (lida pelo Player) o seu lado,
 // via Handedness.toSide: posição do pulso, flexão do pulso (wrist), orientação da mão (base), pegada (grip,
 // misturável com grip2/blend), squeeze e tremor. Nenhuma pose ou animação tem sinal por mão.
@@ -27,7 +29,7 @@ class ItemSystem{
   get player(){ return this.g.player; }
   reset(){
     if(this.handIndex===1) this.inv.reset();
-    this.sel=-1; this.equipped=null; this.phase='empty'; this.t=0; this.pending=null; this.useHeld=false; this.next=-1; this.hinted=false;
+    this.sel=-1; this.equipped=null; this.phase='empty'; this.t=0; this.pending=null; this.useHeld=false; this.next=-1; this.hinted=false; this.unit=-1; this.worn=false;
     this._mount(null);
     this._canon={pos:POSE_REST.clone(),roll:0,visible:false,wrist:new V3(),base:HandModel.BASE_FLAT,grip:'relaxed',grip2:null,blend:0,squeeze:0,tremor:0};
     this.pose=Handedness.toSide(this._canon,this.side,{pos:new V3(),wrist:new V3()});
@@ -104,12 +106,34 @@ class ItemSystem{
     this.select(filled[k]);
   }
   _equip(i){
-    this.sel=i; this.equipped=this.inv.slots[i].id; this.phase='equipping'; this.t=0; this.next=-1;
+    this.sel=i; this.equipped=this.inv.slots[i].id; this.phase='equipping'; this.t=0; this.next=-1; this.worn=false; this.unit=this._pickUnit(this.equipped);
     const p=this.player; this.hand.occupied=true; this.hand.isGrabbing=false; this._mount(this.equipped); this.g.audio.equip();
+  }
+  get _otherHand(){ const o=this.handIndex===1?this.left:this.g.items; return o&&o!==this?o:null; }
+  // item com desgaste: a unidade menos gasta que a outra mão não está segurando (empate: a de menor índice)
+  _pickUnit(id){
+    if(!this.inv.durabilityOf(id)) return -1;
+    const o=this._otherHand, taken=o&&o.equipped===id?o.unit:-1; let best=-1;
+    for(let u=0;u<this.inv.count(id);u++) if(u!==taken&&(best<0||this.inv.durabilityLeft(id,u)>this.inv.durabilityLeft(id,best))) best=u;
+    return best;
+  }
+  // restante/máximo da picareta na mão `side` (null se a mão não segura item com desgaste)
+  axeDurability(side){ const h=side==='left'?this.left:this; if(!h||!h.equipped||h.unit<0) return null;
+    return {left:this.inv.durabilityLeft(h.equipped,h.unit),max:this.inv.durabilityOf(h.equipped)}; }
+  // HUD: desgaste do item `id` na mão `side` — o da unidade que ela segura, ou o da que ela pegaria
+  durabilityFor(side,id){ const h=side==='left'?this.left:this; if(!h||!this.inv.durabilityOf(id)) return null;
+    const u=h.equipped===id&&h.unit>=0?h.unit:h._pickUnit(id); if(u<0) return null;
+    return {left:this.inv.durabilityLeft(id,u),max:this.inv.durabilityOf(id)}; }
+  // a picareta gasta saiu da parede: quebra, sai da mochila e a mão esvazia
+  _breakAxe(){
+    const id=this.equipped, u=this.unit, o=this._otherHand;
+    this.inv.breakUnit(id,u); if(o&&o.equipped===id&&o.unit>u) o.unit--;
+    this._release(); this.g.audio.axeBreak(); this._vrFeedback('release');
+    this.g.ui.msg(this.inv.has(id)?'A picareta quebrou. Sobrou uma.':'A picareta quebrou.',2);
   }
   // esvazia a mão na hora, sem animação (item passou para a outra mão ou acabou)
   _release(){
-    this.phase='empty'; this.equipped=null; this.sel=-1; this.next=-1; this.pending=null; this.useHeld=false; this.t=0;
+    this.phase='empty'; this.equipped=null; this.sel=-1; this.next=-1; this.pending=null; this.useHeld=false; this.t=0; this.unit=-1; this.worn=false;
     this._mount(null); this.hand.occupied=false; this._canon.visible=false; this.pose.visible=false; this._syncAim();
   }
   holster(){ if(!this.equipped||this.phase==='holstering') return; if(this.axeLocked){ this._denyLocked(); return; } this.phase='holstering'; this.t=0; this.g.audio.holster(); }
@@ -121,7 +145,7 @@ class ItemSystem{
   use(down){
     if(down&&this._debugBlocked()) return;
     this.useHeld=down; if(down) this._tryUse();
-    else if(this.phase==='anchored'){ this.player.releaseAxe(this.handIndex); this.phase='idle'; this.t=0; this.g.audio.axeScrape(); this._vrFeedback('release'); }
+    else if(this.phase==='anchored'){ this.player.releaseAxe(this.handIndex); if(this.worn){ this._breakAxe(); return; } this.phase='idle'; this.t=0; this.g.audio.axeScrape(); this._vrFeedback('release'); }
     this._syncAim();
   }
   // pausa, mochila e console: solta o botão das duas mãos (não desprende nada preso à parede)
@@ -163,7 +187,15 @@ class ItemSystem{
   _axeImpact(){
     if(!this.useHeld){ this.phase='idle'; this.t=0; return; }
     const p=this.player, hit=p.axeTarget(this.handIndex), r=hit?p.anchorAxe(this.handIndex,hit):{ok:false,reason:'surface'};
-    if(r.ok){ this.phase='anchored'; this.t=0; this.g.audio.axeBite(); this._vrFeedback('bite'); }
+    if(r.ok&&r.bite==='shallow'){
+      // concreto: entra pouco, lasca a parede e gasta a picareta
+      this.phase='anchored'; this.t=0; this.g.audio.axeChip(); this._vrFeedback('bite');
+      if(this.g.fx) this.g.fx.spawn('chips',hit.point,p.hands[this.handIndex].normal,4);
+      const left=this.inv.addWear(this.equipped,this.unit,1);
+      if(left<=0){ this.worn=true; this.g.ui.msg('A picareta não aguenta outra fincada.',1.8); }
+      else if(left<=3) this.g.ui.msg(`Picareta gasta: ${left===1?'resta 1 fincada':`restam ${left} fincadas`} no concreto.`,1.6);
+    }
+    else if(r.ok){ this.phase='anchored'; this.t=0; this.g.audio.axeBite(); this._vrFeedback('bite'); }
     else { this.phase='bounce'; this.t=0; this.g.audio.axeTink(); this._vrFeedback('bounce'); }
   }
   _vrFeedback(kind){ const v=this.g.vr; if(v&&v.active!==false&&v.axeFeedback) v.axeFeedback(this.handIndex,kind); }
@@ -202,7 +234,7 @@ class ItemSystem{
       if(this.phase==='idle'||this.phase==='equipping'){ this._release(); return; }
     }
     // a âncora é do Player: se sumiu por fora (pausa, morte, vento, exaustão, salto, mantle), a fase acompanha
-    if(this.phase==='anchored'&&this.hand.anchor!=='axe'){ this.phase=this.hand.exhausted?'dislodged':'idle'; this.t=0; }
+    if(this.phase==='anchored'&&this.hand.anchor!=='axe'){ if(this.worn){ this._breakAxe(); return; } this.phase=this.hand.exhausted?'dislodged':'idle'; this.t=0; }
     this.t+=dt; const id=this.equipped, d=ITEM_DEFS[id], T=this._tmp, idle=T.idle.set(...d.held), rest=T.rest.copy(POSE_REST), hip=T.hip.copy(POSE_HIP), P=this._canon; let k;
     P.roll=0; P.wrist.set(0,0,0); P.base=d.base; P.grip=d.grip; P.grip2=null; P.blend=0; P.squeeze=0; P.tremor=0;
     switch(this.phase){
@@ -219,7 +251,7 @@ class ItemSystem{
         k=Math.min(1,this.t/DUR.holstering);
         if(k<.55){ const e=smooth(k/.55); P.pos.lerpVectors(idle,hip,e); P.visible=true; P.wrist.set(-.6*e,0,0); }
         else { const e=smooth((k-.55)/.45); P.pos.lerpVectors(hip,rest,e); P.visible=false; P.grip='open'; P.base=HandModel.BASE_FLAT; P.wrist.set(-.6*(1-e),0,0); }
-        if(k>=1){ this.phase='empty'; this.equipped=null; this.sel=-1; this._mount(null); this.hand.occupied=false; P.visible=false;
+        if(k>=1){ this.phase='empty'; this.equipped=null; this.sel=-1; this.unit=-1; this._mount(null); this.hand.occupied=false; P.visible=false;
           if(this.next>=0){ const n=this.next; this.next=-1; this.select(n,this.handIndex===0?'left':'right'); } }
         break; }
       case 'swing': {

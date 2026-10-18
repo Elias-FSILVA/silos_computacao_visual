@@ -90,8 +90,10 @@ O `vercel.json` já configura tudo: a Vercel roda `npm ci` e `npm run build` e p
 ### Picareta (Climbing Axe)
 
 - Item **Picareta**: até 2 na mochila; cada mão equipada usa uma. A 1ª está na caixa do **Andaime norte** (128 m) e a 2ª na do **Corredor de serviço** (269,6 m). Com uma só, a outra mão recebe "Você só tem uma picareta".
-- Crava **só** em superfícies marcadas: **rachaduras** (que a mão nua também agarra) e **faixas de rocha** escuras com lâmpada amarela (R1 a 145 m, R2 a 237 m, R3 a 324 m), onde a mão nua não se segura. Não crava em parede comum, chapa, corda, cano, prego, porta, puzzle nem nos vãos de prego.
-- Segure o botão (ou o gatilho) para cravar e manter; solte para desprender. O retículo indica se dá para cravar ali. Fixar custa 5 de stamina (× o gasto de pegada dos perks). Pendurada, ela gasta como a mão, mas sem o custo extra da rachadura. A cravada é uma âncora: puxar, mantle e salto agarrado funcionam como com a mão.
+- Crava fundo em **rachaduras** (que a mão nua também agarra) e nas **faixas de rocha** escuras com lâmpada amarela (R1 a 145 m, R2 a 237 m, R3 a 324 m), onde a mão nua não se segura. Ali não há desgaste.
+- **Concreto, tijolo e pedra** (as paredes que aceitam prego) recebem uma **fincada rasa**: custa o dobro de stamina para fixar (10), gasta o dobro pendurado e a ponta escapa sozinha depois de 2,5 s. O retículo fica âmbar e tracejado. Piso e teto não aceitam. Não crava em chapa, grade, corda, cano, prego, porta nem puzzle.
+- **Desgaste:** cada picareta aguenta 10 fincadas no concreto (a barra embaixo do atalho mostra o que resta; fica vermelha nas 3 últimas). A última fincada segura; quando ela sai da parede, a picareta quebra e some da mochila. Com duas, cada uma tem o seu desgaste, e a mão pega a menos gasta.
+- Segure o botão (ou o gatilho) para cravar e manter; solte para desprender. O retículo indica se dá para cravar ali (verde: rocha; âmbar: concreto). Fixar custa 5 de stamina (× o gasto de pegada dos perks). Pendurada, ela gasta como a mão, mas sem o custo extra da rachadura. A cravada é uma âncora: puxar, mantle e salto agarrado funcionam como com a mão.
 - Exausta, a picareta é arrancada (som de raspão) e só volta a cravar com a mão recuperada. Cravada, ela não pode ser guardada nem trocada ("A picareta está cravada"). A mão com picareta não agarra apoios comuns: guarde para usar a mão nua.
 - Modelo 3D: "Climbing Axe (Low Poly)" de [Tiko](https://sketchfab.com/tikoavp), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — crédito completo em `assets/models/items/climbing_axe_low_poly.CREDITS.txt`.
 
@@ -116,7 +118,7 @@ for test in tools/test_*.js; do node "$test" || exit 1; done
 npm run build
 ```
 
-Suítes desta etapa: `test_hand_visuals.js` (espelhamento e mãos independentes), `test_climbing_axe.js` (superfícies, inventário, física, estados e VR por mock), `test_axe_routes.js` (faixas e caixas no grafo de alcance) e `test_perk_stations.js` (ofertas, estações no mundo, painel e VR por mock).
+Suítes desta etapa: `test_hand_visuals.js` (espelhamento e mãos independentes), `test_climbing_axe.js` (superfícies, inventário, física, estados e VR por mock), `test_axe_concrete.js` (fincada rasa no concreto e desgaste), `test_axe_routes.js` (faixas e caixas no grafo de alcance) e `test_perk_stations.js` (ofertas, estações no mundo, painel e VR por mock).
 
 Playtest sugerido: agarrado a uma parede, salte sem WASD e confira a subida sem recuo; repita com A/D mirando outra agarra. Alterne mãos, compare com duas mãos apoiadas e teste uma borda antes/depois da puxada. Em Quest, confira A e pinça esquerda com/sem analógico. Testes automáticos não substituem a avaliação de sensação e conforto no headset.
 

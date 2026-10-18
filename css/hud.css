@@ -36,6 +36,10 @@
 .slot .k{ position:absolute; left:3px; top:1px; font-size:12px; color:var(--dust); }
 .slot .c{ position:absolute; right:3px; bottom:0; font-size:15px; font-weight:600; font-variant-numeric:tabular-nums; }
 .slot .c.zero{ color:var(--flesh); }
+.slot .dur{ position:absolute; left:5px; right:5px; bottom:3px; height:3px; background:rgba(221,214,200,.18); border-radius:2px; overflow:hidden; }
+.slot .dur::after{ content:''; position:absolute; inset:0; transform-origin:left; transform:scaleX(var(--d,1)); background:var(--bone); }
+.slot .dur.low::after{ background:var(--flesh); }
+.slot:has(.dur) .c{ bottom:5px; }
 .slot.pulse{ animation:slotpulse .5s ease-out; }
 @keyframes slotpulse{ from{ background:rgba(227,179,65,.45); } }
 .hand.busy{ opacity:.45; }

@@ -20,6 +20,7 @@
 // hand.anchor: 'hand' (pegada da mão nua), 'axe' (picareta cravada) ou null.
 // Picareta: axeTarget/anchorAxe/releaseAxe usam a MESMA âncora da mão (inContact/point/normal): mola, puxada, fadiga,
 // mantle, vento e salto são os de sempre. Fixar custa 5 × gripDrainMultiplier; sustentar é o dreno da mão SEM gripCost.
+// Fincada rasa (concreto, hand.bite='shallow'): custo e dreno × AXE_SHALLOW, e solta sozinha após AXE_SHALLOW.hold s.
 // Modo VR (opcional): com `xr` (VRPlayer) ligado, mira e agarre saem dos controles, a puxada vem do braço
 // (pullBy) e a câmera é posicionada pelo rig; sem ele, tudo segue como no mouse e teclado.
 // Colisão: Collision.collideBody contra world.platforms (caixas, caixas giradas e setores anelares) + world.guard
@@ -33,10 +34,12 @@ const WIND_K=2.0, WIND_TEAR=24, WIND_DRAIN=.35;   // arrasto do ar (1/s) · for�
 // Ajustes de movimento (não métricas de percurso): salto agarrado sobe sem recuo automático.
 // A componente horizontal só existe por comando direcional, relativa ao olhar.
 const PLAYER_PHYSICS={wallJumpControl:2.4,airControl:4.2,coyoteTime:.12};
+// picareta no concreto: custo de fixar ×cost, dreno pendurado ×drain, e a ponta escapa sozinha depois de `hold` segundos
+const AXE_SHALLOW={cost:2,drain:2,hold:2.5};
 const REDUCED_MOTION=(()=>{ try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } })();
 class Hand{
   constructor(name,side){ this.name=name; this.side=side; this.point=new V3(); this.normal=new V3(); this.reset(); }
-  reset(){ this.occupied=false; this.aiming=false; this.anchor=null; this.isGrabbing=false; this.inContact=false; this.surface=null; this.stamina=PLAYER_BASE_ATTRIBUTES.maxStamina; this.cooldown=0; this.pull=0; this.exhausted=false; }
+  reset(){ this.occupied=false; this.aiming=false; this.anchor=null; this.bite=null; this.biteT=0; this.isGrabbing=false; this.inContact=false; this.surface=null; this.stamina=PLAYER_BASE_ATTRIBUTES.maxStamina; this.cooldown=0; this.pull=0; this.exhausted=false; }
   get state(){ return this.isGrabbing?'closed':'open'; }
 }
 const _e=new V3(), _t=new V3(), _d=new V3(), _f=new V3(), _r=new V3(), _mv=new V3(), _p=new V3(), _q=new V3(), _n=new V3(), _c0=new THREE.Vector2(0,0), _wq=new THREE.Quaternion();
@@ -236,33 +239,42 @@ class Player{
     return true;
   }
   // ---------- picareta ----------
-  // alvo da picareta da mão i: mesmo raio e alcance do agarre, só superfícies axe
-  axeTarget(i){ const h=this.hands[i]; if(!h) return null; const hit=this._grabHit(h,isAxeSurface); return hit&&isAxeSurface(hit.object)?hit:null; }
+  // que fincada a picareta dá neste ponto: 'deep' | 'shallow' (só em face de parede) | null
+  _biteAt(hit){
+    const kind=hit&&axeBiteOf(hit.object); if(kind!=='shallow') return kind||null;
+    const u=hit.object.userData;
+    if(u.normalAt) u.normalAt(hit.point,_n); else if(u.wallNormal) _n.copy(u.wallNormal);
+    else if(hit.face) _n.copy(hit.face.normal).transformDirection(hit.object.matrixWorld); else return null;
+    return Math.abs(_n.y)<.5?'shallow':null;          // piso e teto de concreto não aceitam
+  }
+  // alvo da picareta da mão i: mesmo raio e alcance do agarre; rocha/rachadura (hit.bite 'deep') ou parede de concreto ('shallow')
+  axeTarget(i){ const h=this.hands[i]; if(!h) return null; const hit=this._grabHit(h,o=>!!axeBiteOf(o)), bite=this._biteAt(hit); if(!bite) return null; hit.bite=bite; return hit; }
   // crava a picareta da mão i no ponto `hit`; falha sem cobrar nada ('state' | 'surface' | 'reach' | 'stamina' | 'slip')
   anchorAxe(i,hit){
     const h=this.hands[i];
     if(!h||this.dead||this.mantle||h.inContact||h.cooldown>0||h.exhausted) return {ok:false,reason:'state'};
-    if(!hit||!isAxeSurface(hit.object)) return {ok:false,reason:'surface'};
+    const bite=this._biteAt(hit);
+    if(!bite) return {ok:false,reason:'surface'};
     if(!this.xr&&hit.distance>this.reach+1e-6) return {ok:false,reason:'reach'};
-    const cost=5*this.attributes.effective.gripDrainMultiplier;
+    const cost=5*this.attributes.effective.gripDrainMultiplier*(bite==='shallow'?AXE_SHALLOW.cost:1);
     if(h.stamina<cost) return {ok:false,reason:'stamina'};
     // caindo rápido, escorrega como a mão (mesma regra do _tryGrab)
     const fall=-this.velocity.y;
     if(!this.isClimbing&&fall>12){ h.stamina=Math.max(0,h.stamina-25); h.cooldown=.35; this.stats.recordSlip(); this.emit('slip',h); return {ok:false,reason:'slip'}; }
     h.stamina=Math.max(0,h.stamina-cost-Math.max(0,fall-4)*2.2);
-    h.inContact=true; h.isGrabbing=true; h.anchor='axe'; h.surface=hit.object; h.point.copy(hit.point);
+    h.inContact=true; h.isGrabbing=true; h.anchor='axe'; h.bite=bite; h.biteT=0; h.surface=hit.object; h.point.copy(hit.point);
     const u=hit.object.userData, wn=u.wallNormal;
     if(u.normalAt) u.normalAt(hit.point,h.normal); else if(wn) h.normal.copy(wn); else h.normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
     this._fitPull(); this.world.touch(hit.object);
     this.emit('axeAnchor',h);
-    return {ok:true,reason:null};
+    return {ok:true,reason:null,bite};
   }
   // desprende a picareta da mão i (não mexe em pegada de mão nua)
   releaseAxe(i){ const h=this.hands[i]; if(!h||h.anchor!=='axe') return; h.isGrabbing=false; if(h.inContact) this._release(h); }
   // a picareta da mão h foi arrancada (exaustão, vento, superfície que sumiu)
   _dislodge(h){ if(h.anchor==='axe') this.emit('axeDislodged',h); }
   _release(h){
-    h.inContact=false; h.anchor=null; h.surface=null; h.pull=0;
+    h.inContact=false; h.anchor=null; h.bite=null; h.biteT=0; h.surface=null; h.pull=0;
     if(!this.isClimbing){ this.pull=this.pullTarget=0; if(this.velocity.length()>7) this.velocity.setLength(7); }
   }
   // [pendurado, puxado] abaixo da pegada; puxado na parede = olhos um pouco acima da pegada (peito na borda)
@@ -293,6 +305,8 @@ class Player{
     this.hands.forEach(h=>{
       if(h.cooldown>0) h.cooldown-=dt;
       if(h.inContact&&h.surface.userData.alive===false){ this._dislodge(h); this._release(h); this.emit('crumble',h); }
+      // fincada rasa no concreto: a ponta escapa sozinha
+      else if(h.inContact&&h.anchor==='axe'&&h.bite==='shallow'&&!this.debugFrozen&&(h.biteT+=dt)>=AXE_SHALLOW.hold){ this._dislodge(h); this._release(h); h.cooldown=.25; this.emit('axeSlip',h); }
     });
     this.hands.forEach(h=>{ if(h.isGrabbing&&!h.inContact) this._tryGrab(h); });
     this._prev.copy(this.position);
@@ -426,6 +440,7 @@ class Player{
     const base=held.length===2?3:(this.lockOff?6:9), crit=clamp((this.pullFatigue-FATIGUE_CRIT)/(1-FATIGUE_CRIT),0,1);
     for(const h of held){
       let d=base+this.effort*3+crit*14+wf*WIND_DRAIN+(h.anchor==='axe'?0:(h.surface.userData.gripCost||0)); if(input.x) d+=1.5;   // gripCost: rachadura (dedos entalados; a picareta não paga)
+      if(h.anchor==='axe'&&h.bite==='shallow') d*=AXE_SHALLOW.drain;   // concreto: ponta rasa, braço segura o resto
       h.stamina=Math.max(0,h.stamina-d*dt*this.attributes.effective.gripDrainMultiplier);
       if(h.stamina<=0){ h.exhausted=true; this._dislodge(h); this._release(h); this.emit('exhausted',h); }
     }

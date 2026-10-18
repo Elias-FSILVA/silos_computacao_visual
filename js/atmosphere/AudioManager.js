@@ -82,6 +82,8 @@ class AudioManager{
   deny(){ this.tone(160,.12,.06,'square'); }
   // picareta: crava (impacto seco), ricocheteia (tilintar metálico), solta/arranca (raspão)
   axeBite(){ this.noise(.09,900,.35,'lowpass'); this.tone(120,.12,.18,'square',70); this.noise(.04,3200,.08); }
+  axeChip(){ this.noise(.07,2400,.22,'bandpass',1.2); this.tone(220,.08,.1,'square',150); this.noise(.12,5200,.05,'highpass',1,.03); }   // ponta rasa no concreto: lasca
+  axeBreak(){ this.tone(1700,.1,.08,'square',600); this.noise(.25,1400,.2,'bandpass',.8,.02); this.tone(160,.3,.12,'sawtooth',70,.05); }   // a cabeça da picareta racha
   axeTink(){ this.tone(2600,.18,.05,'triangle'); this.tone(3900,.12,.025,'sine',null,.02); }
   stationConfirm(){ this.tone(520,.12,.06,'triangle'); this.tone(780,.22,.06,'triangle',null,.1); this.noise(.08,2600,.05,'bandpass',1,.1); }
   axeScrape(){ this.noise(.28,1800,.12,'bandpass',1.4); this.tone(300,.2,.04,'sawtooth',140); }

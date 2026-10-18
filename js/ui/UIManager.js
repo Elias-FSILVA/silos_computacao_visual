@@ -137,6 +137,7 @@ class UIManager{
       impact:`<path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4" stroke="${B}" stroke-width="1.5"/><circle cx="12" cy="12" r="1.5" fill="${B}"/>`,
       fragile:`<path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4M6.3 6.3l2.4 2.4M17.7 17.7l-2.4-2.4M17.7 6.3l-2.4 2.4M6.3 17.7l2.4-2.4" stroke="${B}" stroke-width="1.5"/><circle cx="12" cy="12" r="1.5" fill="${B}"/>`,
       axe:`<path d="M7 17l7.5-7.5M10.5 6.5c2.6-1.6 5.6-1.4 7.5.4" stroke="${OK}" stroke-width="1.7" fill="none" stroke-linecap="round"/><circle cx="12" cy="12" r="1.6" fill="${OK}"/>`,
+      'axe-shallow':`<path d="M7 17l7.5-7.5" stroke="${S}" stroke-width="1.7" stroke-linecap="round"/><path d="M10.5 6.5c2.6-1.6 5.6-1.4 7.5.4" stroke="${S}" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-dasharray="2 2"/><circle cx="12" cy="12" r="1.6" fill="${S}"/>`,   // concreto: fincada rasa
       'axe-bad':`<path d="M8 8l8 8M16 8l-8 8" stroke="${NO}" stroke-width="1.4" opacity=".75"/>`,
       'hammer-nail':`<circle cx="12" cy="12" r="7" fill="none" stroke="${S}" stroke-width="1.6"/><path d="M12 8.5v7M8.5 12h7" stroke="${S}" stroke-width="1.6"/>`
     }[mode]||'';
@@ -213,8 +214,11 @@ class UIManager{
         const def=ITEM_DEFS[s.id];
         d.insertAdjacentHTML('beforeend',iconSvg(s.id));
         if(def.stack){ const c=document.createElement('span'); c.className='c'+(s.count<=0?' zero':''); c.textContent='×'+s.count; d.appendChild(c); }
+        // desgaste (picareta): barra da unidade que esta mão segura ou pegaria
+        const du=items.durabilityFor&&items.durabilityFor(k<2?'left':'right',s.id);
+        if(du){ const b=document.createElement('span'), f=du.left/du.max; b.className='dur'+(du.left<=3?' low':''); b.style.setProperty('--d',f.toFixed(3)); b.title=`${du.left}/${du.max} fincadas no concreto`; d.appendChild(b); }
         d.title=def.name;
-        d.setAttribute('aria-label',`Atalho ${L}, mão ${k<2?'esquerda':'direita'}: ${def.name}${def.stack?`, ${s.count}`:''}, ${st.label}`);
+        d.setAttribute('aria-label',`Atalho ${L}, mão ${k<2?'esquerda':'direita'}: ${def.name}${def.stack?`, ${s.count}`:''}${du?`, desgaste ${du.left} de ${du.max}`:''}, ${st.label}`);
       } else d.setAttribute('aria-label',`Atalho ${L}, mão ${k<2?'esquerda':'direita'}: vazio`);
       bar.appendChild(d);
     }

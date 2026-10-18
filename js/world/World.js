@@ -134,6 +134,7 @@ class World{
   _solidData(m,pd,mat,o){
     const nail=mat===MAT.concrete||!!(mat.userData&&mat.userData.nailable);   // concreto, tijolo e pedra: aceitam prego
     m.userData={type:o.type||'wall',interactable:o.interactable===undefined?(nail?SURFACE.concrete:null):o.interactable};
+    if(nail) m.userData.concrete=true;                // picareta: fincada rasa (axeBiteOf)
     (o.parent||this.root).add(m);
     if(o.cut) this.cutaway.push(m);                  // candidatos a 'parede fantasma' no modo espectador
     if(o.ray!==false) this.walls.push(m);
