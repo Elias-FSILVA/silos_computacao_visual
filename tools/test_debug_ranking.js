@@ -71,4 +71,66 @@ test('HUD: RUN ASSISTIDA e NOCLIP visíveis só quando aplicáveis',()=>{
   assert.equal(nav.setNoclip(true).ok,true);assert.deepEqual({...g.getUIState().debug},{assisted:true,noclip:true});b=hud();assert.equal(b.hidden,false);assert.equal(b.textContent,'RUN ASSISTIDA · NOCLIP');
   atCp(h,'cp6');assert.equal(nav.setNoclip(false).ok,true);b=hud();assert.equal(b.hidden,false);assert.equal(b.textContent,'RUN ASSISTIDA');
 });
+
+// ---------- Health T5: health / health set / damage / heal no console (Player, PlayerHealth e navegação reais) ----------
+function hgame(){ const r=game(); r.h.load('js/ui/DevConsole.js'); const DC=r.h.G('DevConsole'); r.run=c=>DC.execute(c,r.g); return r; }
+const ASS=' Run assistida (fora do ranking).';
+test('health: consulta sem marcar; textos dos rótulos',()=>{
+  const {g,nav,run}=hgame(); assert.equal(run('health'),'Vida: 100/100 · Saudável'); assert.equal(nav.eligibility().assisted,false);
+  g.player.health.set(72); assert.equal(run('HEALTH'),'Vida: 72/100 · Machucado'); assert.equal(nav.eligibility().assisted,false);
+});
+test('health set / damage / heal: textos, valores e marca assistida "health"',()=>{
+  const {g,nav,run}=hgame(), H=g.player.health;
+  assert.equal(run('health set 100'),'Vida já está em 100/100 · Saudável.'); assert.equal(nav.eligibility().assisted,false,'nada mudou: não marca');
+  assert.equal(run('health set 50'),'Vida definida: 50/100 · Ferido.'+ASS); assert.equal(H.value,50);
+  assert.deepEqual([...nav.eligibility().debugReasons],['health']);
+  assert.equal(run('damage 20'),'Dano 20: 30/100 · Ferido.'+ASS); assert.equal(H.value,30);
+  assert.equal(run('heal 40'),'Cura 40: 70/100 · Machucado.'+ASS); assert.equal(H.value,70);
+  assert.equal(run('health set 25'),'Vida definida: 25/100 · Crítico.'+ASS);
+  assert.equal(run('heal 100'),'Cura 75: 100/100 · Saudável.'+ASS,'cura informa o aplicado');
+  assert.equal(run('heal 20'),'Vida já está cheia (100/100).');
+  assert.deepEqual([...nav.eligibility().debugReasons],['health']);
+  assert.equal(g.player.dead,false);
+});
+test('valores inválidos recusados sem mexer na vida nem marcar',()=>{
+  const {g,nav,run}=hgame(), H=g.player.health; H.set(60);
+  assert.equal(run('health set 0'),'Use damage para testar a morte (health set aceita 1–100).');
+  for(const c of ['health set 101','health set 50.5','health set abc','health set','health set 5 5','health set -3']) assert.equal(run(c),'Uso: health set <1–100>',c);
+  for(const c of ['damage 0','damage 101','damage 1e2','damage -3','damage','damage 2 2']) assert.equal(run(c),'Uso: damage <1–100>',c);
+  for(const c of ['heal x','heal 0','heal 101','heal']) assert.equal(run(c),'Uso: heal <1–100>',c);
+  assert.equal(run('health 5'),'Uso: health · health set <1–100>');
+  assert.equal(H.value,60); assert.equal(nav.eligibility().assisted,false);
+});
+test('fora de partida viva: recusado com o motivo, sem marcar',()=>{
+  const a=hgame(); a.g.state='menu'; for(const c of ['health','health set 50','damage 5','heal 5']) assert.equal(a.run(c),'Erro: É necessária uma partida viva em jogo ou pausa',c);
+  assert.equal(a.g.player.health.value,100); assert.equal(a.nav.eligibility().assisted,false);
+  const b=hgame(); b.g.player.die('fall'); assert.match(b.run('heal 5'),/^Erro: É necessária uma partida viva/);
+  const c=hgame(); c.g.state='console'; c.g.devConsoleReturnState='paused'; assert.equal(c.run('damage 5'),'Dano 5: 95/100 · Saudável.'+ASS,'console aberto sobre a pausa vale');
+});
+test('liveRun: só partida viva, sem a cláusula de XR; contextAllowed continua igual',()=>{
+  const {g,nav}=hgame(); assert.equal(nav.liveRun().ok,true); g.vr.active=true; assert.equal(nav.liveRun().ok,true); assert.equal(nav.contextAllowed().ok,false); assert.match(nav.contextAllowed().reason,/desktop/);
+  g.vr.active=false; g.timer.finish(); assert.equal(nav.liveRun().ok,false); assert.equal(nav.contextAllowed().reason,nav.liveRun().reason);
+});
+test('morte_ao_fechar_console: damage 100 mata, endRun("debug") só ao fechar, uma vez',()=>{
+  const {h,g,run,els}=hgame(); g.settings.data.devConsoleEnabled=true; els.devConsole={hidden:true}; els.devConsoleInput={focus(){}};
+  g.state='play'; g.openDevConsole(); assert.equal(g.state,'console');
+  let ends=0; const end=g.endRun.bind(g); g.endRun=r=>{ ends++; end(r); };
+  assert.equal(run('damage 100'),'Dano 100: 0/100 · a morte acontece ao fechar o console.'+ASS);
+  assert.equal(g.player.dead,true); assert.equal(g.state,'console');
+  for(let i=0;i<5;i++){ h.clock.now+=20; g._loop(h.clock.now); } assert.equal(ends,0,'console aberto: nada encerra');
+  g.closeDevConsole(); assert.equal(g.state,'play');
+  h.clock.now+=20; g._loop(h.clock.now); assert.equal(ends,1); assert.equal(g.state,'ending');
+  for(let i=0;i<3;i++){ h.wall.advance(500); g._loop(h.clock.now); }
+  assert.equal(ends,1); assert.equal(g.state,'result'); assert.equal(g.lastRun.result,'debug'); assert.equal(g.lastRun.assisted,true);
+  assert.equal(g.ui.results.at(-1).result,'debug');
+});
+test('resultado e ranking: debug → "Ferimentos (debug)"; run com damage/heal não salva, só health salva',()=>{
+  const {h}=hgame(); const ui=Object.create(h.G('UIManager').prototype), E={};
+  const el=id=>E[id]||(E[id]={id,hidden:false,textContent:'',disabled:false,className:'',children:[],append(){},classList:{add(){},remove(){}},style:{}}); ui.$=el; ui.show=()=>{};
+  ui.showResult({name:'x',score:1,time:1,result:'debug',height:3,ending:null,assisted:true,competitiveEligible:false,debugReasons:['health'],breakdown:{total:1,height:1,speed:0,performance:0,penalties:0,checkpoints:0}});
+  assert.equal(E.resT.textContent,'Ferimentos (debug)'); assert.equal(E.resT.className,'danger');
+  const a=hgame(); a.run('damage 10'); a.g.endRun('fall'); a.g.saveScore(); assert.equal(a.saves.length,0); assert.equal(a.g.savedIndex,-1);
+  const b=hgame(); b.run('heal 10'); b.g.player.health.set(50); b.run('heal 10'); b.g.endRun('fall'); b.g.saveScore(); assert.equal(b.saves.length,0);
+  const c=hgame(); c.run('health'); c.g.endRun('fall'); c.g.saveScore(); assert.equal(c.saves.length,1); assert.equal(c.saves[0].competitiveEligible,true);
+});
 console.log(`${total} testes; falhas: ${bad}`);process.exitCode=bad?1:0;

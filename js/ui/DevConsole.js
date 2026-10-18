@@ -9,6 +9,7 @@ class DevConsole{
       +'\nNavegação (só desktop, partida viva em jogo ou pausa): goto list · goto <id> · back · noclip · noclip on · noclip off · noclip speed <1–50>'
       +'\nVoo: WASD pela direção da vista, Space sobe, Ctrl desce, Shift ×4. Itens, agarre e interação ficam bloqueados; noclip off desliga onde você estiver (como no CS/Half-Life: no ar, fora do mapa ou dentro de parede); a física volta dali e você pode cair.'
       +'\ngoto/back/noclip marcam a run como assistida: a pontuação fica fora do ranking até uma nova run.'
+      +'\nVida (partida viva): health · health set <1–100> · damage <1–100> · heal <1–100>. Mudar a vida marca a run como assistida.'
       +'\nGatilhos (marcos, salas, massa) ficam protegidos após o salto: saia e reentre na região andando normalmente para rearmá-los (veja “status”).';
     if(command==='diag'&&args.length===0){ if(!game.perf) return 'Erro: diagnóstico indisponível.'; return game.perf.toggle()?'Diagnóstico ligado (F3 também alterna).':'Diagnóstico desligado.'; }
     if(command==='setores'&&args.length===0){
@@ -34,6 +35,7 @@ class DevConsole{
       return out;
     }
     if(command==='goto'||command==='back'||command==='noclip') return DevConsole._navigation(command,args,game);
+    if(command==='health'||command==='damage'||command==='heal') return DevConsole._health(command,args,game);
     if(command==='perks'&&args.length===0){
       const active=game.player.attributes.activePerks, max=(game.stations&&game.stations.max)||3, n=`${active.length}/${max}`;
       if(!active.length) return `Perks ativos: nenhum (${n})`;
@@ -53,6 +55,32 @@ class DevConsole{
     }
     if(command==='spectator'&&args.length===0){if(game.closeDevConsole) game.closeDevConsole();game.spectator.enter();return 'Modo espectador ativado.';}
     return 'Erro: comando inválido. Digite “help” para ver os comandos disponíveis.';
+  }
+  // Vida (spec Health §4.5, D8): inteiros 1–100; mudar o HP marca a run assistida ('health'); damage pode matar e a
+  // morte segue o fluxo normal (endRun) quando o console fecha. Nada desmarca a assistida.
+  static _health(command,args,game){
+    const n=game.debugNavigation; if(!n) return 'Erro: navegação de debug indisponível.';
+    const live=n.liveRun(); if(!live.ok) return `Erro: ${live.reason}`;
+    const p=game.player, H=p.health, L={healthy:'Saudável',hurt:'Machucado',injured:'Ferido',critical:'Crítico',dead:'Morto'};
+    const now=()=>`${H.value}/${H.max}`, ASS=' Run assistida (fora do ranking).';
+    const num=s=>/^\d{1,3}$/.test(s||'')?Number(s):NaN, ok=v=>v>=1&&v<=100;
+    if(command==='health'){
+      if(args.length===0) return `Vida: ${now()} · ${L[H.state]}`;
+      if(args[0]!=='set') return 'Uso: health · health set <1–100>';
+      const v=args.length===2?num(args[1]):NaN;
+      if(v===0) return 'Use damage para testar a morte (health set aceita 1–100).';
+      if(!ok(v)) return 'Uso: health set <1–100>';
+      if(v===H.value) return `Vida já está em ${now()} · ${L[H.state]}.`;
+      H.set(v,{source:'debug'}); n.markAssisted('health'); return `Vida definida: ${now()} · ${L[H.state]}.${ASS}`;
+    }
+    const v=args.length===1?num(args[0]):NaN;
+    if(!ok(v)) return `Uso: ${command} <1–100>`;
+    if(command==='heal'){
+      if(H.value>=H.max) return `Vida já está cheia (${now()}).`;
+      const r=p.heal(v,'debug'); n.markAssisted('health'); return `Cura ${r.applied}: ${now()} · ${L[H.state]}.${ASS}`;
+    }
+    const r=p.damage(v,'debug'); n.markAssisted('health');
+    return r.died?`Dano ${r.applied}: ${now()} · a morte acontece ao fechar o console.${ASS}`:`Dano ${r.applied}: ${now()} · ${L[H.state]}.${ASS}`;
   }
   // Navegação de debug: só despacha; contexto, segurança e marca de run assistida ficam em DeveloperNavigation.
   static _navigation(command,args,game){

@@ -18,8 +18,13 @@ class DeveloperNavigation{
   canEnterXR(){return !this.noclipActive;}
   markAssisted(reason){this._assisted=true;if(!this._debugReasons.includes(reason))this._debugReasons.push(reason);}
   contextAllowed(){
-    const g=this.g,state=g.state==='console'?g.devConsoleReturnState:g.state;
+    const g=this.g;
     if(g.vr&&(g.vr.active||g.vr.entering)||g.player.xr)return {ok:false,reason:'Navegação de debug disponível só no desktop, fora de XR'};
+    return this.liveRun();
+  }
+  // Partida viva (jogo, pausa ou console aberto sobre eles), sem olhar XR: usada também pelos comandos de vida.
+  liveRun(){
+    const g=this.g,state=g.state==='console'?g.devConsoleReturnState:g.state;
     if(!['play','paused'].includes(state)||g.player.dead||g.timer.finished)return {ok:false,reason:'É necessária uma partida viva em jogo ou pausa'};
     return {ok:true,reason:''};
   }

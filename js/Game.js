@@ -509,6 +509,7 @@ class Game{
     this.player.applyCamera();this.player.updateViewmodel();
     this._ambient(dt,false);
     this.ui.updateHUD(this.getUIState(),this.player,{reticle:'dot',prompt:''},this.items);
+    if(this.player.dead) this.endRun(this.player.deathReason);   // `damage` letal em noclip segue o fluxo normal (R-final I1)
   }
   _play(dt){
     if(this.debugNavigation&&this.debugNavigation.noclipActive){this._debugPlay(dt);return;}

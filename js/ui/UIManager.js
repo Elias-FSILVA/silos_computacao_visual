@@ -105,7 +105,7 @@ class UIManager{
     [['#','n'],['Jogador',''],['Pontos','n'],['Tempo','n'],['Resultado','']].forEach(([s,c])=>{ const th=document.createElement('th'); th.textContent=s; if(c) th.className=c; head.appendChild(th); });
     list.forEach((e,i)=>{
       const r=t.insertRow(); if(i===highlight) r.className='me';
-      [[String(i+1),'n'],[e.name,''],[fmtInt(e.score),'n'],[fmtTime(e.time),'n'],[e.result==='finish'?('Saiu'+(e.ending&&ENDINGS[e.ending]?` · ${ENDINGS[e.ending].name}`:'')):e.result==='mass'?'Alcançado':e.result==='fan'?'Sugado':'Caiu','']]
+      [[String(i+1),'n'],[e.name,''],[fmtInt(e.score),'n'],[fmtTime(e.time),'n'],[e.result==='finish'?('Saiu'+(e.ending&&ENDINGS[e.ending]?` · ${ENDINGS[e.ending].name}`:'')):e.result==='mass'?'Alcançado':e.result==='fan'?'Sugado':e.result==='debug'?'Ferimentos':'Caiu','']]
         .forEach(([s,c])=>{ const td=r.insertCell(); td.textContent=s; if(c) td.className=c; });
     });
     body.appendChild(t);
@@ -114,7 +114,7 @@ class UIManager{
   showResult(r){
     const t=this.$('resT');
     const E=r.result==='finish'&&ENDINGS[r.ending||'escape'];
-    t.textContent=r.result==='finish'?(E?E.name:'Subida completa'):r.result==='mass'?'A massa te alcançou':r.result==='fan'?'O exaustor te puxou':'Você caiu';
+    t.textContent=r.result==='finish'?(E?E.name:'Subida completa'):r.result==='mass'?'A massa te alcançou':r.result==='fan'?'O exaustor te puxou':r.result==='debug'?'Ferimentos (debug)':'Você caiu';
     const et=this.$('resEnd'); et.textContent=E?`FINAL · ${E.tag}\n\n${E.text}`:''; et.hidden=!E;
     t.className=r.result==='finish'?'win':'danger';
     this.$('resName').textContent=r.name; this.$('resTime').textContent=fmtTime(r.time);

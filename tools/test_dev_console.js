@@ -59,4 +59,5 @@ test('aridade/argumentos inválidos e números não estritos não chamam a naveg
 test('status mostra assistida/motivos, noclip, velocidade, retorno e gatilhos protegidos com instrução',()=>{const {game}=navFixture();const n=game.debugNavigation;n.assisted=true;n.noclipActive=true;n.speed=22;n.backPose={position:{x:0,y:0,z:0}};
   const out=DevConsole.execute('status',game);for(const v of ['Run assistida','goto','Noclip: ligado','22 m/s','Retorno: registrado','checkpoint:cp14','need-entry','Reentre na região com locomoção normal','80/100'])if(!out.includes(v))throw Error(`missing ${v}: ${out}`);
   n.assisted=false;n.noclipActive=false;n.backPose=null;const o2=DevConsole.execute('status',game);for(const v of ['Run normal','Noclip: desligado','Retorno: nenhum'])if(!o2.includes(v))throw Error(`missing ${v}: ${o2}`);});
+test('help lista os comandos de vida',()=>{const {game}=fixture();const out=DevConsole.execute('help',game);for(const v of ['health','health set <1–100>','damage <1–100>','heal <1–100>'])if(!out.includes(v))throw Error(`falta ${v}: ${out}`);});
 console.log(`\\n${passed+failed} testes; falhas: ${failed}`);process.exit(failed?1:0);
