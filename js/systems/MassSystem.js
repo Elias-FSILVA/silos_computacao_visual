@@ -4,14 +4,16 @@
 // ============================================================================
 // a aceleração da massa foi calibrada para um poço de 120 m; mantém a mesma pressão proporcional em TOP m
 const MASS_RAMP=.0004*(120/TOP);
-// a massa ocupa o poço redondo: superfície em disco (anéis concêntricos para a ondulação) e coluna cilíndrica
+// a massa é um líquido: uma superfície só, larga o bastante para entrar no poço e em todas as salas laterais
+// (paredes e pisos a escondem onde não há passagem). Não há coluna: abaixo da superfície tudo já está tomado.
+const MASS_SURFACE_R=SILO_R;                 // o labirinto (300 m) chega a ~40,5 m do eixo
 class MassSystem{
   constructor(scene){
-    this.geo=new THREE.RingGeometry(.02,SHAFT_R+.02,48,14); this.geo.rotateX(-Math.PI/2);
+    this.surfaceR=MASS_SURFACE_R;
+    this.geo=new THREE.RingGeometry(.02,MASS_SURFACE_R,96,28); this.geo.rotateX(-Math.PI/2);
     this.base=this.geo.attributes.position.array.slice();
     const mat=new THREE.MeshStandardMaterial({color:0x3a0b0c,emissive:0x1c0303,roughness:.3,metalness:.1,side:THREE.DoubleSide});
     this.mesh=new THREE.Mesh(this.geo,mat); scene.add(this.mesh);
-    this.column=new THREE.Mesh(new THREE.CylinderGeometry(SHAFT_R+.02,SHAFT_R+.02,40,48,1,true),mat); scene.add(this.column);
     this.light=new THREE.PointLight(0x9a1a10,1.4,10,2); scene.add(this.light);
     this.reset();
   }
@@ -37,16 +39,14 @@ class MassSystem{
     }
     return ev;
   }
-  reaches(player){ const p=player.position;
-    if(this.inShaft(player)) return p.y+.1<this.y+.15;
-    if((this.safeZones||[]).some(z=>inZone({x:p.x,y:clamp(p.y,z.minY,z.maxY),z:p.z},z))) return false;   // salas: só a planta conta
-    return p.y+1.6<this.y; }
-  // a massa ocupa só o poço (cilindro); alas, salas e nichos ficam fora dela
+  // a mesma regra no poço e nas salas: a superfície passou dos pés, pegou. Nas salas com contenção a massa fica
+  // presa abaixo do piso (setHold), então quem está lá dentro fica a salvo sem exceção nenhuma aqui.
+  reaches(player){ const p=player.position; return p.y+.1<this.y+.15; }
   inShaft(player){ const p=player.position; return Math.hypot(p.x,p.z)<SHAFT_R+.1; }
-  gap(player){ const g=player.position.y-this.y; return this.inShaft(player)?g:Math.max(g,10); }
+  gap(player){ return player.position.y-this.y; }
   eta(player){ return this.active&&!this.hold&&this.speed>0?Math.max(0,this.gap(player)/this.speed):null; }
   visual(t){
-    this.mesh.position.y=this.y; this.column.position.y=this.y-20.02; this.light.position.set(0,this.y+1.5,0);
+    this.mesh.position.y=this.y; this.light.position.set(0,this.y+1.5,0);
     const pa=this.geo.attributes.position.array, b=this.base;
     for(let i=0;i<pa.length;i+=3){ const x=b[i], z=b[i+2];
       pa[i+1]=Math.sin(x*1.3+t*.9)*.25+Math.sin(z*1.7-t*1.1)*.2+Math.sin((x+z)*3+t*2)*.06; }

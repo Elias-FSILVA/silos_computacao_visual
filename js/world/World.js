@@ -5,7 +5,7 @@
 //                   world.checkpoints [{id,label,bonus,optional,position,radius,bounds?}]
 //                   world.finish {position,radius}   world.spawnPoint (pés)
 // Extras: world.raycastTargets, world.lamps, world.interactables, guard() (parede do poço), wind() (ventiladores),
-//   touch(), update(); world.puzzleDefs / world.puzzleRooms → PuzzleSystem e Game._zones();
+//   touch(), update(); world.puzzleDefs / world.puzzleRooms → PuzzleSystem;
 //   world.onCrumble, world.onSecretRevealed, world.onMazeEvent('countdown'|'dark') → ganchos opcionais do Game
 //
 // O poço é um CILINDRO de raio SHAFT_R: a parede é feita de setores anelares (uma faixa por trecho de altura e por

@@ -37,7 +37,7 @@ class Game{
     this.perf=new PerfOverlay(this);
     this.ui=new UIManager();
     this.vr=new VRPlayer(this);
-    this.puzzles.reset(); this._zones();
+    this.puzzles.reset();
     this.debugNavigation=new DeveloperNavigation(this);
     this.cinematic=new IntroCinematic(this);
     this.spectator=new SpectatorMode(this);
@@ -107,7 +107,7 @@ class Game{
   }
   resetRun(){
     this.world.reset(); this.player.reset(); this.items.reset(); this.mass.reset(); this.timer.reset(); this.score.reset();
-    this.fx.clear(); this.puzzles.reset(); this._zones(); this.audio.silence();
+    this.fx.clear(); this.puzzles.reset(); this.audio.silence();
     this.stations.reset(); this.stationOpen=null; this._syncStations();
     this.checkpoints.reset(); if(this.debugNavigation)this.debugNavigation.reset(); else if(this.presence)this.presence.reset(); this.atmosphere.reset(); this.result=null; this.saved=false; this.savedIndex=-1; this.vt=0;
     this.ui.hideNote(); this.ui.resetPack(); this.keys={}; this.gameBtn={};   // resetPack: fecha a mochila e esquece as posições dos itens
@@ -122,7 +122,6 @@ class Game{
     const L=this.flashlight, tgt=(this.flashOn??this.flashAuto)?2.4:0;
     L.intensity+=clamp(tgt-L.intensity,-dt*12,dt*12);
   }
-  _zones(){ this.mass.safeZones=Object.values(this.world.puzzleRooms).flatMap(r=>[r.zoneRoom,r.zoneDuct,...(r.zones||[])].filter(Boolean)); }
   beginPlay(){
     this.state='play'; this.timer.start(); this.ui.hideScreens(); this.ui.setHUD(true); this.vr.closeMenu();
     this.audio.setHum(1); this.lock();
