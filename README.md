@@ -29,7 +29,7 @@ Você está no fundo de um silo industrial gigantesco: um cilindro de 400 m de a
   | 300 m | O Arquivo e o Labirinto | mural, labirinto no escuro, placas, cofre | duto (310 m) | **O Registro** |
 
   A primeira decisão tomada define o final. Quem chega ao topo sem decidir nada tem o final **Fuga**. Enquanto você está dentro de uma ala obrigatória, a massa fica contida abaixo dela.
-- **Ventiladores.** O exaustor de 169 m puxa o ar do poço para cima: perto dele, a sucção gasta a pegada e, solto, o corpo é levado até as pás. O insuflador de 245 m sopra para cima e é a única rota até o mirante. Paredes e bordas fazem abrigo; grades deixam o ar passar.
+- **Ventiladores.** O exaustor de 169 m puxa o ar do poço para cima: a sucção cresce desde a aproximação da galeria, gasta a pegada e, mais acima, leva o corpo solto até as pás. Encostar o corpo nas pás mata por baixo, por cima ou pela borda — não dá para pousar nelas e saltar. A carcaça não causa dano; a boca coberta da galeria e o corredor de serviço continuam abrigados. O insuflador de 245 m sopra para cima e é a única rota até o mirante. Paredes e bordas fazem abrigo; grades deixam o ar passar.
 - **Pontuação.** Somam pontos a altura máxima, os checkpoints, os puzzles e os segredos encontrados. Quem chega ao fim ganha bônus por velocidade e por não escorregar nem tomar pílulas. Cada escorregão e cada pílula descontam pontos. O ranking fica salvo no navegador.
 
 ## Controles

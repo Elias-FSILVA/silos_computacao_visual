@@ -335,6 +335,8 @@ class Player{
     if(this.mantle) this._mantle(dt);
     else if(held.length) this._climb(dt,input,held);
     else this._free(dt,input);
+    // Contato após o movimento: pousar nas pás mata neste quadro, mesmo com o peito acima do fluxo.
+    if(!this.dead&&this.world.fanContact&&this.world.fanContact(this.position,this._prev)) this.die('fan');
     if(this.dead) return;
     const climbing=this.isClimbing;
     this.hands.forEach(h=>{
