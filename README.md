@@ -104,9 +104,24 @@ O `vercel.json` já configura tudo: a Vercel roda `npm ci` e `npm run build` e p
 
 ### Estações de melhoria (perks)
 
-- Três estações físicas: **Sala de controle** (76,6 m), **Mezanino** (188,6 m) e **Cabine de guincho** (331 m). Cada uma oferece 2 melhorias com contrapartida, sempre as mesmas para a mesma situação. *Corpo leve* só aparece na última.
+- Três estações físicas: **Sala de controle** (76,6 m), **Mezanino** (188,6 m) e **Cabine de guincho** (331 m). Cada uma oferece 2 melhorias com contrapartida, sorteadas no começo de cada subida: nenhuma se repete entre as três estações, e ignorar e voltar não troca as ofertas. *Âncora* aparece a partir do Mezanino; *Fôlego fundo* e *Corpo leve*, só na última.
 - Uma escolha por estação, no máximo **3 melhorias por subida**. Ignorar não consome a estação. Escolher não restaura stamina.
-- Morte, fim ou reinício da subida limpam as melhorias e liberam as estações; pausa, mochila, console e checkpoints preservam. O console de desenvolvimento pode ativar as 4 para testes (`perks` mostra `n/3`).
+- Morte, fim ou reinício da subida limpam as melhorias e liberam as estações; pausa, mochila, console e checkpoints preservam. O console de desenvolvimento pode ativar qualquer uma para testes (`perks add help` lista os ids) (`perks` mostra `n/3`).
+- As 10 melhorias (valores provisórios, para ajustar no playtest):
+
+| Melhoria | Vantagem | Contrapartida | Onde |
+|---|---|---|---|
+| Pegada econômica | −15% gasto de pegada | −15% recuperação | todas |
+| Recuperação rápida | +20% recuperação | +10% gasto de pegada | todas |
+| Impulso potente | +10% no salto agarrado | +25% custo desse salto | todas |
+| Braços longos | +10% alcance | +15% gasto de pegada | todas |
+| Mãos calejadas | fadiga acumula 25% mais devagar | fadiga passa 25% mais devagar | todas |
+| Respiro curto | mão livre recupera +40% na escalada | −20% recuperação no chão | todas |
+| Salto econômico | −30% custo do salto agarrado | −8% de impulso nele | todas |
+| Âncora | −20% gasto de pegada | +10% gravidade | Mezanino e Cabine |
+| Fôlego fundo | +25% stamina máxima | −20% recuperação | só Cabine |
+| Corpo leve | −25% gravidade | −40% stamina máxima | só Cabine |
+
 - HUD: um ícone por melhoria ativa perto do retículo; na mochila, a área "Melhorias" mostra benefício e contrapartida. No VR, os ícones ficam no pulso.
 
 ### Referência e escopo desta etapa
@@ -123,7 +138,7 @@ for test in tools/test_*.js; do node "$test" || exit 1; done
 npm run build
 ```
 
-Suítes desta etapa: `test_hand_visuals.js` (espelhamento e mãos independentes), `test_climbing_axe.js` (superfícies, inventário, física, estados e VR por mock), `test_axe_concrete.js` (fincada rasa no concreto e desgaste), `test_axe_feedback.js` (reação quando a picareta não crava), `test_axe_routes.js` (faixas e caixas no grafo de alcance) e `test_perk_stations.js` (ofertas, estações no mundo, painel e VR por mock).
+Suítes desta etapa: `test_hand_visuals.js` (espelhamento e mãos independentes), `test_climbing_axe.js` (superfícies, inventário, física, estados e VR por mock), `test_axe_concrete.js` (fincada rasa no concreto e desgaste), `test_axe_feedback.js` (reação quando a picareta não crava), `test_axe_routes.js` (faixas e caixas no grafo de alcance) `test_perk_stations.js` (ofertas, estações no mundo, painel e VR por mock) e `test_perk_rotation.js` (sorteio por subida e perks novos).
 
 Playtest sugerido: agarrado a uma parede, salte sem WASD e confira a subida sem recuo; repita com A/D mirando outra agarra. Alterne mãos, compare com duas mãos apoiadas e teste uma borda antes/depois da puxada. Em Quest, confira A e pinça esquerda com/sem analógico. Testes automáticos não substituem a avaliação de sensação e conforto no headset.
 

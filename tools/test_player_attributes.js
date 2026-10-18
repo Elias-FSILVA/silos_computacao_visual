@@ -27,7 +27,7 @@ for(const [id,changes] of Object.entries({economical_grip:{gripDrainMultiplier:.
 test('ordem canônica, combinação e ausência de deriva em 100 ciclos',()=>{
   const a=new A(),b=new A(),ids=Object.keys(defs);
   ids.forEach(id=>a.addPerk(id));ids.reverse().forEach(id=>b.addPerk(id));
-  assert.deepEqual(plain(a.effective),plain(b.effective));near(a.effective.gripDrainMultiplier,.935);near(a.effective.groundRecovery,35.7);near(a.effective.freeHandRecovery,12.24);
+  assert.deepEqual(plain(a.effective),plain(b.effective));for(const k of ['gripDrainMultiplier','groundRecovery','freeHandRecovery']) near(a.effective[k],ids.reduce((v,id)=>v*(defs[id].multipliers[k]??1),base[k]));
   assert.deepEqual(plain(a.activePerks),[...ids].sort());
   for(let i=0;i<100;i++){a.clearPerks();ids.forEach(id=>a.addPerk(id));ids.forEach(id=>a.removePerk(id));assert.deepEqual(plain(a.effective),plain(base));}
 });

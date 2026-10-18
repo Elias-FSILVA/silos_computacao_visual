@@ -33,7 +33,13 @@ const PERK_ICONS={
   economical_grip:'<path d="M7 20c0-5 2-8 5-8s5 3 5 8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 12V7M12 12V5M15 12V7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
   quick_recovery:'<path d="M12 4v8l5 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 4v4h4" fill="none" stroke="currentColor" stroke-width="2"/>',
   powerful_launch:'<path d="M12 3l6 7h-4v6h-4v-6H6z" fill="currentColor"/><path d="M8 20h8" stroke="currentColor" stroke-width="2"/>',
-  light_body:'<path d="M12 4c3 3 5 6 5 9a5 5 0 0 1-10 0c0-3 2-6 5-9z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 9v8" stroke="currentColor" stroke-width="1.6"/>'
+  light_body:'<path d="M12 4c3 3 5 6 5 9a5 5 0 0 1-10 0c0-3 2-6 5-9z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 9v8" stroke="currentColor" stroke-width="1.6"/>',
+  long_arms:'<path d="M4 20L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M13 5h6v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="5" cy="19" r="1.6" fill="currentColor"/>',
+  calloused_hands:'<path d="M6 20v-7a2 2 0 0 1 4 0V6a2 2 0 0 1 4 0v7a2 2 0 0 1 4 0v7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 17h6" stroke="currentColor" stroke-width="2"/>',
+  short_breath:'<path d="M3 9h11a3 3 0 1 0-3-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M3 15h15a3 3 0 1 1-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  economical_launch:'<path d="M12 4l5 6h-3v5h-4v-5H7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M7 20h10" stroke="currentColor" stroke-width="2" stroke-dasharray="2 2"/>',
+  anchor:'<circle cx="12" cy="5" r="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v13M8 11h8M5 14a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  deep_breath:'<path d="M12 4v7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M11 11c-2-4-7-4-7 2 0 4 2 7 6 7l1-1zM13 11c2-4 7-4 7 2 0 4-2 7-6 7l-1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
 };
 function perkIcon(id){ return `<svg class="perk-svg" viewBox="0 0 24 24" aria-hidden="true">${PERK_ICONS[id]||''}</svg>`; }
 class UIManager{

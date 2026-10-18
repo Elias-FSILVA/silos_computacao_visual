@@ -11,7 +11,9 @@ let pureLoaded=true; try{ vm.runInContext(fs.readFileSync(path.join(ROOT,'js/sys
 const G=n=>vm.runInContext(`typeof ${n}!=='undefined'?${n}:undefined`,ctx);
 const need=n=>{ const v=G(n); if(v===undefined) throw new Error(n+' is not defined'); return v; };
 const attrs=(...ids)=>{ const a=new (G('PlayerAttributes'))(); ids.forEach(id=>assert.ok(a.addPerk(id),id)); return a; };
-const stations=a=>new (need('PerkStations'))(a);
+// ofertas fixas para os testes de fluxo (o sorteio por subida está em test_perk_rotation.js)
+const PRESET={E1:['powerful_launch','quick_recovery'],E2:['economical_grip','anchor'],E3:['light_body','deep_breath']};
+const stations=a=>new (need('PerkStations'))(a,{preset:PRESET});
 const S={launch:'powerful_launch',recovery:'quick_recovery',grip:'economical_grip',light:'light_body'};
 
 // ---------------------------------------------------------------- módulo puro
@@ -19,24 +21,15 @@ test('MAX_RUN_PERKS = 3 e STATION_DEFS E1/E2/E3 nos descansos certos',()=>{
   assert.equal(need('MAX_RUN_PERKS'),3); const D=need('STATION_DEFS');
   assert.deepEqual(['E1','E2','E3'].map(k=>D[k].cp),['cp4','cp8','cp14']);
   assert.deepEqual(['E1','E2','E3'].map(k=>D[k].label),['Sala de controle','Mezanino','Cabine de guincho']);
-  for(const k of ['E1','E2','E3']){ assert.equal(D[k].id,k); assert.equal(D[k].order.length,4); assert.equal(D[k].ahead,undefined,'sem dica do que vem adiante'); }
+  for(const k of ['E1','E2','E3']){ assert.equal(D[k].id,k); assert.ok(D[k].pool.length>=7); assert.equal(D[k].ahead,undefined,'sem dica do que vem adiante'); }
 });
-test('tabela completa da §4.2 (ativos ao chegar × estação)',()=>{
-  const rows=[[[],{E1:['launch','recovery'],E2:['grip','recovery'],E3:['light','grip']}],
-    [['launch'],{E2:['grip','recovery'],E3:['light','grip']}],
-    [['recovery'],{E2:['grip','launch'],E3:['light','grip']}],
-    [['grip'],{E2:['recovery','launch'],E3:['light','recovery']}],
-    [['launch','grip'],{E3:['light','recovery']}],
-    [['launch','recovery'],{E3:['light','grip']}],
-    [['recovery','grip'],{E3:['light','launch']}]];
-  for(const [act,want] of rows){ const st=stations(attrs(...act.map(k=>S[k])));
-    for(const [e,ids] of Object.entries(want)) assert.deepEqual(Array.from(st.offers(e)),ids.map(k=>S[k]),`${act.join('+')||'nenhum'} @ ${e}`); }
-});
-test('nenhuma oferta repete um perk ativo; light_body só aparece na E3 pelo jogo',()=>{
-  const combos=[[],['launch'],['recovery'],['grip'],['launch','grip'],['launch','recovery'],['recovery','grip']];
-  for(const act of combos){ const a=attrs(...act.map(k=>S[k])), st=stations(a);
+test('ofertas sorteadas nunca repetem um perk ativo; light_body e deep_breath só na E3, anchor nunca na E1',()=>{
+  const P=need('PerkStations'), ids=Object.keys(G('PERK_DEFS'));
+  for(let s=0;s<400;s++){ let x=s+1; const rng=()=>((x=(x*16807)%2147483647)/2147483647);
+    const act=ids.filter((_,i)=>(s>>i)&1).slice(0,2), a=attrs(...act), st=new P(a,{rng});
     for(const e of ['E1','E2','E3']){ const o=Array.from(st.offers(e)); assert.ok(o.every(id=>!a.hasPerk(id)),`${e} repete`);
-      if(e!=='E3'&&act.length<(e==='E1'?1:2)) assert.ok(!o.includes(S.light),`${e} ofereceu light_body`); } }
+      if(e!=='E3') assert.ok(!o.includes(S.light)&&!o.includes('deep_breath'),`${e} ofereceu forte: ${o}`);
+      if(e==='E1') assert.ok(!o.includes('anchor'),`E1 ofereceu anchor`); } }
 });
 test('escolher aplica o perk e consome a estação; não restaura stamina (só atributos)',()=>{
   const a=attrs(), st=stations(a); const r=st.choose('E1',S.launch);
@@ -56,7 +49,7 @@ test('3 perks ativos (console) → limit, sem consumir',()=>{
   assert.deepEqual({...st.canChoose('E3')},{ok:false,reason:'limit'}); assert.equal(st.choose('E3',S.light).reason,'limit'); assert.equal(st.isUsed('E3'),false);
 });
 test('1 candidato → 1 oferta; 0 candidatos → empty',()=>{
-  const a=attrs(S.launch,S.recovery,S.grip); assert.deepEqual(Array.from(stations(a).offers('E1')),[S.light]);
+  const a=attrs(S.launch); assert.deepEqual(Array.from(stations(a).offers('E1')),[S.recovery]);
   const b=attrs(S.launch,S.recovery,S.grip,S.light), st=stations(b); assert.deepEqual(Array.from(st.offers('E1')),[]);
   // com 4 ativos o limite vence; sem limite, a falta de candidatos é 'empty'
   assert.equal(st.canChoose('E1').reason,'limit');
@@ -102,7 +95,7 @@ function stationGame(){
     world:{stations:['E1','E2','E3'].map(id=>({id,setUsed(u){ calls.sync.push(id+':'+u); }})),reset(){}},
     ui:{$:()=>el,setPack(){},clearMsg(){},show(){},hideNote(){},msg(t){ (calls.msgs=calls.msgs||[]).push(t); },showStation(v){ calls.show.push(v); },hideStation(){ calls.hide++; },resetPack(){},hideScreens(){},setHUD(){},showResult(){}},
     lock(){ calls.lock++; },unlock(){ calls.unlock++; }});
-  g.stations=new (Hg.G('PerkStations'))(p.attributes); g.timer.start();
+  g.stations=new (Hg.G('PerkStations'))(p.attributes,{preset:PRESET}); g.timer.start();
   return {g,p,calls};
 }
 test('F abre e congela (estado station, timer parado, botões soltos); fechar retoma',()=>{
@@ -150,7 +143,7 @@ test('painel: nome, regra da estação, 2 cartões (benefício/contrapartida/pr�
   const {ui,el}=fakeUI(), v=g.stationView('E3'); ui.showStation(v); const h=el('stationPanel').innerHTML;
   assert.equal(el('stationPanel').hidden,false);
   assert.ok(!/Adiante/.test(h),'sem dica do que vem adiante');
-  for(const t of ['Cabine de guincho','Vale até o fim da subida','Corpo leve','25% menos gravidade pessoal.','40% menos stamina máxima por mão.','Pegada econômica','Escolher','Ignorar','1/3','Impulso potente','100 → 60','18 → 13,5'])
+  for(const t of ['Cabine de guincho','Vale até o fim da subida','Corpo leve','25% menos gravidade pessoal.','40% menos stamina máxima por mão.','Fôlego fundo','Escolher','Ignorar','1/3','Impulso potente','100 → 60','18 → 13,5'])
     assert.ok(h.includes(t),'falta: '+t);
   assert.ok(!/class="pcard[^"]*sel/.test(h),'nada selecionado ainda'); assert.ok(/data-act="confirm"[^>]*disabled/.test(h),'Escolher desabilitado sem seleção');
   ui.showStation({...v,sel:1}); assert.ok(/class="pcard sel"[^>]*data-i="1"/.test(el('stationPanel').innerHTML),'cartão 2 selecionado');
