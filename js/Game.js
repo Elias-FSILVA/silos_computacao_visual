@@ -303,7 +303,8 @@ class Game{
       checkpointJustCollected:cp?{id:cp.id,label:cp.label,bonus:cp.bonus,optional:cp.optional}:null,
       finished:this.timer.finished, result:this.result,
       debug:{assisted:!!(this.debugNavigation&&this.debugNavigation.assisted),noclip:!!(this.debugNavigation&&this.debugNavigation.noclipActive)},
-      massDistance:this.mass.active?this.mass.gap(this.player):null, playerName:this.playerName
+      massDistance:this.mass.active?this.mass.gap(this.player):null, playerName:this.playerName,
+      health:this.player.health?this.player.health.snapshot():null
     };
   }
   // ---------- entrada ----------
@@ -376,6 +377,9 @@ class Game{
     addEventListener('wheel',e=>this._onWheel(e),{passive:true});
     addEventListener('keydown',e=>this._onKeyDown(e));
     addEventListener('keyup',e=>{ this.keys[e.code]=false; });
+    this._bindPlayerEvents();
+  }
+  _bindPlayerEvents(){
     // eventos do player → áudio/UI
     const p=this.player, a=this.audio, ui=this.ui;
     const handName=h=>h.side<0?'esquerda':'direita';
@@ -390,6 +394,8 @@ class Game{
     p.on('walljump',()=>a.noise(.08,900,.18));
     p.on('mantle',()=>a.noise(.15,500,.28));
     p.on('land',v=>a.land(v));
+    // dano: desktop pisca a borda e mostra a barra; VR só vibra os dois controles (sem efeito de tela)
+    p.on('damage',d=>{ if(this.vr.active){ if(this.vr.hurtFeedback) this.vr.hurtFeedback(d); } else if(ui.flashDamage) ui.flashDamage(d); });
     p.on('nailPop',()=>{ ui.msg('O prego solto escapou da parede.',1.8); a.noise(.1,2600,.15); });
     p.on('windTear',()=>{ ui.msg('O vento arrancou suas mãos da parede.',2); a.whoosh(); });
     this.world.onCrumble=o=>{ if(o.userData.type==='nail') this.player.emit('nailPop'); else a.crack(); };

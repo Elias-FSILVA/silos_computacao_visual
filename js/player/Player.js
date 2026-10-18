@@ -229,7 +229,7 @@ class Player{
   damage(amount,source='debug'){
     if(this.dead) return {applied:0,value:this.health.value,died:false};
     const r=this.health.damage(amount,{source});
-    if(r.applied>0){ this.emit('damage',{amount:r.applied,source,value:r.value,state:this.health.state}); }
+    if(r.applied>0){ this.handModels.forEach(hm=>hm.kick(-5)); this.emit('damage',{amount:r.applied,source,value:r.value,state:this.health.state}); }
     if(r.died) this.die(source);
     return r;
   }

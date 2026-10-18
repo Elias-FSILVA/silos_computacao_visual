@@ -103,7 +103,8 @@ class VRHud{
     if(look&&look.prompt){ const [k,t]=look.prompt.split('|'); prompt=`${VR_PROMPT_KEYS[k]||k} · ${t}`; }
     const L=[`${$('altN').textContent} m`,$('timeN').textContent,$('massN').textContent,$('slotName').textContent,prompt];
     const hot=$('massN').classList.contains('hot'), perks=player.attributes?player.attributes.activePerks:[];
-    const key=L.join('|')+st.join(',')+hot+'|'+perks.join(',')+'|'+Object.keys(this.icons).length;
+    const hp=player.health?player.health.snapshot():null;
+    const key=L.join('|')+st.join(',')+hot+'|'+perks.join(',')+'|'+Object.keys(this.icons).length+(hp?`|hp${hp.value}${hp.state}`:'');
     if(key===this.key) return; this.key=key;
     const x=this.canvas.getContext('2d'), W=512, H=320;
     x.clearRect(0,0,W,H); x.fillStyle='rgba(8,7,5,.82)'; x.fillRect(0,0,W,H);
@@ -114,14 +115,23 @@ class VRHud{
     x.textAlign='left'; x.fillStyle=hot?'#ff6a4a':'#bfb6a2'; x.font='500 34px "Barlow Condensed", sans-serif'; x.fillText(L[2],24,100);
     // melhorias ativas: ícones pequenos abaixo do tempo
     perks.forEach((id,k)=>{ const img=this._perkIcon(id); if(img) x.drawImage(img,W-24-40*(perks.length-k),82,34,34); });
+    // vida (spec Health §4.4): "vida" + barra + número, acima da estamina; crítico só aqui, sem efeito de tela
+    if(hp){ const crit=hp.state==='critical'||hp.state==='dead', col=crit?'#ff2a1a':hp.state==='injured'?'#e3b341':'#d8cfb8';
+      const bx=104, bw=W-24-64-bx-(crit?112:0);
+      x.textAlign='left'; x.fillStyle='#7d7566'; x.font='400 28px "Barlow Condensed", sans-serif'; x.fillText('vida',24,140);
+      x.fillStyle='rgba(216,207,184,.15)'; x.fillRect(bx,148,bw,16); x.fillStyle=col; x.fillRect(bx,148,bw*clamp(hp.value/(hp.max||100),0,1),16);
+      x.font='600 30px "Barlow Condensed", sans-serif';
+      if(crit) x.fillText('crítico',bx+bw+14,138);
+      x.textAlign='right'; x.fillText(String(hp.value),W-24,138); x.textAlign='left'; }
     // estamina: esquerda | direita
-    st.forEach((s,i)=>{ const bx=24+i*236, by=150, bw=216;
+    st.forEach((s,i)=>{ const bx=24+i*236, by=hp?186:150, bw=216;
       x.fillStyle='rgba(216,207,184,.15)'; x.fillRect(bx,by,bw,22);
       x.fillStyle=staminaColor(s); x.fillRect(bx,by,bw*clamp(s/100,0,1),22);
       x.fillStyle='#7d7566'; x.font='400 24px "Barlow Condensed", sans-serif'; x.fillText(i?'mão dir.':'mão esq.',bx,by+26); });
     x.fillStyle='#e8dfc8'; x.font='500 32px "Barlow Condensed", sans-serif';
-    if(L[3]) x.fillText(L[3],24,214);
-    if(L[4]){ x.fillStyle='#f0c870'; x.fillText(L[4],24,260); }
+    const ty=hp?242:214;
+    if(L[3]) x.fillText(L[3],24,ty);
+    if(L[4]){ x.fillStyle='#f0c870'; x.fillText(L[4],24,ty+40); }
     this.tex.needsUpdate=true;
   }
 }

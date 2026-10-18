@@ -131,6 +131,26 @@ class UIManager{
   cine(fade,text,op){ this.$('cineFade').style.opacity=fade; const t=this.$('cineText'); if(t.textContent!==text) t.textContent=text; t.style.opacity=op; }
   // ---------- retícula contextual ----------
   // retículo reage a uma recusa (picareta em superfície errada): reinicia a animação mesmo em toques seguidos
+  // vida (spec Health §4.4): só escreve no DOM quando valor, estado ou "dano recente" mudam
+  setHealth(h){
+    if(!h) return;
+    const recent=performance.now()<(this._hpRecentUntil||0), st=h.state==='dead'?'critical':h.state;
+    const k=h.value+'|'+st+'|'+recent; if(k===this._hpKey) return; this._hpKey=k;
+    const el=this.$('hp'), prev=this._hpVal, max=h.max||100;
+    if(prev!==h.value){ this._hpVal=h.value;
+      const pct=Math.max(0,Math.min(100,Math.round(100*h.value/max)))+'%';
+      el.classList.toggle('up',prev!=null&&h.value>prev);   // cura: o rastro acompanha na hora; perda: encolhe em 0,4 s
+      this.$('hpFill').style.width=pct; this.$('hpTrail').style.width=pct;
+      this.$('hpN').textContent=String(h.value); el.setAttribute('aria-label',`Vida ${h.value} de ${max}`); }
+    for(const s of ['hurt','injured','critical']) el.classList.toggle(s,st===s);
+    el.classList.toggle('recent',recent);
+    const w=this.$('hpWord'), crit=st==='critical'; if(w.hidden===crit){ if(crit) w.textContent='crítico'; w.hidden=!crit; }
+  }
+  // ao sofrer dano: barra plena por 2 s e borda vermelha curta (máx. .25, 300 ms); nada de tela cheia
+  flashDamage(){
+    this._hpRecentUntil=performance.now()+2000; this._hpKey=null; this.$('hp').classList.add('recent');
+    const e=this.$('hurtEdge'); e.classList.remove('on'); void e.offsetWidth; e.classList.add('on');
+  }
   pulseReticle(){ const el=this.$('ring'); if(!el) return; el.classList.remove('deny'); void el.offsetWidth; el.classList.add('deny'); }
   setReticle(mode){
     if(this._ret===mode) return; this._ret=mode;
@@ -600,6 +620,7 @@ class UIManager{
     this.$('cpN').textContent=gs.currentCheckpoint?`Último marco: ${gs.currentCheckpoint}`:'';
     const db=this.$('debugBadge'), dbg=gs.debug, on=!!(dbg&&dbg.assisted), dt=on?(dbg.noclip?'RUN ASSISTIDA · NOCLIP':'RUN ASSISTIDA'):'';   // run de debug: aviso fixo, não só um toast
     if(db.hidden===on) db.hidden=!on; if(db.textContent!==dt) db.textContent=dt;
+    this.setHealth(gs.health);
     if(gs.checkpointJustCollected){ const c=gs.checkpointJustCollected; this.toast(c.optional?'Rota arriscada':'Marco alcançado',`${c.label}  +${c.bonus}`); }
     this.setReticle(look.reticle);
     player.hands.forEach((h,i)=>{

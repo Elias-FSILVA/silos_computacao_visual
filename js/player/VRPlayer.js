@@ -431,6 +431,7 @@ class VRPlayer{
     else if(kind==='weak'){ this._haptic(i,.4,35); setTimeout(()=>this._haptic(i,.3,35),70); setTimeout(()=>this._haptic(i,.2,35),140); }
     else this._haptic(i,.5,140);
   }
+  hurtFeedback(){ this._haptic(0,.35,60); this._haptic(1,.35,60); }   // dano: pulso curto nos dois controles
   _haptic(i,v,ms){
     try{ const c=this.ctrl[i], gp=c&&c.source&&c.source.gamepad, a=gp&&gp.hapticActuators&&gp.hapticActuators[0];
       if(a&&a.pulse){ const r=a.pulse(v,ms); if(r&&r.catch) r.catch(()=>{}); } }catch(e){}
