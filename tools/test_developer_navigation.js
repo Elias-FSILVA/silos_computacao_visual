@@ -27,7 +27,7 @@ test('console real: goto sobre console(play) move, marca e não retoma timer; go
   const st=run('status');assert.match(st,/Retorno: registrado/);assert.match(st,/Run assistida/);});
 test('console real: speed 0/51/NaN/1abc rejeitados sem mudar; menu recusa mutação mas lista destinos',h=>{const run=con(h);for(const v of ['0','51','NaN','Infinity','1abc']){assert.match(run('noclip speed '+v),/^Erro:/);assert.equal(h.nav.speed,10);}
   h.g.state='menu';assert.match(run('goto cp6'),/^Erro:.*partida viva/);assert.match(run('noclip on'),/^Erro:/);assert.equal(h.nav.eligibility().assisted,false);
-  const list=run('goto list');for(const id of ['cp6','cp11','cp14','subida1','bombas','arquivo','atalho'])assert.ok(list.includes(id),id);});
+  const list=run('goto list');for(const id of ['cp6','cp11','cp14','bombas','arquivo'])assert.ok(list.includes(id),id);for(const id of ['subida1','atalho','mezanino'])assert.ok(!new RegExp('\\b'+id+'\\b').test(list),'não listado: '+id);});
 test('console real: goto→back informa gatilhos protegidos na origem com instrução de rearme',h=>{const run=con(h);const q=h.nav.safety.resolve('bombas').pose;h.p.position.copy(q.position);h.nav.presence.update();
   assert.ok(!run('goto cp6').startsWith('Erro'));assert.ok(!run('back').startsWith('Erro'));const st=run('status');assert.match(st,/Gatilhos protegidos/);assert.match(st,/(Saia|Reentre|Retorne)/);});
 test('A-final M-1: goto recusado informa o motivo real (massa) sem mover nem marcar',h=>{h.mass.active=true;h.mass.reaches=()=>true;const before=state(h),r=h.nav.goto('cp6');assert.equal(r.ok,false);assert.match(r.message,/Sem apoio seguro atual para cp6: Massa alcança este apoio/);assert.equal(state(h),before);});

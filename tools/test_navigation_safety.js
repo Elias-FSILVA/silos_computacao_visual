@@ -10,6 +10,21 @@ function fixture(platforms){ const w={platforms,shellSegs:[],fans:[],checkpoints
 const floor=()=>box(-4,4,-4,4,-.3,0);
 const physical=()=>JSON.stringify({platforms:world.platforms,cp:world.checkpoints,shell:world.shellSegs,fans:world.fans.map(f=>({near:f._nearN,pos:f.pos,axis:f.axis})),el:world.elevator&&{state:world.elevator.state,y:world.elevator.y}});
 test('catálogo contém todos os IDs reais e aliases; não inventa cp5/cp9',()=>{ const s=safety(),ids=s.catalog().map(d=>d.id); for(const c of world.checkpoints)assert.ok(ids.includes(c.id),c.id); for(const id of ['subida1','subida2','subida2b','subida3a','subida3b','subida4','bombas','mezanino','arquivo'])assert.ok(ids.includes(id)); assert.ok(!ids.includes('cp5')&&!ids.includes('cp9')); });
+test('goto list: cada lugar listado tem nota própria e concreta, sem frase genérica, "Subida N" ou dica do que vem',()=>{
+  const s=safety(),cat=s.catalog(),listed=cat.filter(d=>d.listed!==false);
+  for(const c of world.checkpoints.filter(c=>c.id!=='atalho'))assert.ok(listed.some(d=>d.id===c.id),'falta na lista: '+c.id);
+  const notes=listed.map(d=>d.note);assert.equal(new Set(notes).size,notes.length,'notas repetidas: '+notes.join(' | '));
+  for(const d of listed){assert.ok(d.note&&d.note.length<=48,d.id+': nota vazia/longa');assert.ok(!/mecanismos preservado|preservad|Adiante|Não consome|não é resolvid/i.test(d.note),d.id+': '+d.note);assert.ok(!/^Subida/.test(d.name),d.id+': '+d.name);}
+  const note=id=>listed.find(d=>d.id===id).note;
+  assert.match(note('cp6'),/picareta/);assert.match(note('cp11'),/picareta/);
+  assert.match(note('cp4'),/E1/);assert.match(note('cp8'),/E2/);assert.match(note('cp14'),/E3/);
+});
+test('goto list: aliases e atalho continuam no catálogo (goto funciona) mas não aparecem na lista',()=>{
+  const s=safety(),cat=s.catalog();
+  for(const id of ['subida1','subida2','subida2b','subida3a','subida3b','subida4','mezanino','atalho']){const d=cat.find(d=>d.id===id);assert.ok(d,id);assert.equal(d.listed,false,id);}
+  assert.equal(s.resolve('subida1').ok,true);
+  const ids=cat.filter(d=>d.listed!==false).map(d=>d.id);assert.equal(new Set(ids.map(id=>cat.find(d=>d.id===id).height)).size,ids.length,'dois IDs listados no mesmo lugar');
+});
 test('todos os checkpoints e aliases resolvem pés em apoio real não letal sem mutar mundo',()=>{const s=safety(),before=physical(); for(const d of s.catalog()){const r=s.resolve(d.id);if(d.id==='atalho'){assert.equal(r.ok,false,'atalho é suspenso; sem apoio seguro');continue;}assert.equal(r.ok,true,`${d.id}: ${r.message}`);assert.equal(s.check(r.pose).ok,true,d.id); if(d.id==='cp6')assert.equal(r.pose.position.y,128);if(d.id==='cp11')assert.equal(r.pose.position.y,269.6);if(d.id==='cp14')assert.equal(r.pose.position.y,331);}assert.equal(physical(),before);});
 test('resolver referência removida falha em vez de usar centro/spawn',()=>{ const s=safety(),c=world.checkpoints.find(c=>c.id==='cp6'),i=world.checkpoints.indexOf(c);world.checkpoints.splice(i,1);try{assert.equal(s.resolve('cp6').ok,false);}finally{world.checkpoints.splice(i,0,c);} });
 test('corpo colide embora câmera livre; cabeça no teto é recusada; contato com piso permitido',()=>{const s=fixture([floor(),box(-1,1,-1,1,.3,.7)]); assert.equal(s.check(pose(0,0,0)).ok,false);assert.equal(s.check(pose(3,0,0)).ok,true);const t=fixture([floor(),box(-1,1,-1,1,1.7,2)]);assert.equal(t.check(pose(0,0,0)).ok,false);});

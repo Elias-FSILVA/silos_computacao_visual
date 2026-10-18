@@ -1,20 +1,32 @@
 'use strict';
 // Consultas somente leitura. Um destino de inspeção jamais movimenta mecanismos para caber o corpo.
+// O que há em cada lugar do goto list (curto, só o que se vê ali; nada sobre o que vem depois)
+const PLACE_NOTES=Object.freeze({
+  cp1:'primeiro descanso',atalho:'viga suspensa, sem chão (bônus)',cp2:'anel de grade em volta do poço',
+  cp3:'caixa: 3 pregos · bilhete das três frentes',cp4:'estação E1 · terminal · caixa: pílula e pregos',
+  bombas:'entrada da ala (energia e bombas)',cp_duto1:'porta de saída da Casa das Bombas',
+  cp6:'caixa: pregos e 1ª picareta',cp7:'entrada da galeria do exaustor',cp_exa:'topo da escada de serviço',
+  cp8:'estação E2 · caixa: pílula e pregos',cp_patio:'Casa de Força e Estufa',cp_duto2:'chegada do elevador de carga',
+  cp10:'grade sobre o insuflador',cp_ins:'deck onde o insuflador deixa',cp11:'caixa: pílula, pregos e 2ª picareta',
+  cp12:'caixa: 3 pregos · bilhete do rádio',arquivo:'antes do mural e do labirinto',cp13:'saída do Arquivo pelo duto',
+  cp14:'estação E3 · caixa: 3 pregos',cp15:'ponte sobre o poço · caixa: pílula e pregos',cp16:'último descanso · caixa: 3 pregos'
+});
 class NavigationSafety{
   constructor(game){this.game=game;}
   static clonePose(p){return {position:p.position.clone(),yaw:p.yaw,pitch:p.pitch};}
+  // goto list: uma linha por lugar, com o que há ali (caixa, estação, ala). Aliases da spec continuam aceitos pelo goto,
+  // mas não são listados (levam ao mesmo ponto de um checkpoint); o atalho é suspenso e o goto o recusa.
   catalog(){
     const w=this.game.world,byCheckpoint=(id)=>()=>this._checkpoint(id);
-    const entries=w.checkpoints.map(c=>({id:c.id,name:c.label||c.id,height:c.position.y,note:'Estado dos mecanismos preservado',resolve:byCheckpoint(c.id)}));
-    for(const [id,ref,name,note] of [
-      ['subida1','cp2','Subida 1','Início junto à Passarela'],['subida2','cp_duto1','Subida 2','Casa das Bombas não é resolvida'],
-      ['subida2b','cp_exa','Subida 2b','Porta e escada mantêm estado'],['subida3a','cp_duto2','Subida 3a','Elevador e energia preservados'],
-      ['subida3b','cp_ins','Subida 3b','Insuflador preservado'],['subida4','cp13','Subida 4','Arquivo e labirinto não resolvidos'],['mezanino','cp8','Mezanino','Não consome E2']]){
-      const c=w.checkpoints.find(c=>c.id===ref);entries.push({id,name,height:c?c.position.y:null,note,resolve:byCheckpoint(ref)});
+    const entries=w.checkpoints.map(c=>({id:c.id,name:c.label||c.id,height:c.position.y,note:PLACE_NOTES[c.id]||'',
+      listed:c.id!=='atalho',resolve:byCheckpoint(c.id)}));
+    for(const [id,ref] of [['subida1','cp2'],['subida2','cp_duto1'],['subida2b','cp_exa'],['subida3a','cp_duto2'],['subida3b','cp_ins'],['subida4','cp13'],['mezanino','cp8']]){
+      const c=w.checkpoints.find(c=>c.id===ref);
+      entries.push({id,name:c?(c.label||ref):ref,height:c?c.position.y:null,note:'mesmo ponto de '+ref,listed:false,resolve:byCheckpoint(ref)});
     }
-    entries.push({id:'bombas',name:'Casa das Bombas',height:100,note:'Acesso; porta/rota preservadas',resolve:()=>{
+    entries.push({id:'bombas',name:'Casa das Bombas',height:100,note:PLACE_NOTES.bombas,listed:true,resolve:()=>{
       const g=w.halls.find(h=>h.cfg&&h.cfg.id==='h1');return g?this._near(g.fr.p(g.uN+1.2,g.H,g.vin),null):null;
-    }},{id:'arquivo',name:'Arquivo',height:300,note:'Antecâmara; não consome planta',resolve:()=>{
+    }},{id:'arquivo',name:'Arquivo',height:300,note:PLACE_NOTES.arquivo,listed:true,resolve:()=>{
       const r=w.puzzleRooms.mz300;return r&&r.info?this._near(new V3(0,r.baseY,r.info.zA-.8),null):null;
     }});
     return entries.sort((a,b)=>(a.height??Infinity)-(b.height??Infinity)||a.id.localeCompare(b.id));
@@ -53,7 +65,7 @@ class NavigationSafety{
     const d=this.catalog().find(d=>d.id===id);if(!d)return {ok:false,message:'Destino inexistente: '+id};
     this._why=null;const pose=d.resolve();if(!pose)return {ok:false,message:'Sem apoio seguro atual para '+id+(this._why?': '+this._why:'')};
     const c=this.check(pose);if(!c.ok)return {ok:false,message:'Sem apoio seguro atual para '+id+': '+c.reason};
-    return {ok:true,pose,destinationId:id,message:`${id} — ${d.name}, ${pose.position.y.toFixed(2)} m. ${d.note}`};
+    return {ok:true,pose,destinationId:id,message:`${d.name} (${id}), ${(Math.round(pose.position.y*10)/10).toLocaleString('pt-BR')} m${d.listed!==false&&d.note?' · '+d.note:''}.`};
   }
   _connected(from,to){
     const w=this.game.world,delta=from.distanceTo(to);

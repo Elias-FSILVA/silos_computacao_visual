@@ -60,8 +60,14 @@ class DevConsole{
     const done=r=>r.ok?r.message:`Erro: ${r.message}`;
     if(command==='goto'){
       if(args.length===1&&args[0]==='list'){
-        const rows=n.safety.catalog().map(d=>`  ${d.id} — ${d.name} · ${d.height!=null?d.height.toFixed(1)+' m':'altura ?'} · ${d.note}`);
-        return `Destinos (goto <id>):\n${rows.join('\n')}`;
+        const list=n.safety.catalog().filter(d=>d.listed!==false);
+        const m=h=>h==null?'?':(Math.round(h*10)/10).toLocaleString('pt-BR')+' m';
+        const wi=Math.max(...list.map(d=>d.id.length)),wn=Math.max(...list.map(d=>d.name.length)),wh=Math.max(...list.map(d=>m(d.height).length));
+        const out=['Destinos — goto <id>. Portas, puzzles e caixas ficam como estão; a run vira assistida.'];let band=null;
+        for(const d of list){const b=d.height==null?null:Math.floor(d.height/100);
+          if(b!==band){band=b;out.push(b==null?'— sem altura —':`— ${b*100}–${b*100+100} m —`);}
+          out.push(`  ${d.id.padEnd(wi)}  ${d.name.padEnd(wn)}  ${m(d.height).padStart(wh)}  ${d.note}`);}
+        return out.join('\n');
       }
       if(args.length===1&&/^[a-z0-9_]+$/.test(args[0])) return done(n.goto(args[0]));
       return 'Erro: uso: goto list · goto <id> (IDs em “goto list”).';

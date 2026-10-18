@@ -34,9 +34,16 @@ function navFixture(over={}){
   return {game,calls};
 }
 test('help documenta navegação, controles, desktop, ranking e rearme',()=>{const {game}=navFixture();const out=DevConsole.execute('help',game);for(const v of ['goto list','goto <id>','back','noclip on','noclip off','noclip speed <1–50>','WASD','Ctrl','Shift','desktop','ranking','saia e reentre','desliga onde você estiver'])if(!out.includes(v))throw Error(`missing ${v}: ${out}`);if(/só desliga com o corpo apoiado/.test(out))throw Error('help ainda descreve a regra antiga do noclip off');});
-test('goto list é só consulta: ordem estável do catálogo com altura e nota',()=>{const {game,calls}=navFixture();game.state='menu';const out=DevConsole.execute('goto list',game);
+test('goto list é só consulta: agrupa por trecho, alinha colunas, altura pt-BR, esconde aliases',()=>{const {game,calls}=navFixture();game.state='menu';
+  game.debugNavigation.safety.catalog=()=>{calls.push(['catalog']);return [{id:'cp2',name:'Passarela',height:40,note:'Nota A'},{id:'subida1',name:'Subida 1',height:40,note:'alias',listed:false},{id:'cp4',name:'Sala de controle',height:76.6,note:'Nota B'},{id:'cp6',name:'Andaime norte',height:128,note:'Nota C'}];};
+  const out=DevConsole.execute('goto list',game);
   if(JSON.stringify(calls)!==JSON.stringify([['catalog']]))throw Error(JSON.stringify(calls));
-  const i=['cp2','subida1','cp6'].map(id=>out.indexOf(id));if(i.some(x=>x<0)||!(i[0]<i[1]&&i[1]<i[2]))throw Error(out);for(const v of ['Andaime norte','128','Estado dos mecanismos preservado'])if(!out.includes(v))throw Error(`missing ${v}: ${out}`);});
+  if(out.includes('subida1'))throw Error('alias listado: '+out);
+  const i=['0–100 m','cp2','cp4','100–200 m','cp6'].map(t=>out.indexOf(t));if(i.some(x=>x<0)||i.some((x,k)=>k&&x<i[k-1]))throw Error(out);
+  for(const v of ['Andaime norte','128 m','76,6 m','Nota C'])if(!out.includes(v))throw Error(`missing ${v}: ${out}`);
+  const rows=out.split('\n').filter(l=>/^  (cp2|cp4|cp6) /.test(l)),col=r=>r.indexOf(r.trim().split(/\s{2,}/)[1]);
+  if(rows.length!==3||new Set(rows.map(col)).size!==1)throw Error('colunas desalinhadas:\n'+rows.join('\n'));
+  if(/Estado dos mecanismos/.test(out))throw Error(out);});
 test('goto/back/noclip despacham com caixa e espaços normalizados',()=>{const {game,calls}=navFixture();
   const out=DevConsole.execute('  GOTO   Cp6  ',game);if(!out.includes('cp6')||!out.includes('128')||!out.includes('Run assistida')||out.startsWith('Erro'))throw Error(out);
   DevConsole.execute('back',game);DevConsole.execute('noclip',game);game.debugNavigation.noclipActive=true;DevConsole.execute('NOCLIP',game);DevConsole.execute('noclip on',game);DevConsole.execute('noclip OFF',game);

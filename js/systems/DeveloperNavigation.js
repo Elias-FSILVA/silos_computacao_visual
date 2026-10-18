@@ -51,7 +51,7 @@ class DeveloperNavigation{
     this.guard.discontinue(before,this.presence.sample());this.presence.update();this.markAssisted('noclip');
     this.noclipActive=false;p.debugFrozen=false;this._flightBaseline=null;this._syncPose();this.syncTimer();
     const at=p.position,coords='('+[at.x,at.y,at.z].map(n=>n.toFixed(2)).join(', ')+')';
-    return {ok:true,pose:this.pose(),message:'Noclip desligado em '+coords+' — física retomada'+(risk.ok?'':' — Aviso: '+risk.reason)+' — Run assistida. Gatilhos protegidos; saia e reentre normalmente.'};
+    return {ok:true,pose:this.pose(),message:'Noclip desligado em '+coords+' — física retomada'+(risk.ok?'':' — Aviso: '+risk.reason)+' Run assistida (fora do ranking). Marcos e salas daqui só contam depois que você sair e voltar andando.'};
   }
   updateFlight(dt,keys){
     if(!this.noclipActive||this.g.state!=='play'||!Number.isFinite(dt)||dt<=0)return;
@@ -71,7 +71,7 @@ class DeveloperNavigation{
     const context=this.contextAllowed();if(!context.ok)return {ok:false,message:context.reason};
     const r=this.safety.resolve(id);if(!r.ok)return r;
     const moved=this.relocate(r.pose,{reason:'goto',storeBack:true});
-    return moved.ok?{...r,message:r.message+' — Run assistida. Gatilhos protegidos; saia e reentre normalmente.'}:moved;
+    return moved.ok?{...r,message:r.message+' Run assistida (fora do ranking). Marcos e salas daqui só contam depois que você sair e voltar andando.'}:moved;
   }
   back(){
     const context=this.contextAllowed();if(!context.ok)return {ok:false,message:context.reason};
@@ -79,7 +79,7 @@ class DeveloperNavigation{
     const r=this.safety.recover(this._backPose,this._lastSafePose);if(!r.ok)return r;
     const moved=this.relocate(r.pose,{reason:'back',storeBack:false});if(!moved.ok)return moved;
     this._backPose=null;
-    return {...r,message:'Retorno a '+this.pose().position.y.toFixed(2)+' m — '+r.message+' — Run assistida. Gatilhos protegidos; saia e reentre normalmente.'};
+    return {...r,message:'De volta a '+(Math.round(this.pose().position.y*10)/10).toLocaleString('pt-BR')+' m'+(r.fallback?' — '+r.message:'')+'. Run assistida (fora do ranking). Marcos e salas daqui só contam depois que você sair e voltar andando.'};
   }
   _clear(){const g=this.g;g.keys={};g.gameBtn={};g.player.clearDebugTransient();g.items.cancelPendingForDebug();}
   _syncPose(){
