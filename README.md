@@ -79,6 +79,17 @@ O `vercel.json` já configura tudo: a Vercel roda `npm ci` e `npm run build` e p
 - **Bordas:** primeiro puxe o corpo; Espaço finaliza a subida (mantle). Uma puxada completa também pode iniciar o mantle. Soltar as mãos sem pular continua sendo uma ação diferente do impulso.
 - Fadiga crítica já provoca cedidas antes da exaustão; uma mão sem stamina solta a pegada. Plataformas permitem recuperar stamina e fadiga.
 
+### Vida
+
+- **100 de vida**, separada da stamina e sem regeneração. A vida mede ferimentos; a stamina mede a força para continuar escalando. Pílulas recuperam só stamina.
+- **Quedas:** pousar a até 10 m/s (cerca de 2,8 m) não machuca. Acima disso o dano cresce até 70 a 16 m/s, por exemplo cerca de 9 a 3 m, 35 a 5 m e 68 a 7 m. Mais de 16 m/s continua matando na hora, como antes.
+- **Batidas laterais:** bater numa parede acima de 10 m/s machuca pela mesma curva, no máximo 70, e nunca mata na hora. Encostar, andar, escalar e o vento junto da parede não machucam. Uma quina que bate duas vezes no mesmo instante cobra uma vez só.
+- A massa, as pás do exaustor e a queda letal continuam matando na hora; a vida vai a 0.
+- **No HUD:** uma barra fina sob o retículo, discreta quando você está saudável. Depois de um dano ela fica visível por 2 s e mostra o rastro do que foi perdido, com uma borda vermelha curta na tela. As cores são creme (51–100), âmbar (26–50) e vermelho com a palavra CRÍTICO (1–25).
+- **Nas mãos:** quatro estados, com troca em 0,25 s. Saudável (76–100) é a mão de sempre. Machucado (51–75) traz sujeira nas dobras e arranhões avermelhados. Ferido (26–50) acrescenta rachaduras e feridas abertas. Crítico (1–25) fica mais pálido, com sangue seco e dedos tremendo (só os dedos: itens e picareta não saem do lugar).
+- **VR:** linha “vida” no relógio do pulso, acima da stamina, e um pulso curto nos dois controles a cada dano. Nenhum efeito de tela.
+- Morrer, recomeçar ou voltar ao menu restauram 100. Pausa, mochila, estações, console, `goto` e `back` não mexem na vida.
+
 ### Itens nas duas mãos
 
 - Cada mão tem estado próprio: usar, segurar ou soltar o botão de uma mão nunca mexe no item da outra. Pausa, mochila e console soltam os botões das duas mãos.
@@ -161,6 +172,7 @@ Os ajustes finos do VR (ganho da puxada, alcance do agarre, encaixe da mão no c
 - `back` volta uma vez à posição de antes do último `goto`. Se aquele ponto não for mais seguro (porta, elevador ou piso mudaram), usa uma correção local anunciada como fallback; se não houver nenhuma, recusa e mantém o registro.
 - `noclip`, `noclip on` / `off`, `noclip speed <1–50>` (padrão 10 m/s). Em voo, WASD segue a vista, Space sobe, Ctrl desce e Shift multiplica por 4. Física, timer, puzzles, massa, portas e elevador ficam congelados; itens, agarre, pulo e interação ficam bloqueados. Pausa, mochila e console interrompem o voo e voltam a ele com o timer parado. `noclip off` desliga onde você estiver, como no CS/Half-Life: no ar, fora do mapa ou dentro de parede. Não há teleporte nem recusa; a física normal volta daquele ponto (você pode cair, ficar preso ou morrer) e o console avisa o risco da posição (sem apoio, dentro de geometria, massa, pás). Os gatilhos continuam protegidos até você sair e reentrar.
 - Marcos, salas, tela do Arquivo e o limiar da massa não disparam por teleporte nem voo. Depois do salto, eles ficam protegidos até você sair e reentrar na região andando, escalando ou pulando normalmente. `status` lista cada gatilho protegido e o que falta para rearmá-lo. Ficar parado, o vento, o elevador ou a gravidade não rearmam.
+- **Vida:** `health` mostra a vida (não marca); `health set <1–100>` define; `damage <1–100>` machuca; `heal <1–100>` cura. Só inteiros; `health set 0` é recusado (use `damage` para testar a morte). Se `damage` zerar a vida, a morte acontece ao fechar o console e o resultado mostra “Ferimentos (debug)”. Mudar a vida marca a run como assistida (motivo `health`).
 - Qualquer `goto`, `back` ou `noclip on` marca a run como **assistida** até a próxima run: o HUD mostra RUN ASSISTIDA (e NOCLIP quando ligado), o resultado avisa “pontuação não competitiva” e a pontuação nunca entra no ranking, nem pelo desktop nem pelo VR. Ajustar a velocidade, consultar e errar comandos não marcam.
 - O Quest não foi testado com esses comandos; eles são recusados em VR.
 
@@ -186,7 +198,12 @@ node tools/test_developer_navigation.js  # goto/back atômicos, cancelamento nas
 node tools/test_items_ownership.js      # item em uma mão só (troca sem duplicar), esgotados somem da mochila
 node tools/test_debug_simulation.js      # noclip: voo, congelamento real, porta por dt, bloqueio de ações/overlays/XR
 node tools/test_navigation_progression.js # gatilhos protegidos e rearme só por locomoção normal
-node tools/test_debug_ranking.js         # run assistida fora do ranking (Game + Ranking), aviso no resultado e HUD
+node tools/test_debug_ranking.js         # run assistida fora do ranking (Game + Ranking), aviso no resultado e HUD; health/damage/heal
+node tools/test_player_health.js         # vida: 100 HP, faixas, curva de dano, morte única, reset
+node tools/test_impact_damage.js         # dano de queda e de batida lateral com a colisão real; contato sem dano
+node tools/test_hand_wear.js             # mãos: 4 estados num programa só, tween, emissivo da stamina, tremor só nos dedos
+node tools/test_health_hud.js            # barra sob o retículo, rastro, borda de dano, relógio VR e háptico
+node tools/test_health_integration.js    # Game real: queda, pausas, retry/menu, letais, goto/back, noclip, pílulas
 ```
 
 ### Desempenho, distância de renderização e VR
