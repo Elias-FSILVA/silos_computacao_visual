@@ -43,6 +43,7 @@ class Hand{
   get state(){ return this.isGrabbing?'closed':'open'; }
 }
 const _e=new V3(), _t=new V3(), _d=new V3(), _f=new V3(), _r=new V3(), _mv=new V3(), _p=new V3(), _q=new V3(), _n=new V3(), _c0=new THREE.Vector2(0,0), _wq=new THREE.Quaternion();
+const IMPACT_WINDOW=.25;   // s: impactos mais próximos que isso cobram só o excedente
 // gesto de apertar botão (painel): duração e distância pulso→ponta do indicador
 const PRESS_T=.34, PRESS_TIP=-HandModel.indexTip(1,new V3()).z;
 const _axeM=new THREE.Matrix4(), _pm=new THREE.Matrix4(), _pqa=new THREE.Quaternion(), _pqb=new THREE.Quaternion(), _pup=new V3(), _px=new V3(1,0,0);
@@ -70,6 +71,7 @@ class Player{
     this._normalMotion=[]; this._normalVelocity=new V3(); this._normalClimbOffset=new V3(); this._normalClimbPull=0; this._normalPullDriven=false;
     this.attributes.clearPerks();
     this.health.reset(); this.handModels.forEach(hm=>{ hm.setWear('healthy',{instant:true}); hm.hurtTremor=0; });
+    this._impactWin={t:0,charged:0};   // janela de excedente entre impactos próximos
     const w=this.world;
     this.position.copy(w.spawnPoint); this.velocity.set(0,0,0); this._prev.copy(this.position);
     this.yaw=w.spawnYaw; this.pitch=.1;
@@ -318,6 +320,7 @@ class Player{
   // ---------- simulação ----------
   update(dt,input){
     if(this.dead) return;
+    if(this._impactWin.t>0) this._impactWin.t-=dt;
     this.hands.forEach(h=>{
       if(h.cooldown>0) h.cooldown-=dt;
       if(h.inContact&&h.surface.userData.alive===false){ this._dislodge(h); this._release(h); this.emit('crumble',h); }
@@ -491,12 +494,23 @@ class Player{
   _collide(lethal){
     const p=this.position;
     // sólidos (caixas, giradas e setores anelares) + a trava da parede curva do poço — ver js/world/Collision.js
-    const {landed,landVy}=collideBody(this.world.platforms,p,this.velocity,this._prev,this._colOpt);
+    const wasGrounded=this.grounded;
+    const {landed,landVy,hitV}=collideBody(this.world.platforms,p,this.velocity,this._prev,this._colOpt);
     p.x=clamp(p.x,-SILO_R,SILO_R); p.z=clamp(p.z,-SILO_R,SILO_R);   // rede de segurança: nada existe fora da casca do silo
     this.grounded=landed;
     if(landed&&landVy<-3) this.landDip=Math.min(.05,-landVy*.004);
     if(landed&&landVy<-7) this.emit('land',landVy);
     if(lethal&&landed&&landVy<-FALL_KILL) this.die('fall');
+    else if(lethal&&!this.dead&&!this.debugFrozen) this._impact(landed&&!wasGrounded?-landVy:0,hitV);
+  }
+  // pouso/batida abaixo do letal (spec §11 D3/D4). Só no movimento livre: escalada, mantle e passos passivos usam
+  // _collide(false). Encostado, a componente contra a parede é zerada a cada passo, então hitV fica bem abaixo de 10 m/s.
+  // Impactos dentro de 0,25 s (quina, batida seguida de pouso) cobram só o excedente sobre o maior já cobrado.
+  _impact(fall,side){
+    const dmg=Math.max(PlayerHealth.impactDamage(fall),PlayerHealth.impactDamage(side)); if(dmg<=0) return;
+    const w=this._impactWin, prior=w.t>0?w.charged:0, due=dmg-prior;
+    if(due<=0) return;   // impacto menor dentro da janela: não cobra nem a prolonga
+    w.t=IMPACT_WINDOW; w.charged=dmg; this.damage(due,fall>=side?'fall':'impact');
   }
   // ---------- câmera e mãos em primeira pessoa ----------
   applyCamera(){

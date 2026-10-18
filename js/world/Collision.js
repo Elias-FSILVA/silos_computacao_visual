@@ -137,6 +137,7 @@ function segBlocked(plats,ax,ay,az,bx,by,bz,skip){
 // ---------- corpo do jogador contra todos os sólidos ----------
 // p, v, prev: pés, velocidade e pés no quadro anterior. o.guard(p,prev,v) = restrição final (parede do poço).
 // 1) vertical: pousa no topo (vindo de cima) ou bate a cabeça (vindo de baixo)  2) horizontal: sai pela face mais próxima
+// → {landed, landVy (v.y ao pousar, ≤0), hitV (m/s horizontais removidos pelas paredes: impacto lateral)}
 function collideBody(plats,p,v,prev,o){
   let landed=false, landVy=0;
   const lo=Math.min(p.y,prev.y), hi=Math.max(p.y,prev.y)+BODY_H;
@@ -147,6 +148,7 @@ function collideBody(plats,p,v,prev,o){
     if(v.y<=0&&prev.y>=b.top-.06&&p.y<=b.top){ landVy=Math.min(landVy,v.y); p.y=b.top; v.y=0; landed=true; }
     else if(v.y>0&&prev.y+BODY_H<=bottom+.06&&p.y+BODY_H>bottom){ p.y=bottom-BODY_H; v.y=0; }
   }
+  const vx0=v.x, vz0=v.z;   // hitV: velocidade horizontal que as faces (e a trava do poço) removeram neste passo
   for(const b of plats){
     const bottom=solidBottom(b);
     if(p.y+BODY_H<=bottom+.01||p.y>=b.top-.01) continue;
@@ -158,7 +160,7 @@ function collideBody(plats,p,v,prev,o){
     solidPush(b,p,v,RAD);
   }
   if(o&&o.guard) o.guard(p,prev,v);
-  return {landed,landVy};
+  return {landed,landVy,hitV:Math.hypot(vx0-v.x,vz0-v.z)};
 }
 
 // Consultas não mutantes usadas pela navegação de desenvolvimento. Não alteram o resolvedor normal.

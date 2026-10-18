@@ -12,6 +12,7 @@ const route=Gr.search([Gr.start],{allowed:new Set(['hang','pull','pullmax','stan
 const path=route.path(Gr.exit);
 const sector=y=>y<100?'Subida 1':y<150?'Subida 2':y<200?'Subida 2b':y<246?'Subida 3a':y<300?'Subida 3b':'Subida 4';
 const P=T.makePlayer(); P.position.copy(world.spawnPoint); P._prev.copy(P.position);
+const hurt=[]; P.on('damage',d=>hurt.push(`${d.amount} HP (${d.source}) a ${P.position.y.toFixed(1)} m`));
 const st=percorrer({world,P,grab:T.grab,step:T.step,Gr,path,sector,dbg:process.env.DBG?log:null});
 // pílulas disponíveis: caixas no caminho (descansos, salas) — acumuladas por altura
 const crates=[...new Set(world.interactables.map(m=>m.userData.interactable).filter(o=>o&&o.constructor.name==='Crate'))];
@@ -19,6 +20,7 @@ const pillsBelow=y=>crates.reduce((s,c)=>{ const p=c.body.parent.position; retur
 out('rota (grafo, modo puxando): nós no caminho',`${path.length} · ${path.filter(v=>v<N).length} agarras/degraus/soquetes`);
 chk('o jogador real percorre a rota inteira até a porta da superfície',st.ok&&!P.dead&&Math.abs(P.position.y-TOP)<.05,st.stuck||`pés ${P.position.y.toFixed(2)} m`);
 chk('  sem quedas no caminho',st.falls===0,st.falls+' quedas');
+chk('  termina com 100 HP (nenhum pouso/batida machuca na rota)',P.health&&P.health.value===100,`HP ${P.health&&P.health.value}${hurt.length?' · '+hurt.slice(0,5).join(' · '):''}`);
 out('  estamina mínima pendurado, por subida',Object.entries(st.minBy).map(([s,v])=>`${s}: ${v.toFixed(0)}`).join(' · '));
 const short=st.pillAt.filter((y,i)=>i+1>pillsBelow(y));
 chk('  pílulas usadas sempre disponíveis antes (nas caixas do caminho)',short.length===0,`usadas ${st.pills} (em ${st.pillAt.join(', ')||'—'} m) · disponíveis até o topo ${pillsBelow(TOP)}`);

@@ -56,7 +56,7 @@ log('— Insuflador (245 m) —');
   // sair da coluna para o lado errado: cai na grade sem morrer
   const Q=T.makePlayer(); place(Q,new V3(c.x,I.grateTop,c.z)); Q.grounded=true; T.step(Q,360);
   const away=new V3(-c.x,0,-c.z); T.face(Q,away.x,away.z); T.step(Q,420,{x:0,y:1});
-  chk('saindo da coluna para o centro do poço: cai na grade e sobrevive',!Q.dead&&Q.grounded&&Math.abs(Q.position.y-I.grateTop)<.02,`pés ${Q.position.y.toFixed(2)} m · ${Q.deathReason||'vivo'}`);
+  chk('saindo da coluna para o centro do poço: cai na grade e sobrevive',!Q.dead&&Q.grounded&&Math.abs(Q.position.y-I.grateTop)<.02,`pés ${Q.position.y.toFixed(2)} m · ${Q.deathReason||'vivo'} · ${Q.health.value} HP`);
 }
 // ---------- 5) o vento nunca empurra através da parede curva ----------
 { let esc=0, n=0, viaOpening=0; const rnd=T.vm.runInThisContext('mulberry')(77);
