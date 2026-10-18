@@ -422,10 +422,13 @@ class VRPlayer{
   }
   // inventário no pulso: um item perHand (picareta) vai para a mão do gatilho usado; os demais seguem o vínculo
   _invSide(i){ const s=this.g.items.inv&&this.g.items.inv.slots[this.invHover]; return s&&ITEM_DEFS[s.id]&&ITEM_DEFS[s.id].perHand?(i?'right':'left'):undefined; }
-  // picareta: crava = pulso forte e curto · ricochete (superfície inválida) = dois pulsos fracos · solta/arranca = pulso longo
+  // picareta: crava = pulso forte e curto · superfície errada = dois pulsos fracos · vazio = um toque leve ·
+  // mão sem condição (sem stamina / caindo) = tremido de três pulsos · solta/arranca = pulso longo
   axeFeedback(i,kind){
     if(kind==='bite') this._haptic(i,1,40);
     else if(kind==='bounce'){ this._haptic(i,.25,18); setTimeout(()=>this._haptic(i,.25,18),90); }
+    else if(kind==='whiff') this._haptic(i,.12,12);
+    else if(kind==='weak'){ this._haptic(i,.4,35); setTimeout(()=>this._haptic(i,.3,35),70); setTimeout(()=>this._haptic(i,.2,35),140); }
     else this._haptic(i,.5,140);
   }
   _haptic(i,v,ms){

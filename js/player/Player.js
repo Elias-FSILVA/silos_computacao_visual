@@ -249,6 +249,10 @@ class Player{
   }
   // alvo da picareta da mão i: mesmo raio e alcance do agarre; rocha/rachadura (hit.bite 'deep') ou parede de concreto ('shallow')
   axeTarget(i){ const h=this.hands[i]; if(!h) return null; const hit=this._grabHit(h,o=>!!axeBiteOf(o)), bite=this._biteAt(hit); if(!bite) return null; hit.bite=bite; return hit; }
+  // o que o golpe da picareta da mão i atinge, aceite ou não: null = nada ao alcance (golpe no vazio);
+  // senão {hit, bite} com bite null para superfície errada e flat=true para concreto em piso/teto
+  axeProbe(i){ const h=this.hands[i]; if(!h) return null; const hit=this._grabHit(h,()=>true); if(!hit) return null;
+    const bite=this._biteAt(hit); hit.bite=bite; return {hit,bite,flat:!bite&&axeBiteOf(hit.object)==='shallow'}; }
   // crava a picareta da mão i no ponto `hit`; falha sem cobrar nada ('state' | 'surface' | 'reach' | 'stamina' | 'slip')
   anchorAxe(i,hit){
     const h=this.hands[i];

@@ -42,14 +42,14 @@ test('U aplicada uma vez na cena: canonical·refs.tip = vértice 280 da malha re
     const v=new T.Vector3().fromBufferAttribute(m.geometry.attributes.position,A.data.glb.tipVertex.index).applyMatrix4(m.matrixWorld);
     assert.ok(tipWorld(inst).distanceTo(v)<=1e-6,'ponta '+inst.side+': '+tipWorld(inst).distanceTo(v));}
 });
-test('reflexo mundial coerente em idle/striking/bounce/holstering (espaço da câmera)',async()=>{
+test('reflexo mundial coerente em idle/striking/whiff/holstering (espaço da câmera)',async()=>{
   const G=await game();equipBoth(G);const it=G.it,[L,R]=G.p.axeVisuals,cam=G.p.camera;
   const check=tag=>{frame(G,0);const inv=new T.Matrix4().copy(cam.matrixWorld).invert();
     const l=new T.Matrix4().multiplyMatrices(inv,L.canonical.matrixWorld),r=new T.Matrix4().multiplyMatrices(inv,R.canonical.matrixWorld);
     const mr=new T.Matrix4().multiplyMatrices(M,r).multiply(M);l.elements.forEach((v,i)=>near(v,mr.elements[i],1e-6,tag+' matriz['+i+']'));
     const tl=L.refs.tip.clone().applyMatrix4(l),tr=R.refs.tip.clone().applyMatrix4(r);vnear(tl,[-tr.x,tr.y,tr.z],1e-6,tag+' ponta');};
   frame(G,20);check('idle');it.left.use(true);it.use(true);assert.equal(it.phase,'striking');frame(G,4);check('striking');
-  frame(G,8);assert.equal(it.phase,'bounce','sem superfície: ricochete');check('bounce');frame(G,30);
+  frame(G,8);assert.equal(it.phase,'whiff','sem superfície: golpe no vazio');check('whiff');frame(G,30);
   it.left.holster();it.holster();frame(G,10);assert.equal(it.phase,'holstering');check('holstering');
 });
 test('esquerda não lê a direita: golpe da direita não move a picareta da esquerda; refs isoladas',async()=>{

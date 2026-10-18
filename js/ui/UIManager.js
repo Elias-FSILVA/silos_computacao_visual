@@ -124,6 +124,8 @@ class UIManager{
   showCine(v){ this.$('cine').hidden=!v; }
   cine(fade,text,op){ this.$('cineFade').style.opacity=fade; const t=this.$('cineText'); if(t.textContent!==text) t.textContent=text; t.style.opacity=op; }
   // ---------- retícula contextual ----------
+  // retículo reage a uma recusa (picareta em superfície errada): reinicia a animação mesmo em toques seguidos
+  pulseReticle(){ const el=this.$('ring'); if(!el) return; el.classList.remove('deny'); void el.offsetWidth; el.classList.add('deny'); }
   setReticle(mode){
     if(this._ret===mode) return; this._ret=mode;
     // interação disponível (F, ou clique no painel de senha): mão petrificada com a ponta do indicador no centro da mira (css/cursor.css)

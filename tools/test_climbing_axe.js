@@ -238,9 +238,9 @@ test('superfície inválida: bounce sem custo, com axeTink; volta a ready',()=>{
   it.useHand('right',true); frames(it,p,12); assert.equal(it.phase,'bounce'); assert.equal(p.rightHand.stamina,100); assert.ok(Hx.audio.calls.includes('axeTink'));
   frames(it,p,20); assert.equal(it.phase,'idle');
 });
-test('sem stamina para o custo: bounce, sem cobrar',()=>{
+test('sem stamina para o custo: weak (mão não aguenta), sem cobrar',()=>{
   const {it,p}=axeGame(); ready(it,'right'); p.rightHand.stamina=3;
-  it.useHand('right',true); frames(it,p,12); assert.equal(it.phase,'bounce'); assert.ok(p.rightHand.stamina>=3);
+  it.useHand('right',true); frames(it,p,12); assert.equal(it.phase,'weak'); assert.ok(p.rightHand.stamina>=3);
 });
 test('cravada (ou golpeando): guardar, trocar e holsterHand recusam com aviso e deny',()=>{
   const {it,p,msgs}=axeGame(); it.inv.add('hammer'); it.inv.bind(3,'hammer'); ready(it,'right');

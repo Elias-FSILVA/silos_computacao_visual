@@ -165,9 +165,9 @@ test('goto_back_rearm_with_glb_does_not_lock_puzzle',async()=>{
   assert.equal(ids().includes('hall:h1'),false,'locomoção normal rearmou h1: '+ids());
   others.forEach(id=>assert.ok(ids().includes(id),'gatilho não envolvido continua protegido: '+id));
   assert.equal(h1.phase,'inside');assert.equal(nav.noclipActive,false);
-  // ação explícita disponível fora do voo: golpe real com GLB (sem superfície à frente → ricochete)
+  // ação explícita disponível fora do voo: golpe real com GLB (sem superfície à frente → golpe no vazio)
   assert.equal(g._gameplayAllowed(),true);p.pitch=.6;p.applyCamera();g._onMouseDown({button:2});assert.equal(g.items.phase,'striking');
-  for(let i=0;i<20&&g.items.phase==='striking';i++)frame(dh,1);assert.ok(['bounce','idle'].includes(g.items.phase),g.items.phase);
+  for(let i=0;i<20&&g.items.phase==='striking';i++)frame(dh,1);assert.ok(['whiff','bounce','idle'].includes(g.items.phase),g.items.phase);
   assert.equal(p.axeVisuals[1].source,'glb');
 });
 

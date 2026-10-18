@@ -11,10 +11,14 @@
 // misturável com grip2/blend), squeeze e tremor. Nenhuma pose ou animação tem sinal por mão.
 // ============================================================================
 const POSE_REST=new V3(.22,-.22,-.42), POSE_HIP=new V3(.32,-.62,-.22);
-const DUR={equipping:.55,holstering:.45,swing:.62,place:.5,consume:.6,striking:.15,bounce:.25};
+const DUR={equipping:.55,holstering:.45,swing:.62,place:.5,consume:.6,striking:.15,bounce:.3,whiff:.32,weak:.45};
 // itens que miram pelo mouse: o uso ativo deles é um conflito de entrada com a puxada (Player.aimConflict)
 const AIMING_ITEMS={hammer:true,nails:true,card:true};
 const AXE_LOCKED_MSG='A picareta está cravada';
+// picareta que não crava: dica de superfície (só as 2 primeiras vezes da subida) e motivo da mão (sempre)
+const AXE_HINTS=2;
+const AXE_WRONG_MSG='A picareta só crava em rachadura, rocha escura ou parede de concreto.';
+const AXE_FLAT_MSG='No concreto, a picareta só crava em parede.';
 class ItemSystem{
   constructor(game,handIndex=1,sharedInventory=null){
     this.g=game; this.handIndex=handIndex; this.side=Handedness.sideOf(handIndex); this.hand=game.player.hands[handIndex];
@@ -34,7 +38,7 @@ class ItemSystem{
     this._canon={pos:POSE_REST.clone(),roll:0,visible:false,wrist:new V3(),base:HandModel.BASE_FLAT,grip:'relaxed',grip2:null,blend:0,squeeze:0,tremor:0};
     this.pose=Handedness.toSide(this._canon,this.side,{pos:new V3(),wrist:new V3()});
     this.player.itemPoses=this.player.itemPoses||[]; this.player.itemPoses[this.handIndex]=this.pose; this.hand.occupied=false; this.hand.aiming=false;
-    if(this.handIndex===1&&this.left) this.left.reset();
+    if(this.handIndex===1){ this.axeHints=0; if(this.left) this.left.reset(); }
   }
   get activeItem(){ return (this.phase==='idle'||this.phase==='swing'||this.phase==='place')?this.equipped:null; }
   get activeItems(){ return [this.left,this].map(h=>h.activeItem); }
@@ -183,10 +187,12 @@ class ItemSystem{
       this.pending=tg; this._start('place');
     } else if(id==='climbing_axe'){ this._start('striking'); this.g.audio.swing(); }
   }
-  // fim do golpe da picareta: crava se o botão ainda está pressionado e a superfície aceita; senão, ricocheteia sem custo
+  // fim do golpe da picareta: crava se o botão ainda está pressionado e a superfície aceita. Se não crava, uma de três
+  // reações, todas sem custo: vazio (whiff), superfície errada (bounce) ou superfície certa com a mão sem condição (weak)
   _axeImpact(){
     if(!this.useHeld){ this.phase='idle'; this.t=0; return; }
-    const p=this.player, hit=p.axeTarget(this.handIndex), r=hit?p.anchorAxe(this.handIndex,hit):{ok:false,reason:'surface'};
+    const p=this.player, probe=p.axeProbe(this.handIndex), hit=probe&&probe.bite?probe.hit:null;
+    const r=hit?p.anchorAxe(this.handIndex,hit):{ok:false,reason:probe?'surface':'empty'};
     if(r.ok&&r.bite==='shallow'){
       // concreto: entra pouco, lasca a parede e gasta a picareta
       this.phase='anchored'; this.t=0; this.g.audio.axeChip(); this._vrFeedback('bite');
@@ -196,7 +202,27 @@ class ItemSystem{
       else if(left<=3) this.g.ui.msg(`Picareta gasta: ${left===1?'resta 1 fincada':`restam ${left} fincadas`} no concreto.`,1.6);
     }
     else if(r.ok){ this.phase='anchored'; this.t=0; this.g.audio.axeBite(); this._vrFeedback('bite'); }
-    else { this.phase='bounce'; this.t=0; this.g.audio.axeTink(); this._vrFeedback('bounce'); }
+    else if(r.reason==='stamina'||r.reason==='slip'||(r.reason==='state'&&this.hand.exhausted)){
+      // a parede aceitaria, mas a mão não: raspa e diz por quê
+      this.phase='weak'; this.t=0; this.g.audio.axeScrape(); this._vrFeedback('weak');
+      this.g.ui.msg(r.reason==='slip'?'Caindo rápido demais para cravar.':`Mão ${this.handIndex===0?'esquerda':'direita'} sem stamina para cravar.`,1.6);
+    }
+    else if(probe&&r.reason==='surface'){
+      // superfície errada: faísca, recuo seco, tink e retículo; a dica só nas primeiras vezes da subida
+      this.phase='bounce'; this.t=0; this.g.audio.axeTink(); this._vrFeedback('bounce');
+      if(this.g.fx){ const n=this._faceNormal(probe.hit); this.g.fx.spawn('sparks',probe.hit.point,n,5); }
+      if(this.g.ui.pulseReticle) this.g.ui.pulseReticle('axe-bad');
+      const root=this.g.items||this;
+      if((root.axeHints|0)<AXE_HINTS){ root.axeHints=(root.axeHints|0)+1; this.g.ui.msg(probe.flat?AXE_FLAT_MSG:AXE_WRONG_MSG,2.2); }
+    }
+    else { this.phase='whiff'; this.t=0; this._vrFeedback('whiff'); }   // nada ao alcance: o golpe segue e volta
+  }
+  // normal da face atingida, apontando para quem golpeou (para as faíscas saírem da parede)
+  _faceNormal(hit){
+    const n=new V3(), u=hit.object.userData;
+    if(u.wallNormal) n.copy(u.wallNormal); else if(hit.face) n.copy(hit.face.normal).transformDirection(hit.object.matrixWorld); else n.set(0,1,0);
+    const c=this.player.camera; if(c){ const e=new V3().setFromMatrixPosition(c.matrixWorld).sub(hit.point); if(n.dot(e)<0) n.negate(); }
+    return n;
   }
   _vrFeedback(kind){ const v=this.g.vr; if(v&&v.active!==false&&v.axeFeedback) v.axeFeedback(this.handIndex,kind); }
   _start(ph){ this.phase=ph; this.t=0; this.impacted=false; if(ph==='swing') this.g.audio.swing(); this._syncAim(); }
@@ -290,16 +316,28 @@ class ItemSystem{
         P.visible=vis;
         if(t>=dur){ this.phase='idle'; }
         break; }
-      case 'striking': case 'bounce': case 'anchored': case 'dislodged': {
+      case 'striking': case 'bounce': case 'whiff': case 'weak': case 'anchored': case 'dislodged': {
         // picareta: golpe curto para frente, crava (pulso dobrado, punho apertado), ricochete, ou largada exausta
         const t=this.t, ph=this.phase;
         if(ph==='striking'){ const e=smooth(Math.min(1,t/DUR.striking)); P.wrist.set(lerp(.35,-.85,e),0,0); P.pos.set(idle.x,idle.y+.04*e,idle.z-.16*e); P.squeeze=.3*e; }
         else if(ph==='anchored'){ P.wrist.set(-.85,0,0); P.pos.set(idle.x,idle.y+.04,idle.z-.16); P.squeeze=.35+this.player.effort*.3; P.tremor=Math.min(.12,this.player.fatigueFx*.1); }
-        else if(ph==='bounce'){ const e=Math.min(1,t/DUR.bounce), k=1-smooth(e); P.wrist.set(-.85*k+Math.sin(e*Math.PI)*.4,0,Math.sin(t*90)*.05*k); P.pos.set(idle.x,idle.y+.04*k,idle.z-.16*k); P.tremor=.1*k; }
+        else if(ph==='bounce'){
+          // recuo seco: a lâmina bate e o pulso volta para trás além do repouso, uma vez só, e assenta
+          const e=Math.min(1,t/DUR.bounce), k1=Math.min(1,e/.35), out=1-(1-k1)*(1-k1)*(1-k1), back=smooth(Math.max(0,(e-.35)/.65));
+          const wx=e<.35?lerp(-.85,.3,out):lerp(.3,0,back), z=e<.35?lerp(-.16,.04,out):lerp(.04,0,back), y=e<.35?lerp(.04,.02,out):lerp(.02,0,back);
+          P.wrist.set(wx,0,0); P.pos.set(idle.x,idle.y+y,idle.z+z); P.squeeze=e<.35?.3*(1-out):0; P.tremor=0; }
+        else if(ph==='whiff'){
+          // vazio: o golpe segue além do ponto de impacto e volta devagar
+          const e=Math.min(1,t/DUR.whiff), go=smooth(Math.min(1,e/.3)), back=smooth(Math.max(0,(e-.3)/.7)), f=go*(1-back);
+          P.wrist.set(lerp(-.85,0,back)-.3*f,0,0); P.pos.set(idle.x,idle.y+.04*(1-back)-.03*f,idle.z-.16*(1-back)-.08*f); P.squeeze=.3*(1-back); P.tremor=0; }
+        else if(ph==='weak'){
+          // a mão não aguenta: encosta, escorrega para baixo tremendo e volta
+          const e=Math.min(1,t/DUR.weak), down=smooth(Math.min(1,e/.6)), back=smooth(Math.max(0,(e-.6)/.4));
+          P.wrist.set(lerp(-.85,0,back),0,0); P.pos.set(idle.x,idle.y+lerp(.04-.09*down,0,back),idle.z+lerp(-.16,0,back)); P.squeeze=.2*(1-back); P.tremor=.14*(1-back); }
         else { P.wrist.set(.25,0,0); P.pos.set(idle.x,idle.y-.06,idle.z+.03); P.tremor=.06; }
         P.visible=true;
         if(ph==='striking'&&t>=DUR.striking) this._axeImpact();
-        else if(ph==='bounce'&&t>=DUR.bounce){ this.phase='idle'; this.t=0; }
+        else if((ph==='bounce'||ph==='whiff'||ph==='weak')&&t>=DUR[ph]){ this.phase='idle'; this.t=0; }
         else if(ph==='dislodged'&&!this.hand.exhausted){ this.phase='idle'; this.t=0; }
         break; }
       case 'idle': {
