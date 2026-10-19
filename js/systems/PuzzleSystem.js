@@ -185,7 +185,7 @@ class PuzzleSystem{
   reset(){
     const w=this.g.world;
     this.puzzles=w.puzzleDefs.map(d=>d.kind==='hall'?new HallPuzzle(this.g,w.puzzleRooms[d.id]):d.kind==='containment'?new ContainmentPuzzle(this.g,w.puzzleRooms[d.id]):d.kind==='maze'?new MazePuzzle(this.g,w.puzzleRooms[d.id]):null).filter(Boolean);
-    this.route=null; this.g.route=null; this.g.mass.frozen=false; this.g.mass.scale=1;
+    this.route=null; this.g.route=null; this.g.mass.frozen=false; this.g.mass.scale=1; this.sealWarned=false;
   }
   byId(id){ return this.puzzles.find(x=>x.id===id); }
   // os mecanismos do cenário perguntam (allow) e avisam (event) a lógica do salão
@@ -195,12 +195,21 @@ class PuzzleSystem{
   commitRoute(route){
     if(this.route||!ENDINGS[route]) return false;
     const g=this.g; this.route=route; g.route=route; g.world.setRoute(route); if(g.score&&g.score.onPuzzle) g.score.onPuzzle(2500);
-    if(route==='seal'){ g.mass.frozen=true; g.ui.msg('A Válvula-Mestra fecha. Lá embaixo, o som para. A massa não sobe mais.',6); }
+    if(route==='seal'){ g.mass.frozen=true; g.ui.msg('A Válvula-Mestra fecha. Lá embaixo, o som para. A massa não sobe mais… por enquanto.',6); }
     else if(route==='commune'){ g.mass.scale=.45; g.ui.msg('Ela deixa de perseguir. Agora acompanha — devagar, como maré.',6); }
     else { g.mass.scale=.85; g.ui.msg('Sete nomes nos bolsos. A subida agora tem testemunha.',6); }
     if(g.audio&&g.audio.chime) g.audio.chime(); return true;
   }
   input(channel,label){ const p=this.puzzles.find(x=>x.id===channel); if(p) p.press(label); }
-  update(dt){ this.puzzles.forEach(p=>p.update(dt)); }
+  update(dt){ this.puzzles.forEach(p=>p.update(dt)); this._sealWatch(); }
+  // rota SELO: o selo range na entrada da galeria do exaustor e rompe na escada do poço de serviço, acima das pás
+  _sealWatch(){
+    const g=this.g, m=g.mass; if(this.route!=='seal'||!m.frozen||!g.player) return;
+    const y=g.player.position.y, a=g.audio||{}, shake=v=>{ if(g.player.addShake) g.player.addShake(v); };
+    if(!this.sealWarned&&y>=SEAL.warnY){ this.sealWarned=true; shake(.25); if(a.clank) a.clank();
+      g.ui.msg('Um estalo metálico sobe pelo poço, lá de baixo. A Válvula-Mestra está gemendo.',5); }
+    if(y>=SEAL.breakY){ m.rupture(SEAL.scale); shake(1.1); if(a.crash) a.crash(); if(a.boom) a.boom(); if(a.rumbleBurst) a.rumbleBurst(3);
+      g.ui.msg('Um estrondo lá embaixo: a Válvula-Mestra não conseguiu conter a massa. Ela voltou a subir — mais devagar.',7); }
+  }
   get current(){ const p=this.puzzles.find(x=>x.active||x.phase==='breached'); return p?p.uiState:null; }
 }

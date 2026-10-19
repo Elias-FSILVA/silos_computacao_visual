@@ -27,7 +27,7 @@ const NOTES={
   60:"Contagem de retorno: 3 / 7\n\nA diretoria nunca decidiu o que fazer com ela. Três frentes trabalharam em paralelo:\nALMEIDA quer SELAR o poço.\nHELENA quer CULTIVAR o que cresce nele.\nQUINTINO quer REGISTRAR tudo, para que alguém saiba.\n\nCada uma está numa sala grande. Cada uma pede um preço.",
   80:"> CONSULTA: NÍVEL ATUAL\n> DADO INDISPONÍVEL\n>\n> AVISO: CONTENÇÃO I — 100 m\n> O POÇO ESTÁ FECHADO POR UM DIAFRAGMA DE GRADE LOGO ACIMA DA SOLEIRA.\n> ACESSO SOMENTE PELA CASA DAS BOMBAS (SALA GRANDE, LADO LESTE).\n>\n> A PASSAGEM SÓ ABRE QUANDO O CIRCUITO FOR RESTABELECIDO.\n> RECOMENDAÇÃO DO SISTEMA: OBSERVAR ANTES DE GIRAR",
   // ---- entre 1 e o exaustor ----
-  110:"Passei pelas bombas. O circuito reiniciou duas vezes até eu entender: nada ali é sorte.\n\nSe você chegou até aqui: não volte para olhar.",
+  110:"Passei pelas bombas. O circuito reiniciou duas vezes até eu entender: nada ali é sorte.\n\nA Válvula-Mestra aguenta pressão, não ritmo. Lá em cima o exaustor puxa tudo.\n\nSe você chegou até aqui: não volte para olhar.",
   130:"DIÁRIO · TURNO 5\n\nA escala tem sete nomes.\nEu só reconheço o meu.\nOs outros estão escritos na minha letra.\n\nLá em cima o ar começa a subir sozinho. É o exaustor.",
   148:"AVISO · EXAUSTOR PRINCIPAL (169 m)\n\nO exaustor puxa o ar do poço para cima. Acima desta boca, a sucção arranca qualquer um da parede.\nNÃO SUBA PELA ROTA ANTIGA.\n\nUse a GALERIA DE MANUTENÇÃO: ela contorna o poço por dentro da parede, protegida do fluxo, e leva à escada do poço de serviço.\nA porta pressurizada só abre com o registro de ar fechado.",
   // ---- acima do exaustor ----
@@ -88,7 +88,7 @@ const FOUNDRY_TEXT={
   p2:"MANUAL DAS BOMBAS — pág. 2\n\n◇ parte logo depois de ○, sem nenhuma bomba no meio.",
   p3:"MANUAL DAS BOMBAS — pág. 3\n\n△ só parte depois de □.\n\n(embaixo, a lápis) Se errar a ordem o circuito inteiro reinicia. Eu errei duas vezes.",
   breaker:"QUADRO GERAL — DISJUNTOR 1\nEmperrado pela ferrugem. Só cede à força.",
-  master:"VÁLVULA-MESTRA\n\nGirar isto fecha o poço para sempre.\nTudo o que estiver abaixo fica abaixo. Não há como reabrir.",
+  master:"VÁLVULA-MESTRA\n\nGirar isto fecha o poço para sempre.\nTudo o que estiver abaixo fica abaixo. Não há como reabrir.\n\n(a lápis, outra letra) Para sempre é o que o fabricante garante. Almeida nunca testou com o exaustor ligado.",
   last:"ÚLTIMO REGISTRO DE ALMEIDA\n\nEu giro a válvula e fico do lado de lá.\nSe alguém ler isto e quiser decidir por mim: gire."
 };
 
@@ -148,6 +148,17 @@ const EXHAUST_TEXT={
   service:"POÇO DE SERVIÇO · ESCADA\n\nSobe até o braço de 174 m, acima do exaustor."
 };
 
+// ---- rota SELO: a Válvula-Mestra segura a massa só até o exaustor ----
+// warnY: primeiro rangido (entrada da galeria) · breakY: ruptura (subindo a escada do poço de serviço, acima das pás)
+// scale: depois da ruptura a massa volta a subir, mais devagar que sem decisão (Raiz .45 · Registro .85 · Fuga 1)
+const SEAL={warnY:EXHAUST.H+1,breakY:EXHAUST.top-2,scale:.7};
+
+// ---- VÁLVULAS DE PURGA: estações fixas nos descansos do poço ----
+// Puxar solta vapor no poço: a massa recua 'recoil' m e fica parada 'stun' s. Reutilizável: o tanque recarrega em
+// 'recharge' s contados do acionamento (maior que 'stun': quem fica parado ao lado dela ainda perde terreno).
+const PURGE={stun:20,recharge:120,recoil:5,rests:['cp3','cp6','cp8','cp11','cp14','cp16']};
+const PURGE_TEXT="VÁLVULA DE PURGA\n\nSolta vapor no poço. O que estiver subindo recua e fica parado por vinte segundos.\nO tanque leva dois minutos para encher de novo.\n\n(rabiscado) ela odeia o calor. Não resolve. Dá tempo.";
+
 // ============================================================================
 // O INSUFLADOR (245 m) — um ventilador sob uma grade empurra o ar para cima. A parede acima é chapa lisa (LOCK_BANDS):
 // a única rota até o mirante (252 m) é deixar o fluxo levar o corpo e inclinar-se para a parede no alto.
@@ -182,7 +193,7 @@ const WINGS=[
 // ---- finais ----
 const ENDINGS={
   seal:{name:'O Selo',tag:'CONTENÇÃO',
-    text:"Você girou a Válvula-Mestra até o fim. Abaixo de você, o som parou de uma vez, como uma respiração que se cansou de voltar.\nNo poço, a massa não sobe mais. Ela fica onde está, sob toneladas de aço e concreto, para sempre.\nNo alto, a porta se abre para um dia comum. Ninguém vai saber o que foi selado. Contagem de retorno: 7 / 7 — o sétimo é quem fechou."},
+    text:"Você girou a Válvula-Mestra até o fim. Abaixo de você, o som parou de uma vez, como uma respiração que se cansou de voltar.\nO selo não durou. No exaustor o aço cedeu, e ela subiu atrás de você, mais lenta, ferida pelo que você fechou.\nNo alto, você bate a porta da superfície e ouve, lá embaixo, a massa voltar a se acomodar. Ninguém vai saber o que foi selado. Contagem de retorno: 7 / 7 — o sétimo é quem fechou."},
   commune:{name:'A Raiz',tag:'COMUNHÃO',
     text:"Você pôs a mão no Coração. Ela não era fome; era vontade de subir.\nA massa deixou de te perseguir. Agora acompanha, devagar, como maré, e onde passa as lâmpadas ficam verdes.\nNo alto, a porta se abre para o sol, e algo atrás de você sobe junto. Contagem de retorno: 7 / 7 — o sétimo não saiu sozinho."},
   witness:{name:'O Registro',tag:'TESTEMUNHO',

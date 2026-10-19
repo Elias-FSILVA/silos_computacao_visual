@@ -287,7 +287,26 @@ Object.assign(World.prototype,{
     if(sp.terminal){ const p=P(0,.45); this.terminal(p.x,T,p.z,Math.atan2(-Math.cos(c),-Math.sin(c)),sp.terminal); }
     if(sp.station){ const p=P(1.05,.4); this.perkStation(p.x,T,p.z,Math.atan2(-Math.cos(c),-Math.sin(c)),sp.station); }
     if(sp.bridge) this._bridge(c,T);
+    if(PURGE.rests.includes(sp.id)) this._purgeValve(c-1.2/SHAFT_R,T,sp.id);
     const wing=WINGS.find(w=>w.after===sp.id); if(wing) this._wingA(c,T,{id:wing.id,finish:wing.finish,dress:(fr,I)=>this._dressWing(wing,fr,I)});
+  },
+  // válvula de purga na parede do descanso: tanque, alavanca (lâmpada verde = pronta, âmbar = enchendo), placa e o bocal
+  // na borda do descanso, de onde o vapor desce pelo poço
+  _purgeValve(a,T,id){
+    const yaw=Math.atan2(-Math.cos(a),-Math.sin(a)), outer=new THREE.Group(); outer.position.copy(polar(SHAFT_R-.06,a,T)); outer.rotation.y=yaw; this.root.add(outer);
+    const tank=new THREE.Mesh(new THREE.CylinderGeometry(.2,.2,1.0,12),MAT.pipe); tank.position.set(0,1.75,.18); outer.add(tank);
+    const base=new THREE.Mesh(new THREE.BoxGeometry(.34,.34,.08),MAT.metal); base.position.set(0,1.0,.04); outer.add(base);
+    const rot=new THREE.Group(); rot.position.set(0,1.0,.09); outer.add(rot);
+    const arm=new THREE.Mesh(new THREE.BoxGeometry(.05,.5,.05).translate(0,.25,0),MAT.rust); rot.add(arm);
+    const knob=new THREE.Mesh(new THREE.BoxGeometry(.11,.11,.11),MAT.rust); knob.position.y=.52; rot.add(knob);
+    const lamp=new THREE.Mesh(new THREE.BoxGeometry(.14,.07,.05),MAT.glowGreen); lamp.position.set(0,1.28,.06); outer.add(lamp);
+    const hit=new THREE.Mesh(new THREE.BoxGeometry(.5,.8,.4),IMAT.hidden); hit.position.set(0,1.15,.15); outer.add(hit);
+    const n=inward(a), outlet=polar(SHAFT_R-1.9,a,T-.15), dir=new V3(n.x*.8,-7,n.z*.8);
+    const pv=new PurgeValve(rot,{id:'purge:'+id,lamp,outlet,dir}); pv.world=this;
+    [base,arm,knob,lamp,hit].forEach(m=>{ m.userData={type:'lever',interactable:pv}; }); this.interactables.push(base,arm,knob,lamp,hit);
+    this._plaque(polar(SHAFT_R-.03,a+.55/SHAFT_R,T+1.45),yaw,.8,.45,['PURGA','vapor · '+PURGE.stun+' s'],{color:'#ff9a5a',note:PURGE_TEXT,glow:true});
+    this.purgeValves.push(pv);
+    return pv;
   },
 
   // ---------- as subidas ----------

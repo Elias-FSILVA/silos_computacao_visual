@@ -614,6 +614,7 @@ class UIManager{
       mn.textContent=t; mn.classList.toggle('hot',!pz.solved&&(pz.failed||pz.timeRemaining<30));
     }
     else if(gs.massDistance==null){ mn.textContent='silêncio abaixo'; mn.classList.remove('hot'); }
+    else if(gs.massStun!=null){ mn.textContent=`algo a ${Math.max(0,gs.massDistance).toFixed(0)} m abaixo · parada pela purga · ${Math.ceil(gs.massStun)} s`; mn.classList.remove('hot'); }
     else { mn.textContent=`algo a ${Math.max(0,gs.massDistance).toFixed(0)} m abaixo`+(gs.timeLeft!=null?` · ~${Math.ceil(gs.timeLeft)} s`:''); mn.classList.toggle('hot',gs.massDistance<12); }
     this.$('timeN').textContent=fmtTime(gs.time);
     this.$('scoreN').textContent=`${fmtInt(gs.score)} pts`;

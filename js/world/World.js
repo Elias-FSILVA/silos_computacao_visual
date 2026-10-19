@@ -103,6 +103,7 @@ class World{
     this.root=new THREE.Group(); this.scene.add(this.root);
     this.platforms=[]; this.checkpoints=[]; this.walls=[]; this.grabbables=[]; this.interactables=[]; this.lamps=[]; this.crumbling=[];
     this.stations=[];   // estações de melhoria (PerkStation), uma por descanso marcado (E1–E3)
+    this.purgeValves=[];   // válvulas de purga (PurgeValve), nos descansos de PURGE.rests
     this.animated=[]; this.movers=[]; this.fans=[]; this.secrets=[]; this.puzzleRooms={}; this.puzzleDefs=[];
     this.darkZones=[];   // salas escuras {zone, dark()}: enquanto dark() e o jogador dentro, a lanterna acende sozinha (Game._flashlight)
     this.maze=null; this.mazeScr=null; this._cam=null; this.cutaway=[]; this._routeGuide=null; this._labels=null;

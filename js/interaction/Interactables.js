@@ -224,6 +224,27 @@ class Lever extends Interactable{
   canUseItem(id,ctx){ return (id==='hammer'&&this.jam>0)?{reticle:'fragile',valid:ctx.hit.distance<=REACH}:null; }
   useItem(id,ctx){ if(id!=='hammer'||this.jam<=0) return; this.jam--; _snd(ctx,'tang',3-this.jam); ctx.fx.spawn('sparks',ctx.hit.point,ctx.normal,6); ctx.player.addShake(.22); if(!this.jam) ctx.ui.msg('A alavanca cede.',1.8); }
 }
+// válvula de purga (descansos do poço): solta vapor, a massa recua e fica parada PURGE.stun s; recarrega em PURGE.recharge s
+class PurgeValve extends Interactable{
+  constructor(rot,o){ super(); this.rot=rot; this.id=o.id; this.lamp=o.lamp; this.outlet=o.outlet; this.dir=o.dir; this.recharge=0; this._tw=null; this.rot.rotation.x=.9; this._lamp(); }
+  get ready(){ return this.recharge<=0; }
+  canInteract(){ return this.ready?{prompt:'Válvula de purga: soltar vapor',reticle:'panel'}:{prompt:`Purga recarregando · ${Math.ceil(this.recharge)} s`,reticle:'panel'}; }
+  interact(ctx){
+    if(!this.ready){ ctx.ui.msg(`O tanque ainda está enchendo. ${Math.ceil(this.recharge)} s.`,1.8); _snd(ctx,'deny'); return; }
+    const m=ctx.game.mass; m.stun(PURGE.stun,PURGE.recoil); this.recharge=PURGE.recharge; this._lamp();
+    _tween(this,'x',.9,-.9,.3); if(this.world&&!this.world.animated.includes(this)) this.world.animated.push(this);
+    _snd(ctx,'tang',2); _snd(ctx,'hiss'); _snd(ctx,'boom'); ctx.player.addShake(.35);
+    if(ctx.fx&&this.outlet) ctx.fx.spawn('air',this.outlet,this.dir,30);
+    ctx.ui.msg(m.hold?`Vapor no poço. Lá embaixo ela se encolhe. ${PURGE.stun} s de folga.`:`O vapor desce chiando pelo poço. A massa recua e para. ${PURGE.stun} s.`,4);
+  }
+  // recarga (e o braço volta devagar para cima conforme o tanque enche); fica em world.animated até ficar pronta
+  update(dt){
+    const tw=_tweenStep(this,dt,this.rot,'x');
+    if(this.recharge>0){ this.recharge=Math.max(0,this.recharge-dt); if(!tw) this.rot.rotation.x=lerp(.9,-.9,this.recharge/PURGE.recharge); if(this.recharge<=0) this._lamp(); }
+    return tw||this.recharge>0;
+  }
+  _lamp(){ if(this.lamp) this.lamp.material=this.ready?MAT.glowGreen:MAT.glowAmber; }
+}
 // seletor de símbolo: cada F avança para o próximo símbolo e redesenha a face
 class Dial extends Interactable{
   constructor(tex,o){ super(); this.tex=tex; this.hall=o.hall; this.id=o.id; this.symbols=o.symbols; this.state=o.state||0; this.label=o.label||'Seletor'; this.paint(); }

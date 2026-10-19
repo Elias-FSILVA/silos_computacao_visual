@@ -311,7 +311,7 @@ class Game{
       checkpointJustCollected:cp?{id:cp.id,label:cp.label,bonus:cp.bonus,optional:cp.optional}:null,
       finished:this.timer.finished, result:this.result,
       debug:{assisted:!!(this.debugNavigation&&this.debugNavigation.assisted),noclip:!!(this.debugNavigation&&this.debugNavigation.noclipActive)},
-      massDistance:this.mass.active?this.mass.gap(this.player):null, playerName:this.playerName,
+      massDistance:this.mass.active?this.mass.gap(this.player):null, massStun:this.mass.stunT>0?this.mass.stunT:null, playerName:this.playerName,
       health:this.player.health?this.player.health.snapshot():null
     };
   }
