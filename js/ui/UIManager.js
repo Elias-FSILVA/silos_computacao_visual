@@ -197,9 +197,12 @@ class UIManager{
   }
   // novo jogo: fecha a mochila e esquece onde cada item estava
   resetPack(){ this.setPack(false); this.layout.clear(); }
-  // geometria do atalho k: centro na borda do círculo, direção (ux,uy), meio-lado h
+  // geometria do atalho k: simétrico nas laterais do círculo (1 e 2 à esquerda; 3 e 4 à direita)
   _quickGeo(k,Q){
-    const G=PACK_GEO, a=(-90+k*360/Q)*Math.PI/180, ux=Math.cos(a), uy=Math.sin(a);
+    const G=PACK_GEO;
+    const angles=[206,154,-26,26];
+    const deg=angles[k]!==undefined?angles[k]:(-90+k*360/Q);
+    const a=deg*Math.PI/180, ux=Math.cos(a), uy=Math.sin(a);
     return {ux,uy,x:ux*G.R,y:uy*G.R,h:G.quickD/2};
   }
   _quickRects(){
@@ -221,17 +224,18 @@ class UIManager{
       pk.store.push({el,id:null,ic:el.querySelector('.ic'),ct:el.querySelector('.ct'),bk:el.querySelector('.bk')});
       const pip=document.createElement('i'); pipsEl.appendChild(pip); pk.pips.push(pip);
     }
-    // atalhos quadrados presos à borda do círculo: 1 em cima, 2 à direita, 3 embaixo, 4 à esquerda
+    // atalhos quadrados presos às laterais do círculo: 1 e 2 à esquerda, 3 e 4 à direita
     for(let k=0;k<Q;k++){
-      const q=this._quickGeo(k,Q), L=QUICK_KEYS[k].label;
+      const q=this._quickGeo(k,Q), L=QUICK_KEYS[k].label, isLeft=k<2;
       const el=document.createElement('button'); el.type='button'; el.className='ps quick'; el.dataset.kind='quick'; el.dataset.i=k;
+      el.dataset.side=isLeft?'left':'right';
       el.style.left=(50+q.x)+'%'; el.style.top=(50+q.y)+'%'; el.style.width=G.quickD+'%'; el.style.height=G.quickD+'%';
       el.setAttribute('aria-keyshortcuts',L);
       el.innerHTML=`<span class="kc">${L}</span><span class="ic"></span><span class="ct"></span><span class="eb">MÃO</span>`;
       quickEl.appendChild(el);
-      // botão de remover o atalho, no canto superior direito do quadrado (Delete e botão direito também removem)
+      // botão de remover o atalho, no canto superior externo do quadrado (Delete e botão direito também removem)
       const clr=document.createElement('button'); clr.type='button'; clr.className='pclr'; clr.dataset.i=k; clr.tabIndex=-1; clr.textContent='×'; clr.hidden=true;
-      clr.style.left=(50+q.x+q.h)+'%'; clr.style.top=(50+q.y-q.h)+'%';
+      clr.style.left=(50+q.x+(isLeft?-q.h:q.h))+'%'; clr.style.top=(50+q.y-q.h)+'%';
       quickEl.appendChild(clr);
       pk.quick.push({el,clr,id:null,ic:el.querySelector('.ic'),ct:el.querySelector('.ct')});
     }
