@@ -76,6 +76,8 @@ class HandModel{
     const A=HandModel.POSES[a]||HandModel.POSES.relaxed, B=b&&HandModel.POSES[b];
     for(let j=0;j<21;j++) this.tgt[j]=B?A[j]+(B[j]-A[j])*t:A[j];
   }
+  // Interromper um gesto visual: aplicar o alvo atual sem deixar uma pose congelada nos overlays.
+  snapPose(){ this.x.set(this.tgt); this.v.fill(0); this._apply(); }
   setBase(r){ this.baseTgt.set(r[0],r[1],r[2]); }
   snapBase(){ this.base.rotation.set(this.baseTgt.x,this.baseTgt.y,this.baseTgt.z); }
   kick(a){ for(let i=0;i<4;i++){ this.v[i*4+2]+=a; this.v[i*4+3]+=a*.6; } }

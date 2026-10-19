@@ -67,6 +67,7 @@ class Player{
   on(t,f){ (this.listeners[t]=this.listeners[t]||[]).push(f); }
   emit(t,d){ (this.listeners[t]||[]).forEach(f=>f(d)); }
   reset(){
+    if(this.sixSeven) this.sixSeven.clear();
     this._axeContact=[null,null];   // ContactFrame visual da picareta cravada, por mão (AxeContactPose)
     this._normalMotion=[]; this._normalVelocity=new V3(); this._normalClimbOffset=new V3(); this._normalClimbPull=0; this._normalPullDriven=false;
     this.attributes.clearPerks();
@@ -89,6 +90,7 @@ class Player{
   }
   // Descontinuidade de debug: cancelar intenção/âncoras, nunca resetar recursos ou métricas da run.
   clearDebugTransient(){
+    if(this.sixSeven) this.sixSeven.clear();
     this._axeContact=[null,null];
     for(const h of this.hands){h.inContact=false;h.isGrabbing=false;h.anchor=null;h.surface=null;h.pull=0;h.aiming=false;}
     this.mantle=null;this.press=[null,null];this.point=[false,false];
@@ -147,6 +149,7 @@ class Player{
   // pendurado numa borda, mas baixo demais para subir: a UI sugere puxar
   get needsPull(){ return this.isHanging&&!this.mantle&&this.pull<PULL_MANTLE&&this.hands.some(h=>h.inContact&&h.surface.userData.plat); }
   setGrab(i,down){
+    if(down&&this.sixSeven) this.sixSeven.clear();
     const h=this.hands[i]; if(!h||this.dead||(down&&this.debugFrozen)) return;   // voo de debug: nenhum agarre novo
     h.isGrabbing=down;
     if(!down&&h.inContact) this._release(h);
@@ -156,6 +159,7 @@ class Player{
   // gesto de apertar um botão com o indicador (só visual: quem chama já registrou o número).
   // Desktop: a mão livre vai até `target` e volta. VR (target null): o dedo empurra para frente onde a mão está.
   pressButton(target,prefer=1){
+    if(this.sixSeven) this.sixSeven.clear();
     const free=i=>{ const h=this.hands[i]; return !h.inContact&&!h.occupied; };
     const i=free(prefer)?prefer:free(1-prefer)?1-prefer:-1; if(i<0) return;
     this.press[i]={t:0,target:target?target.clone():null};
@@ -219,6 +223,7 @@ class Player{
   }
   restoreStamina(){ this.hands.forEach(h=>{ h.stamina=this.maxStamina; h.exhausted=false; }); this.stats.pillsUsed++; }
   die(reason){
+    if(this.sixSeven) this.sixSeven.clear();
     if(this.dead) return;
     this.health.zero(reason);
     this.dead=true; this.deathReason=reason; if(reason==='fall'){ this.fellOff=true; this.stats.recordFall(); }
@@ -534,6 +539,7 @@ class Player{
   }
   // Cada mão ocupada segue a pose do respectivo item; mãos livres mantêm as poses de escalada.
   updateViewmodel(){
+    if(this.sixSeven) this.sixSeven.beforeViewmodel();
     // relógio próprio: o Game chama sem dt; o tempo real mantém a animação igual em qualquer taxa de quadros
     const now=performance.now(), dt=this._vmT?Math.min(.05,(now-this._vmT)/1000):1/60; this._vmT=now;
     // balanço ao andar e afundada ao aterrissar (espaço da câmera)
@@ -589,6 +595,7 @@ class Player{
           hm.tremor=Math.min(.22,clamp((.35-s)/.35,0,1)*.14+this.effort*.04+f*.1);
         } else { hm.setPose(pr||this.point[i]?'point':h.isGrabbing&&!h.exhausted?'open':'relaxed'); hm.slack=0; hm.tremor=0; }
       }
+      if(this.sixSeven) this.sixSeven.apply(hm,i);
       if(h.inContact&&!hm.wasContact) hm.kick(4);   // tranco ao agarrar
       hm.wasContact=h.inContact;
       const low=Math.max(1-h.stamina/this.maxStamina,this.fatigueFx*.8); hm.tint(low*low*.3);
@@ -603,6 +610,7 @@ class Player{
         AxeContactPose.solve(f,h.point,h.normal,vis.refs,_axeM); AxeContactPose.applyHandRoot(m,vis.canonical,_axeM);
       } else this._axeContact[i]=null;
     });
+    if(this.sixSeven&&this.sixSeven.active) this.sixSeven.updateNumber();
   }
   // desktop: a mão sai do repouso, leva a ponta do indicador ao botão, aperta 1 cm e volta.
   // Botão além do braço (> 0,6 m da cabeça): a mão estica até o limite e só aponta.

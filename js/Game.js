@@ -39,6 +39,7 @@ class Game{
     this.vr=new VRPlayer(this);
     this.puzzles.reset();
     this.debugNavigation=new DeveloperNavigation(this);
+    this.sixSeven=new SixSeven(this);
     this.cinematic=new IntroCinematic(this);
     this.spectator=new SpectatorMode(this);
     this.state='menu'; this.keys={}; this.playerName=''; this.result=null; this.saved=false; this.savedIndex=-1;
@@ -80,6 +81,7 @@ class Game{
   openDevConsole(){
     if(!this.settings.data.devConsoleEnabled||this.vr.active||this.ui.$('devConsole').hidden===false) return;
     if(!['play','paused','menu'].includes(this.state)) return;
+    if(this.sixSeven) this.sixSeven.clear();
     this.devConsoleReturnState=this.state; this._devConsoleWasPlaying=this.state==='play';
     if(this._devConsoleWasPlaying){ this.state='console'; this.timer.pause(); this.items.releaseUse(); this.gameBtn={}; this._lockGuard=performance.now()+500; this.unlock(); }
     this.keys={}; this.ui.$('devConsole').hidden=false; this.ui.$('devConsoleInput').focus();
@@ -90,6 +92,7 @@ class Game{
     if(this._devConsoleWasPlaying){ this.state='play'; this._syncTimer(); this._lockGuard=performance.now()+500; this.lock(); }
     else this.state=this.devConsoleReturnState||this.state;
     this.devConsoleReturnState=null; this._devConsoleWasPlaying=false;
+    if(this.sixSeven) this.sixSeven.closeConsole();
   }
   toggleDevConsole(){ if(this.ui.$('devConsole').hidden) this.openDevConsole(); else this.closeDevConsole(); }
   clearDevConsoleOutput(){ this.ui.$('devConsoleOutput').textContent=''; }
@@ -106,6 +109,7 @@ class Game{
     this.cinematic.play(()=>this.beginPlay());
   }
   resetRun(){
+    if(this.sixSeven) this.sixSeven.clear();
     this.world.reset(); this.player.reset(); this.items.reset(); this.mass.reset(); this.timer.reset(); this.score.reset();
     this.fx.clear(); this.puzzles.reset(); this.audio.silence();
     this.stations.reset(); this.stationOpen=null; this._syncStations();
@@ -150,6 +154,7 @@ class Game{
   _syncTimer(){ if(this.debugNavigation) this.debugNavigation.syncTimer(); else this.timer.resume(); }
   pause(){
     if(this.state!=='play') return;
+    if(this.sixSeven) this.sixSeven.clear();
     this.state='paused'; this._resuming=false; this.timer.pause(); this.player.releaseAll(); this.items.releaseUse(); this.keys={};
     this.ui.setPack(false);
     this.unlock(); this.ui.clearMsg(); this.ui.$('pauseErr').textContent=''; this.ui.show('pause'); this.audio.setRumble(.02); this.pausedAt=performance.now();
@@ -172,6 +177,7 @@ class Game{
   // e NÃO solta as mãos: a escalada continua exatamente como estava ao fechar.
   openInventory(){
     if(this.state!=='play'||this.player.dead) return;
+    if(this.sixSeven) this.sixSeven.clear();
     this.state='inventory'; this._lockGuard=performance.now()+400;   // o estado muda antes do unlock: o pointerlockchange não vira pausa
     this.timer.pause(); this.items.releaseUse(); this.gameBtn={}; this.keys={};      // soltar botões durante a mochila não mexe nas mãos; teclas não ficam presas
     this.ui.hideNote(); this.audio.setRumble(.02);
@@ -202,6 +208,7 @@ class Game{
       else this.ui.msg('Nenhuma melhoria disponível aqui.',1.6);
       if(this.audio.deny) this.audio.deny(); return;
     }
+    if(this.sixSeven) this.sixSeven.clear();
     this.state='station'; this.stationOpen={id,sel:-1}; this._lockGuard=performance.now()+400;
     this.timer.pause(); this.items.releaseUse(); this.gameBtn={}; this.keys={};
     const v=this.stationView(id); this.ui.hideNote(); this.ui.showStation(v); if(this.vr.active&&this.vr.showStation) this.vr.showStation(v);
@@ -244,6 +251,7 @@ class Game{
   _syncStations(){ for(const st of ((this.world&&this.world.stations)||[])) st.setUsed(this.stations.isUsed(st.id)); }
   endRun(result){
     if(this.state!=='play') return;
+    if(this.sixSeven) this.sixSeven.clear();
     this.state='ending'; this.result=result; this.timer.finish();
     const breakdown=this.score.finalize(result,this.timer.time,this.player);
     this.player.attributes.clearPerks(); this.stations.reset(); this._syncStations();
@@ -292,7 +300,7 @@ class Game{
   // saiu do headset no meio da corrida: fica pausado na tela 2D (com "Continuar em VR")
   onVRExit(){ this.applySettings(); if(this.state==='play') this.pause(); }
   // ---------- interação ----------
-  interact(hand){ this.interaction.interact(hand); }
+  interact(hand){ if(this.sixSeven) this.sixSeven.clear(); this.interaction.interact(hand); }
   // ---------- estado para UI e atmosfera ----------
   getUIState(){
     const cp=this.checkpoints.justCollected, pz=this.puzzles.current;
@@ -404,7 +412,7 @@ class Game{
   }
   // ---------- handlers de entrada (métodos para teste; o voo de debug só deixa passar voo, olhar e overlays) ----------
   _gameplayAllowed(){ const n=this.debugNavigation; return !n||n.allowsGameplayAction(); }
-  _onBlur(){ this.keys={}; if(this.state==='play'&&!this.vr.busy) this.pause(); }
+  _onBlur(){ if(this.sixSeven) this.sixSeven.clear(); this.keys={}; if(this.state==='play'&&!this.vr.busy) this.pause(); }
   // a câmera só segue o mouse capturado: com o cursor solto (captura pendente) o movimento é do cursor, não da vista
   _onMouseMove(e){
     if(this.state==='play'){ if(this.locked()||this.vr.busy||!this.canLock()){
@@ -417,6 +425,7 @@ class Game{
     if(this.state!=='play') return;
     if(!this.locked()&&this.canLock()&&!this.vr.busy){ this.lock(); return; }   // clique com o cursor solto só recaptura: não agarra nem usa item
     if(!this._gameplayAllowed()) return;                                         // voo de debug: clique não agarra, não usa item nem aperta painel
+    if(this.sixSeven&&(e.button===0||e.button===2)) this.sixSeven.clear();
     if(e.button===0&&this.interaction.keypadAimed()){ this.interact(0); return; }   // painel de senha: clique aperta o número
     this.gameBtn[e.button]=true;
     if(e.button===0){ if(this.items.equippedFor('left')) this.items.useHand('left',true); else this.player.setGrab(0,true); }
@@ -435,6 +444,7 @@ class Game{
     else if(this.state==='spectate'&&Math.abs(e.deltaY)>4) this.spectator.wheel(e.deltaY);
   }
   _onKeyDown(e){
+    if(this.sixSeven) this.sixSeven.key(e);
     if(e.code==='Backquote'&&this.settings.data.devConsoleEnabled&&!this.vr.active){ e.preventDefault(); this.toggleDevConsole(); return; }
     if(!this.ui.$('devConsole').hidden){
       if(e.code==='Escape'){ e.preventDefault(); this.closeDevConsole(); }
@@ -442,7 +452,7 @@ class Game{
     }
     if(e.code==='F2'&&this.state==='menu'&&!this.ui.$('menu').hidden){ e.preventDefault(); this.spectator.enter(); return; }   // atalho do modo espectador
     if(e.code==='F3'){ e.preventDefault(); if(!e.repeat) this.perf.toggle(); return; }                                         // diagnóstico de desempenho
-    const typing=e.target&&e.target.tagName==='INPUT'&&e.target.type==='text';
+    const target=e.target, typing=target&&(/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)||target.isContentEditable||target.closest&&target.closest('[contenteditable]:not([contenteditable="false"])'));
     if(typing) return;
     if(this.state==='intro'){ if(['Space','Escape','Enter'].includes(e.code)){ e.preventDefault(); this.cinematic.skip(); } return; }
     if(this.state==='inventory'){ this._inventoryKey(e); return; }
@@ -474,6 +484,7 @@ class Game{
   _loop(now){
     const dt=Math.min(.05,(now-this.last)/1000), t0=performance.now(); this.last=now; this.vt+=dt;
     try{
+      if(this.sixSeven&&this.state!=='play') this.sixSeven.update(0);
       if(this.state==='play') this._play(dt);
       else if(this.state==='intro'){ this.cinematic.update(dt); this._ambient(dt,false); }
       else if(this.state==='menu'){ this._menuCam(dt); this._ambient(dt,false); }
@@ -505,6 +516,7 @@ class Game{
     this.player.viewmodelVisible=false; this.player.updateViewmodel();
   }
   _debugPlay(dt){
+    if(this.sixSeven) this.sixSeven.clear();
     const nav=this.debugNavigation;nav.syncTimer();nav.updateFlight(dt,this.keys);
     this.player.applyCamera();this.player.updateViewmodel();
     this._ambient(dt,false);
@@ -525,6 +537,7 @@ class Game{
     this.puzzles.update(dt); this._flashlight(dt);
     if(this.mass.update(dt,this.timer.elapsedTime,this.player)==='activated') this.ui.msg('O piso vibra. Algo lá embaixo começou a subir.',4);
     if(this.mass.caught&&!this.player.dead) this.player.die('mass');
+    if(this.sixSeven) this.sixSeven.update(dt);
     this.player.applyCamera(); this.player.updateViewmodel();
     const cp=this.checkpoints.update(this.player);
     if(cp.justCollected){ this.score.onCheckpoint(cp.justCollected); this.audio.chime(); }

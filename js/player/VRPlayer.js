@@ -88,6 +88,7 @@ class VRPlayer{
     if(!navigator.xr||this.busy) return;
     const nav=this.g.debugNavigation;   // noclip é só desktop: desligar antes de entrar no headset
     if(nav&&nav.canEnterXR&&!nav.canEnterXR()){ this.g.ui.msg('Desligue o noclip antes de entrar em VR.',3); return; }
+    if(this.g.sixSeven) this.g.sixSeven.clear();
     this.entering=true;
     navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','hand-tracking']}).then(s=>
       // chão real quando o Quest tem a área de jogo configurada; senão, origem na cabeça

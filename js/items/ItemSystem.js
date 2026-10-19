@@ -77,6 +77,7 @@ class ItemSystem{
   }
   // equipa/troca/guarda o slot i; `side` explícito ('left'|'right') vence a dedução pelo vínculo
   select(i,side){
+    if(this.player.sixSeven) this.player.sixSeven.clear();
     if(this.handIndex===1){ const s=side||this.sideOf(i); if(s==='left') return this.left.select(i,'left'); }
     const p=this.player; if(p.dead) return;
     const slot=this.inv.slots[i]; if(!slot) return;
@@ -98,6 +99,7 @@ class ItemSystem{
   }
   // atalhos 1–4: resolve o item vinculado e entrega ao select() existente (equipar, trocar ou guardar)
   selectQuick(k){
+    if(this.player.sixSeven) this.player.sixSeven.clear();
     const owner=k<2?this.left:this;
     const inv=this.inv, i=inv.boundSlot(k); if(i<0) return false;
     const s=inv.slots[i], d=ITEM_DEFS[s.id];
@@ -105,6 +107,7 @@ class ItemSystem{
     owner.select(i,k<2?'left':'right'); return true;
   }
   cycle(dir){
+    if(this.player.sixSeven) this.player.sixSeven.clear();
     const filled=this.inv.slots.map((s,i)=>s?i:-1).filter(i=>i>=0); if(!filled.length) return;
     let k=filled.indexOf(this.sel); k=k<0?(dir>0?0:filled.length-1):(k+dir+filled.length)%filled.length;
     this.select(filled[k]);
@@ -147,6 +150,7 @@ class ItemSystem{
   // voo de debug (noclip): nenhum uso, consumo ou impacto — guarda no ponto de ação, além das teclas
   _debugBlocked(){ const n=this.g.debugNavigation; return !!(n&&n.allowsGameplayAction&&!n.allowsGameplayAction()); }
   use(down){
+    if(down&&this.player.sixSeven) this.player.sixSeven.clear();
     if(down&&this._debugBlocked()) return;
     this.useHeld=down; if(down) this._tryUse();
     else if(this.phase==='anchored'){ this.player.releaseAxe(this.handIndex); if(this.worn){ this._breakAxe(); return; } this.phase='idle'; this.t=0; this.g.audio.axeScrape(); this._vrFeedback('release'); }
@@ -166,6 +170,7 @@ class ItemSystem{
     return !!this.equipped&&!!AIMING_ITEMS[this.equipped]&&(this.phase==='swing'||this.phase==='place'||(this.useHeld&&this.phase==='idle')); }
   _syncAim(){ this.hand.aiming=this.aimingNow; }
   quick(id){ // pílula sem precisar equipar (tecla Q)
+    if(this.player.sixSeven) this.player.sixSeven.clear();
     if(id!=='pills'||this._debugBlocked()) return;
     if(this.inv.count('pills')<=0){ this.g.ui.msg('Nenhuma pílula.',1.3); return; }
     this.inv.take('pills'); this.player.restoreStamina(); this.g.audio.pill(); this.g.ui.msg('O tremor nas mãos passa.',2);

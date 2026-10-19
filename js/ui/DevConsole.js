@@ -18,6 +18,7 @@ class DevConsole{
       const near=s.list.filter(x=>x.state==='active').map(x=>`${x.id} [${x.y0.toFixed(0)}–${x.y1.toFixed(0)}]${x.pinned?' (fixo)':''}`);
       return `Setores: ${i.active} ativos · ${i.ready} prontos · ${i.loading} carregando · ${i.unloaded} descarregados (de ${i.total}) · olhos a ${y.toFixed(1)} m${i.region?' · região: '+i.region:''}\nAtivos: ${near.join(', ')||'nenhum'}`;
     }
+    if(command==='67'&&args.length===0) return game.sixSeven?game.sixSeven.queue():'Agora não.';
     if(command==='clear'&&args.length===0){ if(game.clearDevConsoleOutput) game.clearDevConsoleOutput(); return ''; }
     if(command==='perks'&&args.length===2&&args[0]==='add'&&args[1]==='help'){
       return `Perks disponíveis para “perk add <id>”: ${Object.keys(PERK_DEFS).map(id=>`${id} — ${PERK_DEFS[id].name}`).join('; ')}`;
