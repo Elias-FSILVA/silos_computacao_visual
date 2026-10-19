@@ -27,6 +27,9 @@
 // escada.glb: altura de cada degrau a partir da base (medida no arquivo) e altura total
 const LADDER_RUNGS=[.47,.91,1.29,1.73,2.19,2.57,3.0,3.49,3.87,4.3,4.77,5.15,5.58,6.0,6.46,6.85,7.28], LADDER_H=7.86;
 const CRACK_GRIP=1.2;      // pegada extra por segundo numa rachadura (estamina/s)
+// faixa invisível de agarre da rachadura: DoubleSide, porque a ordem dos vértices depende do sentido em que a fenda é
+// desenhada; com FrontSide o raio de quem está no poço atravessava a faixa por trás e a rachadura não era agarrável
+const CRACK_HIT_MAT=new THREE.MeshBasicMaterial({visible:false,side:THREE.DoubleSide});
 
 // peça de um modelo do mapa (Models, catálogo MAP_MODEL_DEFS): as malhas cujo nome casa com `re`, recentradas uma vez
 // (centro em x/z; em y o centro ou a base) e compartilhadas entre as cópias. null sem o modelo (Node, file://).
@@ -124,6 +127,7 @@ Object.assign(World.prototype,{
     if(o.terminal){ const p=P(0,.4); this.terminal(p.x,top,p.z,Math.atan2(-Math.cos(c),-Math.sin(c)),o.terminal); }
     if(o.loot){ const p=P(-.9,.6); this.box(p.x,top,p.z,o.loot); }
     if(o.note){ const p=P(.8,.5); this.note(p.x,top,p.z,o.note); }
+    if(o.station){ const p=P(1.6,.4); this.perkStation(p.x,top,p.z,Math.atan2(-Math.cos(c),-Math.sin(c)),o.station); }
     return pd;
   },
   // cano curvo junto à parede, de a0 a a1 na altura y: atravessa-se de lado, pendurado (agarra em qualquer ponto)
@@ -171,10 +175,39 @@ Object.assign(World.prototype,{
       const d=Math.hypot(R*(a1-a0),y1-y0); if(i===0) samples.push({p:polar(R-.05,a0,y0),n:inward(a0)});
       acc+=d; if(acc>=.35||i===C.length-2){ acc=0; samples.push({p:polar(R-.05,a1,y1),n:inward(a1)}); }
     }
-    const hit=mk(Hp,Hn,IMAT.hidden); hit.userData={grab:true,type:'crack',alive:true,normalAt:wallNormalAt,gripCost:CRACK_GRIP,samples}; this.grabbables.push(hit);
+    const hit=mk(Hp,Hn,CRACK_HIT_MAT); hit.userData={grab:true,axe:true,type:'crack',alive:true,normalAt:wallNormalAt,gripCost:CRACK_GRIP,samples}; this.grabbables.push(hit);
     const as=pts.map(p=>p[0]), ys=pts.map(p=>p[1]); this._smoothAdd(Math.min(...as),Math.max(...as),Math.min(...ys),Math.max(...ys));
     if(o.lamp!==false){ const [a,y]=pts[0]; this._routeLamp(a+(o.lampSide||-1)*.75/R,y+.4,'rusty'); }
     return hit;
+  },
+  // faixa de rocha exposta ao longo de [[a,y],…]: só a PICARETA crava (axe:true, sem grab — a mão nua não se segura).
+  // Desenho: placa irregular escura e granulada, um pouco à frente da parede; o alvo de raycast é a própria placa
+  // (entra em world.walls/raycastTargets, não em grabbables). o.lamp:false dispensa a lâmpada de rota (amarela); o.id nomeia a
+  // faixa (R1–R4, conferidas por tools/test_axe_routes.js). Usa um gerador próprio: não mexe no sorteio do resto do mapa.
+  _rockBand(pts,o={}){
+    const R0=this.R; this.R=mulberry(Math.round(pts[0][0]*1e4)+Math.round(pts[0][1]*1e2)*7919);
+    const R=SHAFT_R, half=(o.w||.7)/2, C=[];
+    for(let i=0;i<pts.length-1;i++){ const [a0,y0]=pts[i], [a1,y1]=pts[i+1], n=Math.max(2,Math.ceil(Math.hypot(R*(a1-a0),y1-y0)/.25));
+      for(let k=(i?1:0);k<=n;k++) C.push([lerp(a0,a1,k/n),lerp(y0,y1,k/n)]); }
+    const P=[],N=[],U=[],samples=[]; let acc=0, run=0;
+    for(let i=0;i<C.length-1;i++){
+      const [a0,y0]=C[i], [a1,y1]=C[i+1], am=(a0+a1)/2, n=inward(am), seg=Math.hypot(R*(a1-a0),y1-y0), u0=run/.6, u1=(run+=seg)/.6;
+      const t=new V3(-Math.sin(am)*R*(a1-a0),y1-y0,Math.cos(am)*R*(a1-a0)).normalize(), s=new V3(t.y*n.z-t.z*n.y,t.z*n.x-t.x*n.z,t.x*n.y-t.y*n.x).normalize();
+      const w0=half*(.85+this.R()*.3), w1=half*(.85+this.R()*.3);
+      const at=(a,y,off)=>polar(R-.04,a,y).addScaledVector(s,off);
+      for(const v of [at(a0,y0,-w0),at(a1,y1,-w1),at(a1,y1,w1),at(a0,y0,-w0),at(a1,y1,w1),at(a0,y0,w0)]){ P.push(v.x,v.y,v.z); N.push(n.x,n.y,n.z); }
+      U.push(u0,0, u1,0, u1,1, u0,0, u1,1, u0,1);
+      const d=Math.hypot(R*(a1-a0),y1-y0); if(i===0) samples.push({p:polar(R-.05,a0,y0),n:inward(a0)});
+      acc+=d; if(acc>=.35||i===C.length-2){ acc=0; samples.push({p:polar(R-.05,a1,y1),n:inward(a1)}); }
+    }
+    const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(P,3)); g.setAttribute('normal',new THREE.Float32BufferAttribute(N,3)); g.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));
+    const m=new THREE.Mesh(g,MAT.rockBand||MAT.crackLip); this.root.add(m);
+    m.userData={type:'rockband',axe:true,alive:true,normalAt:wallNormalAt,samples,bandId:o.id||null};
+    this.walls.push(m); if(this.raycastTargets) this.raycastTargets.push(m);
+    const as=pts.map(p=>p[0]), ys=pts.map(p=>p[1]); this._smoothAdd(Math.min(...as),Math.max(...as),Math.min(...ys),Math.max(...ys));
+    if(o.lamp!==false){ const [a,y]=pts[0]; this._routeLamp(a+(o.lampSide||1)*.75/R,y+.4,'yellow'); }
+    this.R=R0;
+    return m;
   },
   // corda pendurada de um braço de aço (turco) preso à parede (ou a o.from: ponto de amarração, ex. a ponte): de yTop até
   // yBot, a r do eixo (ou na posição o.at). Agarra em qualquer altura; o corpo fica do lado de onde se agarrou.
@@ -252,6 +285,7 @@ Object.assign(World.prototype,{
     if(sp.loot){ const p=P(-.6,.75); this.box(p.x,T,p.z,sp.loot); }
     if(sp.note){ const p=P(.55,.55); this.note(p.x,T,p.z,sp.note); }
     if(sp.terminal){ const p=P(0,.45); this.terminal(p.x,T,p.z,Math.atan2(-Math.cos(c),-Math.sin(c)),sp.terminal); }
+    if(sp.station){ const p=P(1.05,.4); this.perkStation(p.x,T,p.z,Math.atan2(-Math.cos(c),-Math.sin(c)),sp.station); }
     if(sp.bridge) this._bridge(c,T);
     const wing=WINGS.find(w=>w.after===sp.id); if(wing) this._wingA(c,T,{id:wing.id,finish:wing.finish,dress:(fr,I)=>this._dressWing(wing,fr,I)});
   },
@@ -277,7 +311,7 @@ Object.assign(World.prototype,{
     this._plate(1.62,2.74,69.35,75.6);
     this._pipeRun(1.80,2.78,70.9); this._routeLamp(1.95,73.0,'rusty');
     this._holds([[2.86,71.9],[3.02,75.2]],{crumble:k});
-    this._catwalk(2.90,3.75,76.6,{label:'Sala de controle',id:'cp4',terminal:NOTES[80],loot:{pills:1,nails:2}});
+    this._catwalk(2.90,3.75,76.6,{label:'Sala de controle',id:'cp4',terminal:NOTES[80],loot:{pills:1,nails:2},station:'E1'});
     // viga de lado a lado: sobe-se nela e atravessa-se o poço por cima até a outra parede
     this._holds([[3.80,78.4],[3.95,82.8]],{crumble:k});
     this.beamA(4.05,84.0);
@@ -293,7 +327,7 @@ Object.assign(World.prototype,{
     this._pipeBridge(.32,2.07,120.0);            // sobe-se no tubo a partir do andaime e anda-se por cima dele
     this._catwalk(1.86,2.62,120.0);
     this._holds([[2.68,121.9],[2.92,126.7]],{crumble:k});
-    this._restAt(3.15,128.0,{label:'Andaime norte',id:'cp6',note:NOTES[130],loot:{nails:3}});
+    this._restAt(3.15,128.0,{label:'Andaime norte',id:'cp6',note:NOTES[130],loot:{nails:3,climbing_axe:1}});   // 1ª picareta
     // B · travessia lateral: acima do descanso a parede é chapa; os tijolos seguem de lado antes de voltar a subir
     this._plate(2.95,4.32,131.0,135.6);
     this._holds([[3.45,129.9],[4.36,130.6]],{crumble:k*1.6});
@@ -302,6 +336,7 @@ Object.assign(World.prototype,{
     this._holds([[4.82,137.8],[4.98,140.6]],{crumble:k});
     this._catwalk(5.00,6.05,142.0);
     this._holds([[6.12,143.8],[EXHAUST.entryA+TAU,148.6]],{crumble:k});   // o vento do exaustor já puxa
+    this._rockBand([[6.2,145.0],[6.125,146.5],[6.05,148.0]],{id:'R1'});     // R1 · atalho da passarela de 142 m até a boca do exaustor (só picareta)
   },
   // ===== SUBIDA 2b · 177 → 200 m: corda presa ao mezanino, sobre uma parede de chapa
   _subida2b(){
@@ -310,7 +345,7 @@ Object.assign(World.prototype,{
     this._islet(3.80,181.8);
     this._plate(3.60,4.45,182.2,188.3);
     this._rope(3.94,190.2,182.6,{r:3.95}); this._routeLamp(3.72,186.0,'rusty');
-    this._restAt(4.05,188.6,{label:'Mezanino',id:'cp8',note:NOTES[186],loot:{pills:1,nails:3}});
+    this._restAt(4.05,188.6,{label:'Mezanino',id:'cp8',note:NOTES[186],loot:{pills:1,nails:3},station:'E2'});
     this._holds([[4.30,190.4],[4.56,194.4]],{crumble:k});
     this._catwalk(4.56,4.95,195.8,{d:1.0});      // resto da passarela de acesso ao Pátio
     this._holds([[this._opA('p200_in')+TAU,198.6]]);
@@ -322,6 +357,7 @@ Object.assign(World.prototype,{
     this._islet(2.20,232.0);
     this._crack([[2.30,233.7],[2.36,234.6],[2.28,235.6],[2.40,236.6],[2.47,237.5]]);
     this._scaffold(2.58,238.8,{w:1.6,d:1.1});    // tábuas de grade que a equipe deixou no bolsão onde o concreto cedeu
+    this._rockBand([[2.26,236.5],[2.335,238.0],[2.41,239.5]],{id:'R2',lampSide:-1});   // R2 · elo entre as duas rachaduras, sem descer ao andaime
     this._crack([[2.66,240.4],[2.72,241.3],[2.68,242.2],[2.80,243.2],[2.86,244.0],[INSUF.a-.7,244.6]],{lampSide:1});
   },
   // ===== SUBIDA 3b · 253 → 300 m: escada danificada · vão lateral que só se cruza com prego · rachadura de lado
@@ -330,7 +366,7 @@ Object.assign(World.prototype,{
     this._holds([[INSUF.a+.15,254.5],[4.00,258.6]],{crumble:k});
     this._islet(4.15,260.0);
     this._brokenLadder(4.30,261.0,{missing:[0,1,8,9]});
-    this._restAt(4.55,269.6,{label:'Corredor de serviço',id:'cp11',note:NOTES[270],loot:{pills:1,nails:3}});
+    this._restAt(4.55,269.6,{label:'Corredor de serviço',id:'cp11',note:NOTES[270],loot:{pills:1,nails:3,climbing_axe:1}});   // 2ª picareta
     // E · o vão: chapa lisa entre duas linhas de tijolos, a 3 m uma da outra; o soquete fica no meio
     this._holds([[4.82,271.4],[4.86,275.2]],{crumble:0});
     this._plate(4.92,5.30,269.8,281.0);
@@ -352,8 +388,9 @@ Object.assign(World.prototype,{
     this._islet(-.60,319.0);
     this._crack([[-.50,320.6],[-.42,321.8],[-.48,322.9],[-.36,324.2]]);
     this.beamA(-.30,325.4);
+    this._rockBand([[-.22,324.0],[-.295,325.5],[-.37,327.0]],{id:'R3',lampSide:-1});   // R3 · rota alternativa curta para a Cabine de guincho
     this._holds([[-.20,327.3],[0,329.6]],{crumble:k});
-    this._restAt(.15,331.0,{label:'Cabine de guincho',id:'cp14',note:NOTES[340],loot:{nails:3}});
+    this._restAt(.15,331.0,{label:'Cabine de guincho',id:'cp14',note:NOTES[340],loot:{nails:3},station:'E3'});
     this._holds([[.42,332.8],[.58,337.6]],{crumble:k});
     this._pipeBridge(.66,2.42,339.4);
     this._catwalk(2.24,2.95,339.4);

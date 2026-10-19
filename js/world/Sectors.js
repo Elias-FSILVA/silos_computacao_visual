@@ -69,9 +69,27 @@ class Elevator{
 }
 
 Object.assign(World.prototype,{
+  // Corpo (cilindro vertical) contra o disco sólido das pás, dos dois lados. Recorta a trajetória ao intervalo
+  // de altura do contato antes de medir o raio: não mistura alturas e posições de instantes diferentes.
+  // Independe do vento no peito e também detecta um rotor atravessado entre dois quadros.
+  fanContact(p,prev=p){
+    for(const f of this.fans){
+      const b=f.blades; if(f.mode!=='pull'||f.kill<=0||!b) continue;
+      const lo=solidBottom(b)-BODY_H-1e-6, hi=b.top+1e-6, dy=p.y-prev.y;
+      let t0=0, t1=1;
+      if(Math.abs(dy)<1e-9){ if(prev.y<lo||prev.y>hi) continue; }
+      else { const a=(lo-prev.y)/dy, c=(hi-prev.y)/dy; t0=Math.max(0,Math.min(a,c)); t1=Math.min(1,Math.max(a,c)); if(t0>t1) continue; }
+      const ax=lerp(prev.x,p.x,t0)-b.arc.cx, az=lerp(prev.z,p.z,t0)-b.arc.cz;
+      const dx=(p.x-prev.x)*(t1-t0), dz=(p.z-prev.z)*(t1-t0), len=dx*dx+dz*dz;
+      const t=len>0?clamp(-(ax*dx+az*dz)/len,0,1):0;
+      if(Math.hypot(ax+dx*t,az+dz*t)<=b.arc.r1+RAD+1e-6) return f;
+    }
+    return null;
+  },
   // ar no peito do jogador (pés p): soma dos ventiladores que alcançam o ponto sem abrigo. {air: V3 (m/s), g (0–1), fan} |
-  // {kill:true, fan} (nas pás de um exaustor) | null
+  // {kill:true, fan} (corpo nas pás ou na zona de sucção letal de um exaustor) | null
   wind(p){
+    const hit=this.fanContact(p); if(hit) return {kill:true,fan:hit};
     let res=null; const cy=p.y+1.0;
     for(const f of this.fans){
       const s=f.sample(p.x,cy,p.z); if(!s) continue;
@@ -199,7 +217,9 @@ Object.assign(World.prototype,{
     // ---- o exaustor: carcaça presa à parede, disco das pás (sólido) e rotor; aspira o poço de baixo para cima ----
     const F=E.fan, fan=new Fan({name:'exaustor',pos:new V3(0,F.y,0),axis:new V3(0,1,0),mode:'pull',radius:F.radius,duct:R+.3,range:F.range,speed:F.speed,p:F.p,kill:F.kill,spinRate:7});
     this._arc({r0:F.radius,r1:R+.04,a0:0,span:TAU},F.y-.6,F.y+1.6,M,{kind:'fan',interactable:null}).userData.solid.fan=fan;
-    this._arc({r0:0,r1:F.radius+.03,a0:0,span:TAU},F.y-.15,F.y+.15,IMAT.hidden,{kind:'fan',interactable:null,ray:false,flat:true}).userData.solid.fan=fan;
+    const blades=this._arc({r0:0,r1:F.radius+.03,a0:0,span:TAU},F.y-.15,F.y+.15,IMAT.hidden,{kind:'fan',interactable:null,ray:false,flat:true}).userData.solid;
+    blades.fan=fan;
+    fan.blades={arc:blades.arc,bottom:solidBottom(blades),top:blades.top}; // só a forma: sem ciclo fan → sólido → fan
     fan.rot=this._rotor(new V3(0,F.y,0),F.radius,7,MAT.rust);
     for(let k=0;k<3;k++) this._obox(0,0,R,.12,k*Math.PI/3,F.y+.9,F.y+1.15,M,{solid:false,ray:false});         // travessas do motor
     { const mo=new THREE.Mesh(new THREE.CylinderGeometry(1.0,1.0,1.4,20),M); mo.position.set(0,F.y+1.3,0); this.root.add(mo); }

@@ -11,8 +11,16 @@
 // Puxada: agarrado e segurando o botão, arrastar o mouse para baixo ergue o corpo (pull 0 = pendurado,
 // 1 = queixo na borda). O corpo segue a puxada com inércia, cede devagar sem esforço e a fadiga dos braços
 // (pullFatigue) reduz a eficiência, faz a câmera/mão tremer e, no nível crítico, drena a pegada.
-// Com item na mão direita (pregos, martelo…), o braço que segura trava na altura atual (lockOff):
-// não cede, o mouse fica livre para mirar, mas a fadiga sobe aos poucos.
+// Regras por mão: a mão com item comum não agarra; a outra mão escala e puxa normalmente (inclusive pelo mouse).
+// Braço travado (lockOff): pendurado com a outra mão ocupada por item (não cravado), o braço que segura trava na altura
+// atual: não cede, gasta a pegada de um braço travado (6/s, não 9/s) e a fadiga sobe aos poucos. Não bloqueia a puxada.
+// Conflito de entrada (aimConflict): só enquanto uma mão faz um uso ativo que MIRA (hand.aiming, escrito pelo
+// ItemSystem: golpe do martelo, colocar prego, cartão) o mouse mira em vez de puxar. Só no desktop; no VR a mira é
+// do controle. Sem ferramentas, nenhum dos dois acontece.
+// hand.anchor: 'hand' (pegada da mão nua), 'axe' (picareta cravada) ou null.
+// Picareta: axeTarget/anchorAxe/releaseAxe usam a MESMA âncora da mão (inContact/point/normal): mola, puxada, fadiga,
+// mantle, vento e salto são os de sempre. Fixar custa 5 × gripDrainMultiplier; sustentar é o dreno da mão SEM gripCost.
+// Fincada rasa (concreto, hand.bite='shallow'): custo e dreno × AXE_SHALLOW, e solta sozinha após AXE_SHALLOW.hold s.
 // Modo VR (opcional): com `xr` (VRPlayer) ligado, mira e agarre saem dos controles, a puxada vem do braço
 // (pullBy) e a câmera é posicionada pelo rig; sem ele, tudo segue como no mouse e teclado.
 // Colisão: Collision.collideBody contra world.platforms (caixas, caixas giradas e setores anelares) + world.guard
@@ -26,16 +34,19 @@ const WIND_K=2.0, WIND_TEAR=24, WIND_DRAIN=.35;   // arrasto do ar (1/s) · for�
 // Ajustes de movimento (não métricas de percurso): salto agarrado sobe sem recuo automático.
 // A componente horizontal só existe por comando direcional, relativa ao olhar.
 const PLAYER_PHYSICS={wallJumpControl:2.4,airControl:4.2,coyoteTime:.12};
+// picareta no concreto: custo de fixar ×cost, dreno pendurado ×drain, e a ponta escapa sozinha depois de `hold` segundos
+const AXE_SHALLOW={cost:2,drain:2,hold:2.5};
 const REDUCED_MOTION=(()=>{ try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } })();
 class Hand{
   constructor(name,side){ this.name=name; this.side=side; this.point=new V3(); this.normal=new V3(); this.reset(); }
-  reset(){ this.occupied=false; this.isGrabbing=false; this.inContact=false; this.surface=null; this.stamina=PLAYER_BASE_ATTRIBUTES.maxStamina; this.cooldown=0; this.pull=0; this.exhausted=false; }
+  reset(){ this.occupied=false; this.aiming=false; this.anchor=null; this.bite=null; this.biteT=0; this.isGrabbing=false; this.inContact=false; this.surface=null; this.stamina=PLAYER_BASE_ATTRIBUTES.maxStamina; this.cooldown=0; this.pull=0; this.exhausted=false; }
   get state(){ return this.isGrabbing?'closed':'open'; }
 }
 const _e=new V3(), _t=new V3(), _d=new V3(), _f=new V3(), _r=new V3(), _mv=new V3(), _p=new V3(), _q=new V3(), _n=new V3(), _c0=new THREE.Vector2(0,0), _wq=new THREE.Quaternion();
+const IMPACT_WINDOW=.25;   // s: impactos mais próximos que isso cobram só o excedente
 // gesto de apertar botão (painel): duração e distância pulso→ponta do indicador
 const PRESS_T=.34, PRESS_TIP=-HandModel.indexTip(1,new V3()).z;
-const _pm=new THREE.Matrix4(), _pqa=new THREE.Quaternion(), _pqb=new THREE.Quaternion(), _pup=new V3(), _px=new V3(1,0,0);
+const _axeM=new THREE.Matrix4(), _pm=new THREE.Matrix4(), _pqa=new THREE.Quaternion(), _pqb=new THREE.Quaternion(), _pup=new V3(), _px=new V3(1,0,0);
 
 class Player{
   constructor(scene,camera,world,{perkCatalog=PERK_DEFS}={}){
@@ -50,12 +61,18 @@ class Player{
     this.ray=new THREE.Raycaster(); this.listeners={}; this.xr=null;
     this.windF=new V3(); this._colOpt={guard:(p,prev,v)=>{ if(this.world.guard) this.world.guard(p,prev,v); }};
     this.handModels=this.hands.map(h=>new HandModel(h.side)); this.handModels.forEach(hm=>scene.add(hm.root));
+    this.health=new PlayerHealth();   // fonte única do HP (HUD, VR, mãos e console só leem)
     this.reset();
   }
   on(t,f){ (this.listeners[t]=this.listeners[t]||[]).push(f); }
   emit(t,d){ (this.listeners[t]||[]).forEach(f=>f(d)); }
   reset(){
+    if(this.sixSeven) this.sixSeven.clear();
+    this._axeContact=[null,null];   // ContactFrame visual da picareta cravada, por mão (AxeContactPose)
+    this._normalMotion=[]; this._normalVelocity=new V3(); this._normalClimbOffset=new V3(); this._normalClimbPull=0; this._normalPullDriven=false;
     this.attributes.clearPerks();
+    this.health.reset(); this.handModels.forEach(hm=>{ hm.setWear('healthy',{instant:true}); hm.hurtTremor=0; });
+    this._impactWin={t:0,charged:0};   // janela de excedente entre impactos próximos
     const w=this.world;
     this.position.copy(w.spawnPoint); this.velocity.set(0,0,0); this._prev.copy(this.position);
     this.yaw=w.spawnYaw; this.pitch=.1;
@@ -66,11 +83,23 @@ class Player{
     this.pull=0; this.pullTarget=0; this.pullIn=0; this.effort=0; this.jolt=0;
     this.pullFatigue=0; this.fatigueFx=0; this.restT=0; this.fatigueWarned=false; this.fxT=0; this.pulledNow=false;
     this.hands.forEach(h=>h.reset());
-    this.itemPose=null;
     this.press=[null,null]; this.point=[false,false];   // gesto do indicador (painel); point: VR, mão perto do painel
     this.stats.reset();
     this.viewmodelVisible=true;
     this.windAir=null; this.windG=0; this.windLevel=0; this.windFan=null; this.windF.set(0,0,0);
+  }
+  // Descontinuidade de debug: cancelar intenção/âncoras, nunca resetar recursos ou métricas da run.
+  clearDebugTransient(){
+    if(this.sixSeven) this.sixSeven.clear();
+    this._axeContact=[null,null];
+    for(const h of this.hands){h.inContact=false;h.isGrabbing=false;h.anchor=null;h.surface=null;h.pull=0;h.aiming=false;}
+    this.mantle=null;this.press=[null,null];this.point=[false,false];
+    this.pull=this.pullTarget=this.pullIn=this.effort=this.jolt=0;this.pulledNow=false;
+    this.velocity.set(0,0,0);this._prev.copy(this.position);this.grounded=false;this.fellOff=false;this.coyoteT=0;this.landDip=0;this.shake=0;
+    this.windAir=null;this.windG=this.windLevel=0;this.windFan=null;this.windF.set(0,0,0);
+    this._normalMotion=[];this._normalVelocity.set(0,0,0);this._normalClimbOffset.set(0,0,0);this._normalClimbPull=0;this._normalPullDriven=false;
+    this._bob=0;this._vmT=0;
+    this.handModels.forEach(hm=>{hm.vmLocal=new V3(hm.side*.22,-.22,-.36);hm.wasContact=false;});
   }
   // ---------- estado derivado ----------
   get maxStamina(){ return this.attributes.effective.maxStamina; }
@@ -95,17 +124,33 @@ class Player{
   stepBy(d){
     if(this.dead||this.mantle||!this.grounded||this.isClimbing) return false;
     this._prev.copy(this.position); this.position.add(d);
+    const proposed=this.trackNormalMotion?this.position.clone():null;
     const vy=this.velocity.y; this.velocity.y=0; this._collide(false); this.velocity.y=vy;
+    if(proposed)this._normalResolved(proposed,d);
     return true;
   }
-  // com um item na mão direita o braço que segura fica travado (lockOff): o mouse volta a mirar livremente
-  // em VR a mira é do controle, então o braço livre puxa mesmo com item na mão direita
-  get canPull(){ return !this.mantle&&!this.dead&&(!this.lockOff||!!this.xr)&&this.pull<.995&&this.hands.some(h=>h.inContact&&h.isGrabbing); }
-  get lockOff(){ return this.rightHand.occupied&&this.isHanging; }
+  // Evidência de locomoção, não delta de câmera/input. Semântica física permanece no caminho original.
+  consumeNormalMotion(){const segments=this._normalMotion||[];this._normalMotion=[];return {segments};}
+  _normalSegment(from,to){if(this.trackNormalMotion&&from.distanceToSquared(to)>1e-12)this._normalMotion.push({from:from.clone(),to:to.clone(),source:'normal'});}
+  _normalResolved(proposed,control){
+    if(!this.trackNormalMotion||control.lengthSq()<1e-12||this.position.clone().sub(this._prev).dot(control)<=1e-12)return;
+    // Contrafactual: a mesma colisão, sem a contribuição locomotora demonstrada. Vento/gravidade ficam nos dois lados.
+    const passive=proposed.clone().sub(control),vel=this.velocity.clone();
+    collideBody(this.world.platforms,passive,vel,this._prev,this._colOpt);
+    passive.x=clamp(passive.x,-SILO_R,SILO_R);passive.z=clamp(passive.z,-SILO_R,SILO_R);
+    this._normalSegment(passive,this.position);
+  }
+  // conflito de entrada: durante um uso ativo que mira, o mouse mira e não puxa
+  // em VR a mira é do controle, então o braço puxa mesmo durante o uso
+  get canPull(){ return !this.mantle&&!this.dead&&(!this.aimConflict||!!this.xr)&&this.pull<.995&&this.hands.some(h=>h.inContact&&h.isGrabbing); }
+  get aimConflict(){ return this.isHanging&&this.hands.some(h=>h.aiming); }
+  // braço travado: pendurado com a outra mão ocupada por item (a picareta cravada é âncora, não item na mão)
+  get lockOff(){ return this.isHanging&&this.hands.some(h=>h.occupied&&h.anchor!=='axe'); }
   // pendurado numa borda, mas baixo demais para subir: a UI sugere puxar
   get needsPull(){ return this.isHanging&&!this.mantle&&this.pull<PULL_MANTLE&&this.hands.some(h=>h.inContact&&h.surface.userData.plat); }
   setGrab(i,down){
-    const h=this.hands[i]; if(!h||this.dead) return;
+    if(down&&this.sixSeven) this.sixSeven.clear();
+    const h=this.hands[i]; if(!h||this.dead||(down&&this.debugFrozen)) return;   // voo de debug: nenhum agarre novo
     h.isGrabbing=down;
     if(!down&&h.inContact) this._release(h);
     if(down&&!h.inContact) this._tryGrab(h);
@@ -114,6 +159,7 @@ class Player{
   // gesto de apertar um botão com o indicador (só visual: quem chama já registrou o número).
   // Desktop: a mão livre vai até `target` e volta. VR (target null): o dedo empurra para frente onde a mão está.
   pressButton(target,prefer=1){
+    if(this.sixSeven) this.sixSeven.clear();
     const free=i=>{ const h=this.hands[i]; return !h.inContact&&!h.occupied; };
     const i=free(prefer)?prefer:free(1-prefer)?1-prefer:-1; if(i<0) return;
     this.press[i]={t:0,target:target?target.clone():null};
@@ -127,10 +173,11 @@ class Player{
   _cast(){ const hits=this.ray.intersectObjects(this.world.raycastTargets,false); return hits.find(h=>h.object.userData.alive!==false)||null; }
   // VR: 1) o que o controle aponta de perto; 2) braço estendido: do ombro passando pela mão;
   // 3) o que está atrás da mão vista da cabeça. 2 e 3 vão até o mesmo alcance do desktop (this.reach)
-  _grabHit(h){
+  // ok(objeto): o que conta como alvo (mão: userData.grab; picareta: isAxeSurface)
+  _grabHit(h,ok=o=>!!o.userData.grab){
     if(!this.xr) return this.aim(this.reach);
     const i=this.hands.indexOf(h), xr=this.xr;
-    const grab=()=>{ const hit=this._cast(); return hit&&hit.object.userData.grab?hit:null; };
+    const grab=()=>{ const hit=this._cast(); return hit&&ok(hit.object)?hit:null; };
     let hit=null;
     if(xr.ray(i,_p,_q)){ this.ray.set(_p,_q); this.ray.far=xr.grabReach; hit=grab(); if(hit) return hit; }
     if(!xr.handPos(i,_p)) return null;
@@ -156,7 +203,7 @@ class Player{
     this.emit('mantle');
   }
   jump(input={x:0,y:0}){
-    if(this.dead||this.mantle) return;
+    if(this.dead||this.mantle||this.debugFrozen) return;
     const attributes=this.attributes.effective;
     const held=this.hands.filter(h=>h.inContact);
     if(held.length){
@@ -170,16 +217,28 @@ class Player{
       _mv.set(0,0,0).addScaledVector(_f,input.y).addScaledVector(_r,input.x); if(_mv.lengthSq()>1) _mv.normalize();
       held.forEach(h=>{ h.stamina-=attributes.wallJumpStaminaCost; this._release(h); h.cooldown=.22; });
       this.velocity.set(_mv.x*PLAYER_PHYSICS.wallJumpControl,attributes.wallJumpSpeed,_mv.z*PLAYER_PHYSICS.wallJumpControl);
+      if(this.trackNormalMotion)this._normalVelocity.copy(this.velocity);
       this.grounded=false; this.coyoteT=0; this.stats.recordJump(true); this.emit('walljump');
-    } else if(this.grounded||this.coyoteT>0){ this.velocity.y=attributes.jumpSpeed; this.grounded=false; this.coyoteT=0; this.stats.recordJump(); this.emit('jump'); }
+    } else if(this.grounded||this.coyoteT>0){ this.velocity.y=attributes.jumpSpeed; if(this.trackNormalMotion)this._normalVelocity.y=attributes.jumpSpeed; this.grounded=false; this.coyoteT=0; this.stats.recordJump(); this.emit('jump'); }
   }
   restoreStamina(){ this.hands.forEach(h=>{ h.stamina=this.maxStamina; h.exhausted=false; }); this.stats.pillsUsed++; }
   die(reason){
+    if(this.sixSeven) this.sixSeven.clear();
     if(this.dead) return;
+    this.health.zero(reason);
     this.dead=true; this.deathReason=reason; if(reason==='fall'){ this.fellOff=true; this.stats.recordFall(); }
     this.attributes.clearPerks();
     this.releaseAll(); this.emit('death',reason);
   }
+  // única entrada de dano; se zerar, a morte sai pelo die() de sempre
+  damage(amount,source='debug'){
+    if(this.dead) return {applied:0,value:this.health.value,died:false};
+    const r=this.health.damage(amount,{source});
+    if(r.applied>0){ this.handModels.forEach(hm=>hm.kick(-5)); this.emit('damage',{amount:r.applied,source,value:r.value,state:this.health.state}); }
+    if(r.died) this.die(source);
+    return r;
+  }
+  heal(amount,source='debug'){ return this.dead?{applied:0,value:this.health.value}:this.health.heal(amount,{source}); }
   // ---------- mãos ----------
   _tryGrab(h){
     if(h.cooldown>0||h.exhausted||h.occupied||this.mantle||this.dead) return false;
@@ -189,7 +248,7 @@ class Player{
       h.stamina=Math.max(0,h.stamina-25); h.cooldown=.35; this.stats.recordSlip(); this.emit('slip',h); return false;
     }
     h.stamina=Math.max(0,h.stamina-Math.max(0,fall-4)*2.2);
-    h.inContact=true; h.surface=hit.object; h.point.copy(hit.point);
+    h.inContact=true; h.anchor='hand'; h.surface=hit.object; h.point.copy(hit.point);
     const u=hit.object.userData, wn=u.wallNormal;
     if(u.normalAt) u.normalAt(hit.point,h.normal);          // apoio contínuo (rachadura, cano, corda): normal no ponto agarrado
     else if(wn) h.normal.copy(wn); else h.normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
@@ -198,8 +257,47 @@ class Player{
     this.emit('grab',h);
     return true;
   }
+  // ---------- picareta ----------
+  // que fincada a picareta dá neste ponto: 'deep' | 'shallow' (só em face de parede) | null
+  _biteAt(hit){
+    const kind=hit&&axeBiteOf(hit.object); if(kind!=='shallow') return kind||null;
+    const u=hit.object.userData;
+    if(u.normalAt) u.normalAt(hit.point,_n); else if(u.wallNormal) _n.copy(u.wallNormal);
+    else if(hit.face) _n.copy(hit.face.normal).transformDirection(hit.object.matrixWorld); else return null;
+    return Math.abs(_n.y)<.5?'shallow':null;          // piso e teto de concreto não aceitam
+  }
+  // alvo da picareta da mão i: mesmo raio e alcance do agarre; rocha/rachadura (hit.bite 'deep') ou parede de concreto ('shallow')
+  axeTarget(i){ const h=this.hands[i]; if(!h) return null; const hit=this._grabHit(h,o=>!!axeBiteOf(o)), bite=this._biteAt(hit); if(!bite) return null; hit.bite=bite; return hit; }
+  // o que o golpe da picareta da mão i atinge, aceite ou não: null = nada ao alcance (golpe no vazio);
+  // senão {hit, bite} com bite null para superfície errada e flat=true para concreto em piso/teto
+  axeProbe(i){ const h=this.hands[i]; if(!h) return null; const hit=this._grabHit(h,()=>true); if(!hit) return null;
+    const bite=this._biteAt(hit); hit.bite=bite; return {hit,bite,flat:!bite&&axeBiteOf(hit.object)==='shallow'}; }
+  // crava a picareta da mão i no ponto `hit`; falha sem cobrar nada ('state' | 'surface' | 'reach' | 'stamina' | 'slip')
+  anchorAxe(i,hit){
+    const h=this.hands[i];
+    if(!h||this.dead||this.mantle||h.inContact||h.cooldown>0||h.exhausted) return {ok:false,reason:'state'};
+    const bite=this._biteAt(hit);
+    if(!bite) return {ok:false,reason:'surface'};
+    if(!this.xr&&hit.distance>this.reach+1e-6) return {ok:false,reason:'reach'};
+    const cost=5*this.attributes.effective.gripDrainMultiplier*(bite==='shallow'?AXE_SHALLOW.cost:1);
+    if(h.stamina<cost) return {ok:false,reason:'stamina'};
+    // caindo rápido, escorrega como a mão (mesma regra do _tryGrab)
+    const fall=-this.velocity.y;
+    if(!this.isClimbing&&fall>12){ h.stamina=Math.max(0,h.stamina-25); h.cooldown=.35; this.stats.recordSlip(); this.emit('slip',h); return {ok:false,reason:'slip'}; }
+    h.stamina=Math.max(0,h.stamina-cost-Math.max(0,fall-4)*2.2);
+    h.inContact=true; h.isGrabbing=true; h.anchor='axe'; h.bite=bite; h.biteT=0; h.surface=hit.object; h.point.copy(hit.point);
+    const u=hit.object.userData, wn=u.wallNormal;
+    if(u.normalAt) u.normalAt(hit.point,h.normal); else if(wn) h.normal.copy(wn); else h.normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+    this._fitPull(); this.world.touch(hit.object);
+    this.emit('axeAnchor',h);
+    return {ok:true,reason:null,bite};
+  }
+  // desprende a picareta da mão i (não mexe em pegada de mão nua)
+  releaseAxe(i){ const h=this.hands[i]; if(!h||h.anchor!=='axe') return; h.isGrabbing=false; if(h.inContact) this._release(h); }
+  // a picareta da mão h foi arrancada (exaustão, vento, superfície que sumiu)
+  _dislodge(h){ if(h.anchor==='axe') this.emit('axeDislodged',h); }
   _release(h){
-    h.inContact=false; h.surface=null; h.pull=0;
+    h.inContact=false; h.anchor=null; h.bite=null; h.biteT=0; h.surface=null; h.pull=0;
     if(!this.isClimbing){ this.pull=this.pullTarget=0; if(this.velocity.length()>7) this.velocity.setLength(7); }
   }
   // [pendurado, puxado] abaixo da pegada; puxado na parede = olhos um pouco acima da pegada (peito na borda)
@@ -217,6 +315,7 @@ class Player{
   // nem ao agarrar algo na altura do rosto (o corpo depois cede sozinho se não houver esforço).
   _fitPull(){
     const held=this.hands.filter(h=>h.inContact); if(!held.length) return;
+    if(this.trackNormalMotion){this._normalVelocity.set(0,0,0);this._normalClimbOffset.set(0,0,0);this._normalClimbPull=0;this._normalPullDriven=false;}
     let base=0, span=0;
     for(const h of held){ const [hang,pulled]=Player._span(h); base+=h.point.y-hang; span+=hang-pulled; }
     base/=held.length; span/=held.length; if(held.length===1) base-=.12;
@@ -226,9 +325,12 @@ class Player{
   // ---------- simulação ----------
   update(dt,input){
     if(this.dead) return;
+    if(this._impactWin.t>0) this._impactWin.t-=dt;
     this.hands.forEach(h=>{
       if(h.cooldown>0) h.cooldown-=dt;
-      if(h.inContact&&h.surface.userData.alive===false){ this._release(h); this.emit('crumble',h); }
+      if(h.inContact&&h.surface.userData.alive===false){ this._dislodge(h); this._release(h); this.emit('crumble',h); }
+      // fincada rasa no concreto: a ponta escapa sozinha
+      else if(h.inContact&&h.anchor==='axe'&&h.bite==='shallow'&&!this.debugFrozen&&(h.biteT+=dt)>=AXE_SHALLOW.hold){ this._dislodge(h); this._release(h); h.cooldown=.25; this.emit('axeSlip',h); }
     });
     this.hands.forEach(h=>{ if(h.isGrabbing&&!h.inContact) this._tryGrab(h); });
     this._prev.copy(this.position);
@@ -238,6 +340,8 @@ class Player{
     if(this.mantle) this._mantle(dt);
     else if(held.length) this._climb(dt,input,held);
     else this._free(dt,input);
+    // Contato após o movimento: pousar nas pás mata neste quadro, mesmo com o peito acima do fluxo.
+    if(!this.dead&&this.world.fanContact&&this.world.fanContact(this.position,this._prev)) this.die('fan');
     if(this.dead) return;
     const climbing=this.isClimbing;
     this.hands.forEach(h=>{
@@ -278,7 +382,9 @@ class Player{
   }
   _mantle(dt){
     const m=this.mantle; m.t+=dt/.45; const k=Math.min(1,m.t), e=smooth(k);
+    const normalFrom=this.trackNormalMotion?this.position.clone():null;
     this.position.lerpVectors(m.from,m.to,e); this.position.y+=Math.sin(k*Math.PI)*.2;
+    if(normalFrom)this._normalSegment(normalFrom,this.position);
     if(k>=1){ this.mantle=null; this.velocity.set(0,0,0); this.grounded=true; }
   }
   _free(dt,input){
@@ -287,19 +393,28 @@ class Player{
     const v=this.velocity;
     if(this.grounded){ const k=Math.min(1,dt*12); v.x+=(_mv.x*3.4-v.x)*k; v.z+=(_mv.z*3.4-v.z)*k; }
     else { v.x+=_mv.x*PLAYER_PHYSICS.airControl*dt; v.z+=_mv.z*PLAYER_PHYSICS.airControl*dt; v.x*=1-.10*dt; v.z*=1-.10*dt; }
+    if(this.trackNormalMotion){
+      const n=this._normalVelocity;
+      if(this.grounded){const k=Math.min(1,dt*12);n.x+=(_mv.x*3.4-n.x)*k;n.z+=(_mv.z*3.4-n.z)*k;}
+      else {n.x=(n.x+_mv.x*PLAYER_PHYSICS.airControl*dt)*(1-.10*dt);n.z=(n.z+_mv.z*PLAYER_PHYSICS.airControl*dt)*(1-.10*dt);}
+    }
     // vento: acelera rumo à velocidade do ar ao longo do fluxo (o arrasto cresce com a força do fluxo: g)
     const a=this.windAir;
     if(a){ const u=a.length(); if(u>1e-4){ const nx=a.x/u, ny=a.y/u, nz=a.z/u, vn=v.x*nx+v.y*ny+v.z*nz, g=this.windG;
       v.x+=WIND_K*(a.x-g*vn*nx)*dt; v.y+=WIND_K*(a.y-g*vn*ny)*dt; v.z+=WIND_K*(a.z-g*vn*nz)*dt; } }
     v.y-=this.attributes.effective.gravity*dt;
+    if(this.trackNormalMotion&&a){const u=a.length();if(u>1e-4){const axis=a.clone().divideScalar(u),n=this._normalVelocity;n.addScaledVector(axis,-WIND_K*this.windG*n.dot(axis)*dt);}}
     this.position.addScaledVector(v,dt);
+    const proposed=this.trackNormalMotion?this.position.clone():null;
     this._collide(true);
+    if(proposed){this._normalResolved(proposed,this._normalVelocity.clone().multiplyScalar(dt));for(const k of ['x','y','z'])if(Math.abs(this.velocity[k])<1e-8)this._normalVelocity[k]=0;}
+
   }
   _climb(dt,input,held){
     // fluxo forte demais: arranca as mãos (o corpo segue com o ar no quadro seguinte)
     const wf=this.windF.length();
-    if(wf>WIND_TEAR){ held.forEach(h=>{ this._release(h); h.cooldown=.6; }); this.emit('windTear'); this._free(dt,input); return; }
-    const eye=this.eyePos(_e), tgt=_t.set(0,0,0);
+    if(wf>WIND_TEAR){ held.forEach(h=>{ this._dislodge(h); this._release(h); h.cooldown=.6; }); this.emit('windTear'); this._free(dt,input); return; }
+    const eye=this.eyePos(_e), tgt=_t.set(0,0,0),normalPullBefore=this.pull,commandedPull=this.pullIn>0;
     this._pullUp(dt,held);
     for(const h of held) tgt.add(this._anchor(h,eye));
     tgt.divideScalar(held.length);
@@ -312,18 +427,48 @@ class Player{
     const K=held.length===2?55:38, D=2*Math.sqrt(K)*.62, v=this.velocity;
     v.x+=((tgt.x-eye.x)*K-v.x*D)*dt; v.y+=((tgt.y-eye.y)*K-v.y*D)*dt; v.z+=((tgt.z-eye.z)*K-v.z*D)*dt;
     eye.addScaledVector(v,dt);
+    // Snapshot somente para proveniência, antes da projeção não linear do braço.
+    const normalProposed=this.trackNormalMotion?{eye:eye.clone(),velocity:v.clone()}:null;
     for(const h of held){
       _d.subVectors(eye,h.point); const L=_d.length();
       if(L>1.15){ _d.multiplyScalar(1/L); eye.copy(h.point).addScaledVector(_d,1.15); const vr=v.dot(_d); if(vr>0) v.addScaledVector(_d,-vr); }
     }
     this.position.set(eye.x,eye.y-EYE,eye.z);
     this._collide(false);
+    if(normalProposed){
+      const n=this._normalVelocity,offset=this._normalClimbOffset;
+      // Diferença entre a mola física e a contrafactual sem comandos voluntários.
+      // O offset é histórico; sua derivada sozinha não atravessa corretamente tether/colisão.
+      n.multiplyScalar(Math.max(0,1-D*dt));n.addScaledVector(offset,-K*dt);
+      const right=new V3(Math.cos(this.yaw),0,-Math.sin(this.yaw));
+      n.addScaledVector(right,input.x*.32*K*dt);
+      if(commandedPull&&held.some(h=>h.isGrabbing))this._normalPullDriven=true;
+      if(this._normalPullDriven)this._normalClimbPull=Math.max(0,this._normalClimbPull+this.pull-normalPullBefore);
+      const span=held.reduce((sum,h)=>{const [a,b]=Player._span(h);return sum+a-b;},0)/held.length;
+      n.y+=this._normalClimbPull*span*K*dt;
+      const passiveEye=normalProposed.eye.sub(offset).addScaledVector(n,-dt);
+      const passiveVelocity=normalProposed.velocity.sub(n);
+      // Resolver o contrafactual pela MESMA restrição, sem tocar no estado físico.
+      for(const h of held){
+        const d=passiveEye.clone().sub(h.point),length=d.length();
+        if(length>1.15){d.divideScalar(length);passiveEye.copy(h.point).addScaledVector(d,1.15);const vr=passiveVelocity.dot(d);if(vr>0)passiveVelocity.addScaledVector(d,-vr);}
+      }
+      const passive=passiveEye;passive.y-=EYE;
+      const passivePrev=this._prev.clone().sub(offset);
+      collideBody(this.world.platforms,passive,passiveVelocity,passivePrev,this._colOpt);
+      passive.x=clamp(passive.x,-SILO_R,SILO_R);passive.z=clamp(passive.z,-SILO_R,SILO_R);
+      const nextOffset=this.position.clone().sub(passive),control=nextOffset.clone().sub(offset);
+      n.copy(this.velocity).sub(passiveVelocity);offset.copy(nextOffset);
+      if(control.lengthSq()>1e-12&&this.position.clone().sub(this._prev).dot(control)>1e-12)this._normalSegment(this.position.clone().sub(control),this.position);
+    }
+
     // pegada: custo base + esforço de puxar; com os braços no limite, a pegada escorrega depressa
     const base=held.length===2?3:(this.lockOff?6:9), crit=clamp((this.pullFatigue-FATIGUE_CRIT)/(1-FATIGUE_CRIT),0,1);
     for(const h of held){
-      let d=base+this.effort*3+crit*14+wf*WIND_DRAIN+(h.surface.userData.gripCost||0); if(input.x) d+=1.5;   // gripCost: rachadura (dedos entalados)
+      let d=base+this.effort*3+crit*14+wf*WIND_DRAIN+(h.anchor==='axe'?0:(h.surface.userData.gripCost||0)); if(input.x) d+=1.5;   // gripCost: rachadura (dedos entalados; a picareta não paga)
+      if(h.anchor==='axe'&&h.bite==='shallow') d*=AXE_SHALLOW.drain;   // concreto: ponta rasa, braço segura o resto
       h.stamina=Math.max(0,h.stamina-d*dt*this.attributes.effective.gripDrainMultiplier);
-      if(h.stamina<=0){ h.exhausted=true; this._release(h); this.emit('exhausted',h); }
+      if(h.stamina<=0){ h.exhausted=true; this._dislodge(h); this._release(h); this.emit('exhausted',h); }
     }
     if(this.isClimbing&&!this.mantle&&this.pull>=.97&&this.pulledNow){ const led=this.canMantle(); if(led) this._startMantle(led); }
   }
@@ -356,12 +501,23 @@ class Player{
   _collide(lethal){
     const p=this.position;
     // sólidos (caixas, giradas e setores anelares) + a trava da parede curva do poço — ver js/world/Collision.js
-    const {landed,landVy}=collideBody(this.world.platforms,p,this.velocity,this._prev,this._colOpt);
+    const wasGrounded=this.grounded;
+    const {landed,landVy,hitV}=collideBody(this.world.platforms,p,this.velocity,this._prev,this._colOpt);
     p.x=clamp(p.x,-SILO_R,SILO_R); p.z=clamp(p.z,-SILO_R,SILO_R);   // rede de segurança: nada existe fora da casca do silo
     this.grounded=landed;
     if(landed&&landVy<-3) this.landDip=Math.min(.05,-landVy*.004);
     if(landed&&landVy<-7) this.emit('land',landVy);
     if(lethal&&landed&&landVy<-FALL_KILL) this.die('fall');
+    else if(lethal&&!this.dead&&!this.debugFrozen) this._impact(landed&&!wasGrounded?-landVy:0,hitV);
+  }
+  // pouso/batida abaixo do letal (spec §11 D3/D4). Só no movimento livre: escalada, mantle e passos passivos usam
+  // _collide(false). Encostado, a componente contra a parede é zerada a cada passo, então hitV fica bem abaixo de 10 m/s.
+  // Impactos dentro de 0,25 s (quina, batida seguida de pouso) cobram só o excedente sobre o maior já cobrado.
+  _impact(fall,side){
+    const dmg=Math.max(PlayerHealth.impactDamage(fall),PlayerHealth.impactDamage(side)); if(dmg<=0) return;
+    const w=this._impactWin, prior=w.t>0?w.charged:0, due=dmg-prior;
+    if(due<=0) return;   // impacto menor dentro da janela: não cobra nem a prolonga
+    w.t=IMPACT_WINDOW; w.charged=dmg; this.damage(due,fall>=side?'fall':'impact');
   }
   // ---------- câmera e mãos em primeira pessoa ----------
   applyCamera(){
@@ -383,6 +539,7 @@ class Player{
   }
   // Cada mão ocupada segue a pose do respectivo item; mãos livres mantêm as poses de escalada.
   updateViewmodel(){
+    if(this.sixSeven) this.sixSeven.beforeViewmodel();
     // relógio próprio: o Game chama sem dt; o tempo real mantém a animação igual em qualquer taxa de quadros
     const now=performance.now(), dt=this._vmT?Math.min(.05,(now-this._vmT)/1000):1/60; this._vmT=now;
     // balanço ao andar e afundada ao aterrissar (espaço da câmera)
@@ -392,12 +549,17 @@ class Player{
     const xr=this.xr, camPos=_n.setFromMatrixPosition(this.camera.matrixWorld), camQ=this.camera.getWorldQuaternion(_wq);
     this.hands.forEach((h,i)=>{
       const hm=this.handModels[i], m=hm.root; m.visible=this.viewmodelVisible&&!this.dead;
-      const pose=h.occupied&&this.itemPoses?this.itemPoses[i]:(h.occupied&&i===1?this.itemPose:null);
+      const pose=h.occupied&&this.itemPoses?this.itemPoses[i]:null;   // já no lado certo (Handedness.toSide)
       // VR: a mão solta (ou com item) fica no controle (ou na mão rastreada)
       const inHand=xr&&!h.inContact&&xr.handPose(i,m.position,m.quaternion);
       if(pose){
         hm.vmLocal=null;
-        if(!inHand){ m.position.copy(this.camera.localToWorld(_p.copy(pose.pos).add(_q.set(bobX*.6,bobY*.6,0))));
+        if(h.anchor==='axe'&&h.inContact&&!inHand){
+          // picareta cravada: a raiz é resolvida DEPOIS do hm.update, pela ponta na âncora (ver o fim do quadro);
+          // aqui só a composição local (pulso/base/pegada) do quadro, igual à de qualquer item
+          if(!(this.axeVisuals&&this.axeVisuals[i])){ const tgt=_p.copy(h.point).addScaledVector(_q.subVectors(camPos,h.point).normalize(),.16); tgt.y-=.2;
+            m.position.lerp(tgt,1-Math.exp(-42*dt)); m.quaternion.copy(camQ); m.rotateX(-.15); }
+        } else if(!inHand){ m.position.copy(this.camera.localToWorld(_p.copy(pose.pos).add(_q.set(bobX*.6,bobY*.6,0))));
           m.quaternion.copy(camQ); m.rotateX(.25); }
         m.rotateZ(pose.roll||0);
         hm.wrist.rotation.set(pose.wrist.x,pose.wrist.y,pose.wrist.z); hm.setBase(pose.base);
@@ -433,11 +595,22 @@ class Player{
           hm.tremor=Math.min(.22,clamp((.35-s)/.35,0,1)*.14+this.effort*.04+f*.1);
         } else { hm.setPose(pr||this.point[i]?'point':h.isGrabbing&&!h.exhausted?'open':'relaxed'); hm.slack=0; hm.tremor=0; }
       }
+      if(this.sixSeven) this.sixSeven.apply(hm,i);
       if(h.inContact&&!hm.wasContact) hm.kick(4);   // tranco ao agarrar
       hm.wasContact=h.inContact;
       const low=Math.max(1-h.stamina/this.maxStamina,this.fatigueFx*.8); hm.tint(low*low*.3);
+      const hs=this.health.state; hm.setWear(hs); hm.hurtTremor=hs==='critical'?HandWear.CRITICAL_TREMOR:0;   // vida: pele e tremor dos dedos
       hm.update(dt);
+      // restrição final: ponta da picareta cravada exatamente na âncora física (Hand.point/normal), orientada pela
+      // normal e independente da câmera. Só move a raiz visual; nada da física é lido de volta.
+      const vis=pose&&h.anchor==='axe'&&h.inContact&&this.axeVisuals?this.axeVisuals[i]:null;
+      if(vis){
+        let f=this._axeContact[i];
+        if(!f||f.surface!==h.surface||f.inst!==vis){ f=this._axeContact[i]=AxeContactPose.capture(h.point,h.normal,vis.refs); f.surface=h.surface; f.inst=vis; }
+        AxeContactPose.solve(f,h.point,h.normal,vis.refs,_axeM); AxeContactPose.applyHandRoot(m,vis.canonical,_axeM);
+      } else this._axeContact[i]=null;
     });
+    if(this.sixSeven&&this.sixSeven.active) this.sixSeven.updateNumber();
   }
   // desktop: a mão sai do repouso, leva a ponta do indicador ao botão, aperta 1 cm e volta.
   // Botão além do braço (> 0,6 m da cabeça): a mão estica até o limite e só aponta.

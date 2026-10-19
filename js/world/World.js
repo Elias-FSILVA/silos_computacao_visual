@@ -5,7 +5,7 @@
 //                   world.checkpoints [{id,label,bonus,optional,position,radius,bounds?}]
 //                   world.finish {position,radius}   world.spawnPoint (pés)
 // Extras: world.raycastTargets, world.lamps, world.interactables, guard() (parede do poço), wind() (ventiladores),
-//   touch(), update(); world.puzzleDefs / world.puzzleRooms → PuzzleSystem e Game._zones();
+//   touch(), update(); world.puzzleDefs / world.puzzleRooms → PuzzleSystem;
 //   world.onCrumble, world.onSecretRevealed, world.onMazeEvent('countdown'|'dark') → ganchos opcionais do Game
 //
 // O poço é um CILINDRO de raio SHAFT_R: a parede é feita de setores anelares (uma faixa por trecho de altura e por
@@ -102,6 +102,7 @@ class World{
     this.R=mulberry(1987);
     this.root=new THREE.Group(); this.scene.add(this.root);
     this.platforms=[]; this.checkpoints=[]; this.walls=[]; this.grabbables=[]; this.interactables=[]; this.lamps=[]; this.crumbling=[];
+    this.stations=[];   // estações de melhoria (PerkStation), uma por descanso marcado (E1–E3)
     this.animated=[]; this.movers=[]; this.fans=[]; this.secrets=[]; this.puzzleRooms={}; this.puzzleDefs=[];
     this.darkZones=[];   // salas escuras {zone, dark()}: enquanto dark() e o jogador dentro, a lanterna acende sozinha (Game._flashlight)
     this.maze=null; this.mazeScr=null; this._cam=null; this.cutaway=[]; this._routeGuide=null; this._labels=null;
@@ -133,6 +134,7 @@ class World{
   _solidData(m,pd,mat,o){
     const nail=mat===MAT.concrete||!!(mat.userData&&mat.userData.nailable);   // concreto, tijolo e pedra: aceitam prego
     m.userData={type:o.type||'wall',interactable:o.interactable===undefined?(nail?SURFACE.concrete:null):o.interactable};
+    if(nail) m.userData.concrete=true;                // picareta: fincada rasa (axeBiteOf)
     (o.parent||this.root).add(m);
     if(o.cut) this.cutaway.push(m);                  // candidatos a 'parede fantasma' no modo espectador
     if(o.ray!==false) this.walls.push(m);
@@ -253,6 +255,17 @@ class World{
   _inBand(y,m=.6){ return LOCK_BANDS.some(b=>y>b.y0-m&&y<b.y1+m); }
   // há parede do poço (sólida) no ângulo a, em alguma parte da altura do corpo [y, y+BODY_H]?
   _shellAt(a,y){ const y0=y+.05, y1=y+BODY_H-.05; return this.shellSegs.some(s=>s.y0<y1&&s.y1>y0&&wrap2(a-s.a0)<=s.span); }
+  // Consulta estática, inclusive para uma origem fora da casca (não usa posição anterior).
+  bodyRegionAt(p){
+    if(![p.x,p.y,p.z].every(Number.isFinite)||p.y<-30||p.y+BODY_H>TOP+30||Math.hypot(p.x,p.z)+RAD>SILO_R)
+      return {ok:false,reason:'Fora da região jogável'};
+    for(const s of this.shellSegs){
+      if(p.y>=s.y1-1e-3||p.y+BODY_H<=s.y0+1e-3) continue;
+      const arc={cx:0,cz:0,r0:SHAFT_R,r1:SHAFT_R+SHELL_T,a0:s.a0,span:s.span};
+      if(solidCircleOverlap({arc},p.x,p.z)) return {ok:false,reason:'Corpo intersecta casca do poço'};
+    }
+    return {ok:true,reason:''};
+  }
   // TRAVA DO CILINDRO (chamada pelo jogador depois da colisão): quem estava dentro do poço não sai pela parede, e quem
   // estava fora não entra por ela — só pelas aberturas. Nenhuma sequência de empurrões atravessa a parede curva.
   guard(p,prev,v){
@@ -350,6 +363,18 @@ class World{
     g.position.set(x,y,z); g.rotation.y=face; this.root.add(g);
     const it=new Note(text,true); b.userData={type:'terminal',interactable:it}; s.userData={type:'terminal',interactable:it};
     this.interactables.push(b,s);
+  }
+  // estação de melhoria: gabinete com tela e lâmpada, de frente para `face` (sem sorteio: não mexe no resto do mapa)
+  perkStation(x,y,z,face,id){
+    const g=new THREE.Group(); g.position.set(x,y,z); g.rotation.y=face; this.root.add(g);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(.55,1.0,.32),MAT.metal); body.position.y=.5; g.add(body);
+    const tex=canvasTex(256,128,(c,w,h)=>{ c.fillStyle='#000'; c.fillRect(0,0,w,h); });
+    const screen=new THREE.Mesh(new THREE.PlaneGeometry(.42,.21),new THREE.MeshBasicMaterial({map:tex})); screen.position.set(0,.74,.162); g.add(screen);
+    const lampMat=new THREE.MeshBasicMaterial({color:0xffb04a}), lamp=new THREE.Mesh(new THREE.BoxGeometry(.12,.06,.06),lampMat); lamp.position.set(0,1.05,.05); g.add(lamp);
+    const st=new PerkStation(id,g,lampMat,tex);
+    body.userData={type:'station',interactable:st}; screen.userData={type:'station',interactable:st};
+    this.interactables.push(body,screen); this.stations.push(st);
+    return st;
   }
   // painel quebrável preenchendo uma abertura da parede curva. Por padrão a pista é sutil (o acabamento da parede em volta
   // num tom um pouco mais quente, parafusos, desalinhamento, som oco); com o.mat (ex.: MAT.concreteCracked) a própria
@@ -658,12 +683,14 @@ class World{
     g.globalAlpha=1; const sq=h*(1-k)*.5; g.fillStyle='#000'; g.fillRect(0,0,w,sq); g.fillRect(0,h-sq,w,sq);   // colapso estilo CRT
     S.tex.needsUpdate=true;
   }
+  mazePresenceAt(p){const S=this.mazeScr;return {near:!!S&&new V3(p.x,p.y+EYE,p.z).distanceTo(S.center)<S.near};}
   _updateMaze(dt,player){
     const S=this.mazeScr; if(!S||S.state==='off'||S.state==='preview') return;
     let pos; if(player&&player.position) pos=new V3(player.position.x,player.position.y+EYE,player.position.z);
     else { if(!this._cam) this._cam=this.scene.children.find(o=>o.isCamera); if(!this._cam) return; pos=this._cam.position; }
     if(S.state==='wait'){
-      if(pos.distanceTo(S.center)<S.near){ S.state='count'; S.t=0; this._paintScreen(S); if(this.onMazeEvent) this.onMazeEvent('countdown'); }
+      const seen=this.presence&&this.presence.read('maze-screen:mz300');
+      if(seen?!seen.$protected&&seen.near:pos.distanceTo(S.center)<S.near){ S.state='count'; S.t=0; this._paintScreen(S); if(this.onMazeEvent) this.onMazeEvent('countdown'); }
       return;
     }
     S.t+=dt;

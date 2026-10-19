@@ -38,13 +38,27 @@ function makeNailBundle(){
   g.rotation.z=Math.PI/2; return g;
 }
 function makePills(){ const g=new THREE.Group(); g.add(part(new THREE.CylinderGeometry(.034,.034,.1,10),IMAT.bottle)); g.add(part(new THREE.CylinderGeometry(.036,.036,.03,10),IMAT.cap,0,.065,0)); return g; }
+// picareta de escalada: cabo ao longo de +y; cabeça perpendicular ao cabo (eixo z), ponta curva para −z e enxó para +z.
+// Simétrica no plano x=0 do item (Handedness espelha sem geometria nova).
+function makeClimbingAxe(){
+  const g=new THREE.Group();
+  g.add(part(new THREE.CylinderGeometry(.014,.017,.42,8),IMAT.wood,0,.08,0));                 // cabo
+  g.add(part(new THREE.CylinderGeometry(.021,.021,.12,8),IMAT.grip,0,-.07,0));                 // empunhadura
+  g.add(part(new THREE.CylinderGeometry(.006,.012,.035,6),IMAT.steel,0,-.145,0));             // ponteira
+  g.add(part(new THREE.BoxGeometry(.03,.05,.07),IMAT.steel,0,.3,0));                          // olho da cabeça
+  g.add(part(new THREE.BoxGeometry(.016,.026,.13),IMAT.steel,0,.297,-.095,-.22,0,0));          // lâmina (pica)
+  g.add(part(new THREE.ConeGeometry(.012,.06,4),IMAT.steel,0,.272,-.175,-Math.PI/2-.45,0,0));  // ponta curva
+  g.add(part(new THREE.BoxGeometry(.04,.012,.07),IMAT.steel,0,.3,.07,.12,0,0));               // enxó
+  return g;
+}
 function makeCard(){ const g=new THREE.Group(); g.add(part(new THREE.BoxGeometry(.086,.054,.004),IMAT.card)); g.add(part(new THREE.BoxGeometry(.086,.012,.005),IMAT.band,0,.012,0)); return g; }
 
 const ICONS={
   hammer:'<g transform="rotate(-35 16 16)"><rect x="14.3" y="10" width="3.4" height="19" rx="1.4"/><rect x="7" y="4" width="18" height="7" rx="1.5"/></g>',
   nails:'<g><rect x="9" y="7" width="2.6" height="17"/><rect x="6.3" y="5" width="8" height="2.6" rx="1"/><path d="M9 24h2.6l-1.3 4z"/></g><g transform="rotate(14 21 16)"><rect x="19.7" y="7" width="2.6" height="17"/><rect x="17" y="5" width="8" height="2.6" rx="1"/><path d="M19.7 24h2.6l-1.3 4z"/></g>',
   pills:'<g transform="rotate(-35 16 16)"><rect x="5" y="11.5" width="22" height="9" rx="4.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="5" y="11.5" width="11" height="9" rx="4.5"/></g>',
-  card:'<rect x="5" y="8" width="22" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="5" y="12" width="22" height="3"/><rect x="8" y="18" width="8" height="2"/>'
+  card:'<rect x="5" y="8" width="22" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="5" y="12" width="22" height="3"/><rect x="8" y="18" width="8" height="2"/>',
+  climbing_axe:'<g transform="rotate(-30 16 16)"><rect x="14.6" y="8" width="2.8" height="21" rx="1.2"/><path d="M16 6.5c-5 0-9.5 1.5-12.5 5l1 1.2c3-1.8 7-2.6 11.5-2.6h8.5V6.5z"/></g>'
 };
 // held: posição do pulso direito (espaço da câmera) com o item em uso
 // grip: pose da mão (HandModel.POSES); base: orientação da mão [x,y,z] — z=-π/2 é "aperto de mão", polegar para cima
@@ -54,6 +68,9 @@ const ITEM_DEFS={
   hammer:{name:'Martelo',stack:false,make:fromModel('hammer',makeHammer),pickup:fromModel('hammer',makeHammer),held:[.24,-.24,-.4],grip:'fist',base:[-.5,0,-Math.PI/2],item:{p:[-.025,-.03,-.078],r:[0,0,Math.PI/2]}},
   nails:{name:'Pregos',stack:true,make:makeNail,pickup:makeNailBundle,held:[.2,-.2,-.33],grip:'pinch',base:[0,0,-.55],item:{p:[-.028,-.055,-.13],r:[Math.PI/2,0,0],s:.5}},
   pills:{name:'Pílulas',stack:true,make:makePills,pickup:makePills,held:[.2,-.22,-.33],grip:'bottle',base:[0,0,-Math.PI/2],item:{p:[.004,-.034,-.072],r:[0,0,Math.PI/2],s:.75}},
-  card:{name:'Cartão de acesso',stack:false,make:makeCard,pickup:makeCard,held:[.2,-.2,-.33],grip:'pinch',base:[0,0,-.55],item:{p:[-.028,-.058,-.13],r:[-Math.PI/2,0,0]}}
+  card:{name:'Cartão de acesso',stack:false,make:makeCard,pickup:makeCard,held:[.2,-.2,-.33],grip:'pinch',base:[0,0,-.55],item:{p:[-.028,-.058,-.13],r:[-Math.PI/2,0,0]}},
+  // perHand: um atalho por grupo de mão (1–2 e 3–4); cada mão equipada reserva uma unidade
+  // make(side): GLB de Tiko via ClimbingAxeAsset (normalização própria, refs por mão); sem o GLB, a feita por código com aviso
+  climbing_axe:{name:'Picareta',stack:true,maxStack:2,perHand:true,durability:10,make:side=>ClimbingAxeAsset.create({side,usage:'hand',fallback:makeClimbingAxe}).canonical,pickup:()=>ClimbingAxeAsset.pickup(makeClimbingAxe),held:[.24,-.24,-.4],grip:'fist',base:[-.5,0,-Math.PI/2],item:{p:[-.025,-.03,-.078],r:[0,0,Math.PI/2]}}
 };
-function itemLabel(id,count){ const d=ITEM_DEFS[id]; if(id==='nails') return count===1?'1 prego':`${count} pregos`; if(id==='pills') return count===1?'1 pílula':`${count} pílulas`; return d.name.toLowerCase(); }
+function itemLabel(id,count){ const d=ITEM_DEFS[id]; if(id==='nails') return count===1?'1 prego':`${count} pregos`; if(id==='pills') return count===1?'1 pílula':`${count} pílulas`; if(id==='climbing_axe') return count===1?'picareta':`${count} picaretas`; return d.name.toLowerCase(); }

@@ -86,6 +86,9 @@ class VRPlayer{
   // precisa ser chamado dentro de um clique (gesto do usuário)
   enter(onStart){
     if(!navigator.xr||this.busy) return;
+    const nav=this.g.debugNavigation;   // noclip é só desktop: desligar antes de entrar no headset
+    if(nav&&nav.canEnterXR&&!nav.canEnterXR()){ this.g.ui.msg('Desligue o noclip antes de entrar em VR.',3); return; }
+    if(this.g.sixSeven) this.g.sixSeven.clear();
     this.entering=true;
     navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','hand-tracking']}).then(s=>
       // chão real quando o Quest tem a área de jogo configurada; senão, origem na cabeça
@@ -146,14 +149,24 @@ class VRPlayer{
   }
   showResult(){
     const g=this.g, r=g.lastRun; if(!r) return;
+    const assisted=r.assisted||r.competitiveEligible===false;   // debug: sem botão de salvar
     this._menu({title:r.result==='finish'?'Subida completa':r.result==='mass'?'A massa te alcançou':'Você caiu',
       tone:r.result==='finish'?'win':'danger',
-      text:g.saved?(g.savedIndex>=0?`Posição ${g.savedIndex+1} no ranking.`:'Fora do top 20.'):r.name,
+      text:assisted?ASSISTED_RUN_MSG:g.saved?(g.savedIndex>=0?`Posição ${g.savedIndex+1} no ranking.`:'Fora do top 20.'):r.name,
       lines:[['Tempo',fmtTime(r.time)],['Altura',`${Math.floor(r.height)} m de ${TOP} m`],['Pontuação',`${fmtInt(r.breakdown.total)} pts`]],
       buttons:[
-        {label:g.saved?'Pontuação salva':'Salvar pontuação',disabled:g.saved,action:()=>{ g.saveScore(); this.showResult(); }},
+        assisted?{label:'Não competitiva',disabled:true,action:()=>{}}:{label:g.saved?'Pontuação salva':'Salvar pontuação',disabled:g.saved,action:()=>{ g.saveScore(); this.showResult(); }},
         {label:'Tentar de novo',action:()=>g.retry()},
         {label:'Sair do VR',action:()=>this.exit()}]});
+  }
+  // estação de melhoria: dois cartões, selecionar e depois Escolher (evita escolha acidental); Ignorar não consome
+  showStation(v){
+    const g=this.g, sel=v.sel, o=sel>=0?v.offers[sel]:null;
+    this._menu({title:v.station.label,text:STATION_RULE,
+      lines:[...(o?[['+',o.benefit],['−',o.tradeoff]]:[['','Selecione uma melhoria']]),['Ativas',`${v.count}/${v.max}`]],
+      buttons:[...v.offers.map((c,i)=>({label:`${sel===i?'▶ ':''}${i+1} · ${c.name}`,action:()=>g.selectStationOffer(i)})),
+        {label:o?`Escolher: ${o.name}`:'Escolher',disabled:!o,action:()=>g.confirmStation()},
+        {label:'Ignorar',action:()=>g.closeStation()}]});
   }
   _menu(spec){ this.menu.show(spec,this.rig,this.camera); }
   closeMenu(){ this.menu.close(); this.pointer.scale.set(1,1,1); }
@@ -167,23 +180,24 @@ class VRPlayer{
     const g=this.g, p=this.player, s=g.settings.data;
     this._frame();
     const [L,R]=this._readAll();
-    for(let i=0;i<2;i++){ const st=i?R:L; if(!st) continue;
+    // grip agarra com a mão vazia; na mão com item (picareta inclusive) não agarra nem solta — a picareta é do gatilho
+    for(let i=0;i<2;i++){ const st=i?R:L; if(!st||g.items.equippedFor(i?'right':'left')) continue;
       if(st.d.grip) p.setGrab(i,true); else if(st.u.grip) p.setGrab(i,false); }
     let mx=0, my=0, turning=0, jumpRequested=false;
     if(L){
       if(L.d.stick){ g.pause(); return; }
       if(Math.hypot(L.sx,L.sy)>VR_TUNE.deadzone){ mx=L.sx; my=-L.sy; }
-      if(L.d.a) g.items.holster();
+      if(L.d.a) g.items.holsterAll();   // A esquerdo guarda as mãos livres, como o X do desktop
       if(L.d.b) this.toggleInventory();
       // gatilho esquerdo: aperta o número sob o indicador esquerdo; com hand tracking, a pinça pula
-      if(L.d.trigger){ if(this.keyHover[0]) this._pressKey(0); else if(this.invOpen&&this.invHover>=0){ g.items.select(this.invHover); this._haptic(0,.3,20); } else if(g.items.equippedFor('left')) g.items.useHand('left',true); else if(L.tracked) jumpRequested=true; }
+      if(L.d.trigger){ if(this.keyHover[0]) this._pressKey(0); else if(this.invOpen&&this.invHover>=0){ g.items.select(this.invHover,this._invSide(0)); this._haptic(0,.3,20); } else if(g.items.equippedFor('left')) g.items.useHand('left',true); else if(L.tracked) jumpRequested=true; }
       else if(L.u.trigger) g.items.useHand('left',false);
     }
     if(R){
       // gatilho direito: número do painel sob o indicador > item do inventário sob o indicador > usar/interagir
       if(R.d.trigger){
         if(this.keyHover[1]) this._pressKey(1);
-        else if(this.invOpen&&this.invHover>=0){ g.items.select(this.invHover); this._haptic(1,.3,20); }
+        else if(this.invOpen&&this.invHover>=0){ g.items.select(this.invHover,this._invSide(1)); this._haptic(1,.3,20); }
         else if(g.ui.noteOpen||!g.items.equippedFor('right')) g.interact(); else g.items.useHand('right',true);
       }
       else if(R.u.trigger) g.items.useHand('right',false);
@@ -407,6 +421,18 @@ class VRPlayer{
     }
     H.prev.copy(head);
   }
+  // inventário no pulso: um item perHand (picareta) vai para a mão do gatilho usado; os demais seguem o vínculo
+  _invSide(i){ const s=this.g.items.inv&&this.g.items.inv.slots[this.invHover]; return s&&ITEM_DEFS[s.id]&&ITEM_DEFS[s.id].perHand?(i?'right':'left'):undefined; }
+  // picareta: crava = pulso forte e curto · superfície errada = dois pulsos fracos · vazio = um toque leve ·
+  // mão sem condição (sem stamina / caindo) = tremido de três pulsos · solta/arranca = pulso longo
+  axeFeedback(i,kind){
+    if(kind==='bite') this._haptic(i,1,40);
+    else if(kind==='bounce'){ this._haptic(i,.25,18); setTimeout(()=>this._haptic(i,.25,18),90); }
+    else if(kind==='whiff') this._haptic(i,.12,12);
+    else if(kind==='weak'){ this._haptic(i,.4,35); setTimeout(()=>this._haptic(i,.3,35),70); setTimeout(()=>this._haptic(i,.2,35),140); }
+    else this._haptic(i,.5,140);
+  }
+  hurtFeedback(){ this._haptic(0,.35,60); this._haptic(1,.35,60); }   // dano: pulso curto nos dois controles
   _haptic(i,v,ms){
     try{ const c=this.ctrl[i], gp=c&&c.source&&c.source.gamepad, a=gp&&gp.hapticActuators&&gp.hapticActuators[0];
       if(a&&a.pulse){ const r=a.pulse(v,ms); if(r&&r.catch) r.catch(()=>{}); } }catch(e){}

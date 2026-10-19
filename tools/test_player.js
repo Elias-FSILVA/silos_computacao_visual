@@ -11,9 +11,10 @@ const ctx=vm.createContext({THREE,console,performance,Math:Object.assign(Object.
   setBase(){}
   setPose(){}
   tint(value){ this.lastTint=value; }
+  setWear(){}
   update(){}
 }});
-for(const file of ['js/core/utils.js','js/world/Collision.js','js/items/Inventory.js','js/player/perkDefs.js','js/player/PlayerAttributes.js','js/player/PlayerStats.js','js/player/Player.js','js/player/VRPlayer.js','js/Game.js','js/systems/progress.js','js/ui/UIManager.js'])
+for(const file of ['js/core/utils.js','js/world/Collision.js','js/items/Inventory.js','js/player/perkDefs.js','js/player/PlayerAttributes.js','js/player/PlayerStats.js','js/player/PlayerHealth.js','js/player/HandWear.js','js/player/Player.js','js/player/VRPlayer.js','js/Game.js','js/systems/progress.js','js/ui/UIManager.js'])
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),ctx,{filename:file});
 const Player=vm.runInContext('Player',ctx);
 const idle={x:0,y:0};
@@ -264,7 +265,7 @@ function game(p){
   ctx.setTimeout=fn=>{scheduled.push(fn);};
   Object.assign(g,{player:p,state:'play',timer:new TimerSystem(),score:new ScoreSystem(),playerName:'Teste',keys:{},
     ui:{$:()=>({}),hideNote(){},setPack(){},clearMsg(){},setHUD(){},showResult(){},show(){},hideScreens(){}},
-    audio:{siren(){},chime(){},boom(){},setRumble(){}},items:{use(){}},
+    audio:{siren(){},chime(){},boom(){},setRumble(){}},items:{use(){},releaseUse(){}},stations:{reset(){},isUsed:()=>false},
     vr:{active:false,closeMenu(){},busy:false},renderer:{domElement:{}},scheduled});
   g.timer.start();return g;
 }
@@ -322,6 +323,67 @@ test('HUD e mãos usam capacidade efetiva mantendo alertas absolutos',()=>{
   for(const hm of p.handModels){assert.ok(Number.isFinite(hm.slack)&&hm.slack>=0&&hm.slack<=.75);assert.ok(Number.isFinite(hm.tremor)&&hm.tremor>=0&&hm.tremor<=.22);}
   p.leftHand.stamina=14;ui.updateHUD({time:0,score:0,massDistance:null},p,{reticle:'dot',prompt:''},items);
   assert.equal(ui.handEls[0].el.classList.contains('critical'),true);
+});
+
+// Regras por mão (§9.4, ajustado): item equipado não trava a puxada da outra mão; só o uso ativo que mira é conflito de entrada.
+const S={sensitivity:1,invertY:false};
+for(const [itemHand,holdHand] of [[0,1],[1,0]]) test(`item equipado (idle) na mão ${itemHand} não bloqueia a puxada pela mão ${holdHand}`,()=>{
+  const p=player(); hold(p,holdHand); p.hands[itemHand].occupied=true;
+  assert.equal(p.aimConflict,false); assert.equal(p.canPull,true);
+  assert.equal(p.lockOff,true,'braço travado mantém a economia de pegada (6/s)');
+  const before=p.pullIn; p.look(0,10,S); assert.ok(p.pullIn>before,'o mouse puxa');
+});
+test('uso ativo que mira é conflito de entrada só durante o uso (desktop); no VR a puxada segue livre',()=>{
+  const p=player(); hold(p,1); p.leftHand.occupied=true; p.leftHand.aiming=true;
+  assert.equal(p.aimConflict,true); assert.equal(p.canPull,false);
+  const before=p.pullIn; p.look(0,10,S); assert.equal(p.pullIn,before,'o mouse mira, não puxa');
+  p.leftHand.aiming=false; assert.equal(p.canPull,true,'terminou o uso: volta a puxar');
+  p.leftHand.aiming=true; p.xr={}; assert.equal(p.canPull,true,'VR: a mira é do controle');
+});
+test('sem ferramentas: lockOff/aimConflict sempre falsos e escalada idêntica à referência anterior à mudança',()=>{
+  const p=player(); const surf=new THREE.Object3D(); surf.userData.grab=true;
+  p.hands.forEach((h,i)=>{ h.inContact=h.isGrabbing=true; h.surface=surf; h.normal.set(0,0,1); h.point.set(i?.25:-.25,7.57,0); });
+  p.grounded=false; const out=[];
+  for(let f=0;f<240;f++){
+    if(f===60){ p.hands[0].isGrabbing=false; p.setGrab(0,false); }
+    if(f<200) p.look(0,f%3===0?6:0,S);
+    p.update(1/60,idle); assert.equal(p.lockOff,false); assert.equal(p.aimConflict,false);
+    if(f%20===19) out.push([p.pull,p.pullTarget,p.hands[1].stamina,p.hands[0].stamina,p.pullFatigue,p.position.y].map(v=>+v.toFixed(9)));
+  }
+  const ref=[[0.311040899,0.311040899,98.565728115,98.565728115,0.012477943,5.259973378],[0.600845684,0.618756057,96.915187954,96.915187954,0.034413758,5.566246076],[0.878088222,0.878088222,95.195642774,95.195642774,0.061100301,5.839502502],[0.995448523,0.995448523,91.54357996,99.195642774,0.088191301,5.945978574],[1,1,88.173167859,100,0.108040114,5.952813936],[0.99760152,0.99760152,84.887969964,100,0.125617,5.947123588],[0.995073171,0.995073171,81.618030955,100,0.142783779,5.946774159],[1,1,78.348263702,100,0.159946276,5.94702663],[0.99736935,0.99736935,75.075937987,100,0.17717728,5.946976056],[0.994557262,0.994557262,71.801707464,100,0.194455315,5.946848004],[0.966753329,0.966753329,68.566791908,100,0.210520142,5.934653934],[0.937975981,0.937975981,65.363155008,100,0.225467724,5.907115087]];
+  assert.deepEqual(JSON.parse(JSON.stringify(out)),ref);
+});
+test('item na esquerda: a direita agarra, solta e salta normalmente; a esquerda não agarra',()=>{
+  const p=player(); p.leftHand.occupied=true;
+  const wall=new THREE.Mesh(new THREE.BoxGeometry(.4,.4,.2)); wall.position.set(0,6.4,0); wall.userData.grab=true; wall.updateMatrixWorld(); p.world.raycastTargets=[wall];
+  const aim=()=>{ p.eyePos(p.camera.position); p.camera.lookAt(wall.position); p.camera.updateMatrixWorld(); };
+  aim(); p.setGrab(0,true); assert.equal(p.leftHand.inContact,false,'mão com item não agarra');
+  p.setGrab(0,false); aim(); p.setGrab(1,true); assert.equal(p.rightHand.inContact,true,'direita agarra');
+  assert.equal(p.rightHand.anchor,'hand');
+  p.setGrab(1,false); assert.equal(p.rightHand.inContact,false); assert.equal(p.rightHand.anchor,null);
+  aim(); p.setGrab(1,true); assert.equal(p.rightHand.inContact,true);
+  p.jump(); assert.equal(p.rightHand.inContact,false,'salto agarrado sai da pegada direita'); assert.ok(p.velocity.y>0);
+});
+test('braço travado: item na outra mão mantém o dreno 6/s de antes, com a puxada livre',()=>{
+  const a=player(),b=player(); hold(a,1); hold(b,1); b.leftHand.occupied=true;
+  a.update(.5,idle); b.update(.5,idle);
+  near(100-a.rightHand.stamina,4.5,1e-6); near(100-b.rightHand.stamina,3,1e-6); assert.equal(b.canPull,true);
+});
+test('anchor segue o contato: hand ao agarrar; null ao soltar, em releaseAll e em reset',()=>{
+  const p=player(); const wall=new THREE.Mesh(new THREE.BoxGeometry(.4,.4,.2)); wall.position.set(0,6.4,0); wall.userData.grab=true; wall.updateMatrixWorld(); p.world.raycastTargets=[wall];
+  p.eyePos(p.camera.position); p.camera.lookAt(wall.position); p.camera.updateMatrixWorld();
+  assert.equal(p.leftHand.anchor,null); p.setGrab(0,true); assert.equal(p.leftHand.anchor,'hand');
+  p.releaseAll(); assert.equal(p.leftHand.anchor,null);
+  p.setGrab(0,true); assert.equal(p.leftHand.anchor,'hand'); p.reset(); assert.equal(p.leftHand.anchor,null); assert.equal(p.leftHand.aiming,false);
+});
+test('VR: A esquerdo guarda as mãos livres (holsterAll), não só a direita',()=>{
+  const VRPlayer=vm.runInContext('VRPlayer',ctx), vr=Object.create(VRPlayer.prototype), calls=[];
+  const p=player();
+  Object.assign(vr,{camera:p.camera,g:{player:p,settings:{data:{}},items:{equippedFor:()=>null,useHand(){},holster(){calls.push('right');},holsterAll(){calls.push('all');}}},
+    input:{x:0,y:0},rigYaw:0,anchor:new THREE.Vector3(),ctrl:[null,null],keyHover:[null,null],
+    _frame(){},_lookInput(){return 0;},
+    _readAll(){return [{d:{a:true},u:{}},{d:{},u:{}}];}});
+  vr.update(1/60); assert.deepEqual(calls,['all']);
 });
 
 console.log(`\n${total} testes; falhas: ${fails}`); process.exitCode=fails?1:0;

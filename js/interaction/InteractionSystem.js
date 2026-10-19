@@ -13,10 +13,13 @@ class InteractionSystem{
     const p=this.g.player, items=this.g.items, res={reticle:'dot',prompt:''};
     if(p.dead) return res;
     if(p.canMantle()) res.prompt='Espaço|Subir';
-    else if(p.needsPull) res.prompt=p.lockOff&&!p.xr?'X|Guarde o item para puxar':'Mouse ↓|Puxe o corpo para subir';
+    else if(p.needsPull) res.prompt=p.aimConflict&&!p.xr?'Botão|Solte o item para puxar':'Mouse ↓|Puxe o corpo para subir';
     const hit=p.aim(3.0); if(!hit) return res;
     const ud=hit.object.userData, obj=ud.interactable, ctx=this.ctx(hit);
     if(obj&&hit.distance<=2.4&&!(p.xr&&obj instanceof KeyButton)){ const c=obj.canInteract(ctx); if(c){ res.reticle=c.reticle||'pickup'; if(c.prompt) res.prompt='F|'+c.prompt; return res; } }
+    // picareta pronta numa das mãos: o retículo diz se dá para cravar ali (rocha: axe · concreto, fincada rasa: axe-shallow) ou não
+    const axe=[items.left,items].find(h=>h&&h.equipped==='climbing_axe'&&h.phase==='idle');
+    if(axe){ const t=p.axeTarget(axe.handIndex); res.reticle=!t?'axe-bad':t.bite==='shallow'?'axe-shallow':'axe'; return res; }
     const id=items.activeItem;
     if(id){
       if(obj){ const c=obj.canUseItem(id,ctx); if(c){ res.reticle=c.reticle; return res; } }
@@ -27,6 +30,7 @@ class InteractionSystem{
   }
   // hand: mão preferida para o gesto de apertar botão (F = direita, clique esquerdo = esquerda)
   interact(hand=1){
+    const nav=this.g.debugNavigation; if(nav&&nav.allowsGameplayAction&&!nav.allowsGameplayAction()) return;   // voo de debug: sem coleta/botões
     const ui=this.g.ui; if(ui.noteOpen){ ui.hideNote(); return; }
     const hit=this.g.player.aim(2.4); if(!hit) return;
     const obj=hit.object.userData.interactable; if(!obj) return;

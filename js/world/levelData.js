@@ -139,7 +139,7 @@ const POWER_TEXT={
 // até o braço de 174 m, que volta ao poço acima do exaustor.
 // ============================================================================
 const EXHAUST={id:'ex150',H:150,entryA:.55,a0:.32,a1:Math.PI+.24,r1:9.3,h:3.2,doorA:Math.PI/2,shaftTheta:Math.PI,top:174,
-  fan:{y:169,radius:5.75,range:24,speed:19,p:1.3,kill:1.4},
+  fan:{y:169,radius:5.75,range:24,speed:19,p:.9,kill:1.4}, // sucção cresce mais cedo; alcance e pico preservados
   oldRoute:{a0:1.05,y0:152.4,a1:1.25,y1:160.2},            // rota antiga (tentação): termina dentro da zona de sucção
   registerJam:2};
 const EXHAUST_TEXT={

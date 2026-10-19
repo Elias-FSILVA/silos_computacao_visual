@@ -29,7 +29,7 @@ Você está no fundo de um silo industrial gigantesco: um cilindro de 400 m de a
   | 300 m | O Arquivo e o Labirinto | mural, labirinto no escuro, placas, cofre | duto (310 m) | **O Registro** |
 
   A primeira decisão tomada define o final. Quem chega ao topo sem decidir nada tem o final **Fuga**. Enquanto você está dentro de uma ala obrigatória, a massa fica contida abaixo dela.
-- **Ventiladores.** O exaustor de 169 m puxa o ar do poço para cima: perto dele, a sucção gasta a pegada e, solto, o corpo é levado até as pás. O insuflador de 245 m sopra para cima e é a única rota até o mirante. Paredes e bordas fazem abrigo; grades deixam o ar passar.
+- **Ventiladores.** O exaustor de 169 m puxa o ar do poço para cima: a sucção cresce desde a aproximação da galeria, gasta a pegada e, mais acima, leva o corpo solto até as pás. Encostar o corpo nas pás mata por baixo, por cima ou pela borda — não dá para pousar nelas e saltar. A carcaça não causa dano; a boca coberta da galeria e o corredor de serviço continuam abrigados. O insuflador de 245 m sopra para cima e é a única rota até o mirante. Paredes e bordas fazem abrigo; grades deixam o ar passar.
 - **Pontuação.** Somam pontos a altura máxima, os checkpoints, os puzzles e os segredos encontrados. Quem chega ao fim ganha bônus por velocidade e por não escorregar nem tomar pílulas. Cada escorregão e cada pílula descontam pontos. O ranking fica salvo no navegador.
 
 ## Controles
@@ -41,9 +41,11 @@ Você está no fundo de um silo industrial gigantesco: um cilindro de 400 m de a
 | Andar | WASD | analógico esquerdo |
 | Pular / subir na borda | Espaço | A |
 | Interagir | F | gatilho direito |
-| Usar item | botão direito com o item na mão | gatilho direito |
+| Usar item | botão do mouse da mão que segura o item | gatilho da mão que segura o item |
+| Picareta: cravar / soltar | segurar / soltar o botão daquela mão | segurar / soltar o gatilho (ou pinça) |
+| Estação de melhoria | F; clique ou 1/2 seleciona, clique de novo ou Enter escolhe, Esc ignora | gatilho direito; selecionar e depois Escolher |
 | Mochila / inventário | Tab, depois 1 a 4 | Y (inventário no pulso) |
-| Guardar item | X | X |
+| Guardar item | X (guarda as mãos livres; a picareta cravada fica) | A esquerdo (idem) |
 | Pílula | Q | levar o frasco à boca |
 | Pausa | Esc | clique no analógico esquerdo |
 
@@ -77,6 +79,62 @@ O `vercel.json` já configura tudo: a Vercel roda `npm ci` e `npm run build` e p
 - **Bordas:** primeiro puxe o corpo; Espaço finaliza a subida (mantle). Uma puxada completa também pode iniciar o mantle. Soltar as mãos sem pular continua sendo uma ação diferente do impulso.
 - Fadiga crítica já provoca cedidas antes da exaustão; uma mão sem stamina solta a pegada. Plataformas permitem recuperar stamina e fadiga.
 
+### Vida
+
+- **100 de vida**, separada da stamina e sem regeneração. A vida mede ferimentos; a stamina mede a força para continuar escalando. Pílulas recuperam só stamina.
+- **Quedas:** pousar a até 10 m/s (cerca de 2,8 m) não machuca. Acima disso o dano cresce até 70 a 16 m/s, por exemplo cerca de 9 a 3 m, 35 a 5 m e 68 a 7 m. Mais de 16 m/s continua matando na hora, como antes.
+- **Batidas laterais:** bater numa parede acima de 10 m/s machuca pela mesma curva, no máximo 70, e nunca mata na hora. Encostar, andar, escalar e o vento junto da parede não machucam. Uma quina que bate duas vezes no mesmo instante cobra uma vez só.
+- A massa, as pás do exaustor e a queda letal continuam matando na hora; a vida vai a 0.
+- **No HUD:** uma barra fina sob o retículo, discreta quando você está saudável. Depois de um dano ela fica visível por 2 s e mostra o rastro do que foi perdido, com uma borda vermelha curta na tela. As cores são creme (51–100), âmbar (26–50) e vermelho com a palavra CRÍTICO (1–25).
+- **Nas mãos:** quatro estados, com troca em 0,25 s. Saudável (76–100) é a mão de sempre. Machucado (51–75) traz sujeira nas dobras e arranhões avermelhados. Ferido (26–50) acrescenta rachaduras e feridas abertas. Crítico (1–25) fica mais pálido, com sangue seco e dedos tremendo (só os dedos: itens e picareta não saem do lugar).
+- **VR:** linha “vida” no relógio do pulso, acima da stamina, e um pulso curto nos dois controles a cada dano. Nenhum efeito de tela.
+- Morrer, recomeçar ou voltar ao menu restauram 100. Pausa, mochila, estações, console, `goto` e `back` não mexem na vida.
+
+### Itens nas duas mãos
+
+- Cada mão tem estado próprio: usar, segurar ou soltar o botão de uma mão nunca mexe no item da outra. Pausa, mochila e console soltam os botões das duas mãos.
+- A mão com item comum não agarra. A **outra mão escala e puxa normalmente, inclusive pelo mouse**. O mouse só deixa de puxar durante o uso ativo de um item que mira (golpe do martelo, colocar prego, cartão, golpe da picareta). Pendurado num braço com a outra mão ocupada, o braço fica travado e gasta menos pegada (como antes, agora para as duas mãos).
+- Cada item está em **uma mão só** (exceto a picareta, que tem duas unidades). Pegar com uma mão o item que está na outra o transfere: ele sai da outra mão, sem duplicar. Se a outra mão estiver no meio do uso (golpe, colocar, tomar), a troca é recusada com aviso.
+- Item que acaba (última pílula, último prego) **some da mochila e do atalho**; a mão que o segurava esvazia ao fim da animação. Coletar de novo cria uma entrada nova.
+- Poses e itens são desenhados no espaço da mão direita e espelhados para a esquerda (`js/player/Handedness.js`), sem escala negativa.
+
+### Picareta (Climbing Axe)
+
+- Item **Picareta**: até 2 na mochila; cada mão equipada usa uma. A 1ª está na caixa do **Andaime norte** (128 m) e a 2ª na do **Corredor de serviço** (269,6 m). Com uma só, a outra mão recebe "Você só tem uma picareta".
+- Crava fundo em **rachaduras** (que a mão nua também agarra) e nas **faixas de rocha** escuras com lâmpada amarela (R1 a 145 m, R2 a 237 m, R3 a 324 m), onde a mão nua não se segura. Ali não há desgaste.
+- **Concreto, tijolo e pedra** (as paredes que aceitam prego) recebem uma **fincada rasa**: custa o dobro de stamina para fixar (10), gasta o dobro pendurado e a ponta escapa sozinha depois de 2,5 s. O retículo fica âmbar e tracejado. Piso e teto não aceitam. Não crava em chapa, grade, corda, cano, prego, porta nem puzzle.
+- **Desgaste:** cada picareta aguenta 10 fincadas no concreto (a barra embaixo do atalho mostra o que resta; fica vermelha nas 3 últimas). A última fincada segura; quando ela sai da parede, a picareta quebra e some da mochila. Com duas, cada uma tem o seu desgaste, e a mão pega a menos gasta.
+- Segure o botão (ou o gatilho) para cravar e manter; solte para desprender. O retículo indica se dá para cravar ali (verde: rocha; âmbar: concreto). Fixar custa 5 de stamina (× o gasto de pegada dos perks). Pendurada, ela gasta como a mão, mas sem o custo extra da rachadura. A cravada é uma âncora: puxar, mantle e salto agarrado funcionam como com a mão.
+- **Quando não crava**, a reação diz o motivo, sem gastar stamina nem a picareta:
+  - **nada ao alcance:** o golpe segue no vazio e volta, sem som de impacto;
+  - **superfície errada** (chapa, grade, caixa, piso ou teto de concreto): faísca, recuo seco, som metálico e o retículo pulsa. Nas 2 primeiras vezes da subida aparece a dica de onde ela crava;
+  - **a mão não aguenta** (sem stamina ou caindo rápido): a ponta raspa, a mão treme e o motivo aparece ("Mão direita sem stamina para cravar.", "Caindo rápido demais para cravar.").
+  - No VR, cada caso vibra diferente.
+- Exausta, a picareta é arrancada (som de raspão) e só volta a cravar com a mão recuperada. Cravada, ela não pode ser guardada nem trocada ("A picareta está cravada"). A mão com picareta não agarra apoios comuns: guarde para usar a mão nua.
+- Modelo 3D: "Climbing Axe (Low Poly)" de [Tiko](https://sketchfab.com/tikoavp), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — crédito completo em `assets/models/items/climbing_axe_low_poly.CREDITS.txt`.
+
+### Estações de melhoria (perks)
+
+- Três estações físicas: **Sala de controle** (76,6 m), **Mezanino** (188,6 m) e **Cabine de guincho** (331 m). Cada uma oferece 2 melhorias com contrapartida, sorteadas no começo de cada subida: nenhuma se repete entre as três estações, e ignorar e voltar não troca as ofertas. *Âncora* aparece a partir do Mezanino; *Fôlego fundo* e *Corpo leve*, só na última.
+- Uma escolha por estação, no máximo **3 melhorias por subida**. Ignorar não consome a estação. Escolher não restaura stamina.
+- Morte, fim ou reinício da subida limpam as melhorias e liberam as estações; pausa, mochila, console e checkpoints preservam. O console de desenvolvimento pode ativar qualquer uma para testes (`perks add help` lista os ids) (`perks` mostra `n/3`).
+- As 10 melhorias (valores provisórios, para ajustar no playtest):
+
+| Melhoria | Vantagem | Contrapartida | Onde |
+|---|---|---|---|
+| Pegada econômica | −15% gasto de pegada | −15% recuperação | todas |
+| Recuperação rápida | +20% recuperação | +10% gasto de pegada | todas |
+| Impulso potente | +10% no salto agarrado | +25% custo desse salto | todas |
+| Braços longos | +10% alcance | +15% gasto de pegada | todas |
+| Mãos calejadas | fadiga acumula 25% mais devagar | fadiga passa 25% mais devagar | todas |
+| Respiro curto | mão livre recupera +40% na escalada | −20% recuperação no chão | todas |
+| Salto econômico | −30% custo do salto agarrado | −8% de impulso nele | todas |
+| Âncora | −20% gasto de pegada | +10% gravidade | Mezanino e Cabine |
+| Fôlego fundo | +25% stamina máxima | −20% recuperação | só Cabine |
+| Corpo leve | −25% gravidade | −40% stamina máxima | só Cabine |
+
+- HUD: um ícone por melhoria ativa perto do retículo; na mochila, a área "Melhorias" mostra benefício e contrapartida. No VR, os ícones ficam no pulso.
+
 ### Referência e escopo desta etapa
 
 [White Knuckle](https://whiteknuckle.net/) é descrito oficialmente como *speed-climbing* com movimento preciso e gestão de recursos. [Relatos da comunidade](https://steamcommunity.com/app/3195790/discussions/0/838377222874139765/) descrevem saltos encadeados entre agarrões: tratar o salto como algo necessariamente raro não é uma reprodução confirmada da referência. Os valores de Silos são ajustes próprios, não parâmetros extraídos daquele jogo.
@@ -90,6 +148,8 @@ node tools/test_player.js     # Player real + vetores/raycast Three.js, sem rend
 for test in tools/test_*.js; do node "$test" || exit 1; done
 npm run build
 ```
+
+Suítes desta etapa: `test_hand_visuals.js` (espelhamento e mãos independentes), `test_climbing_axe.js` (superfícies, inventário, física, estados e VR por mock), `test_axe_concrete.js` (fincada rasa no concreto e desgaste), `test_axe_feedback.js` (reação quando a picareta não crava), `test_axe_routes.js` (faixas e caixas no grafo de alcance) `test_perk_stations.js` (ofertas, estações no mundo, painel e VR por mock) e `test_perk_rotation.js` (sorteio por subida e perks novos).
 
 Playtest sugerido: agarrado a uma parede, salte sem WASD e confira a subida sem recuo; repita com A/D mirando outra agarra. Alterne mãos, compare com duas mãos apoiadas e teste uma borda antes/depois da puxada. Em Quest, confira A e pinça esquerda com/sem analógico. Testes automáticos não substituem a avaliação de sensação e conforto no headset.
 
@@ -105,6 +165,16 @@ Os ajustes finos do VR (ganho da puxada, alcance do agarre, encaixe da mão no c
 ## Para desenvolvedores
 
 **Modo espectador.** É uma câmera livre para voar pelo mapa inteiro, com paredes transparentes, nomes das partes e régua de altura. Para abrir, use a tecla F2 no menu ou abra o endereço com `?espectador` no final. Os comandos estão em [COMO_RODAR.txt](COMO_RODAR.txt).
+
+**Navegação de debug (console).** Ative o console em Configurações e abra com `~`. Só no desktop (VR recusa), numa partida viva em jogo ou pausa:
+
+- `goto list` lista os lugares por trecho de 100 m, com altura e o que há em cada um (caixa, estação, ala). Os atalhos `subida1`…`subida4` e `mezanino` levam ao mesmo ponto de um checkpoint: não aparecem na lista, mas o `goto` os aceita. `goto <id>` leva o corpo inteiro para um apoio seguro. Um destino sem apoio seguro no momento (por exemplo `atalho`) é recusado com o motivo, sem mexer em nada.
+- `back` volta uma vez à posição de antes do último `goto`. Se aquele ponto não for mais seguro (porta, elevador ou piso mudaram), usa uma correção local anunciada como fallback; se não houver nenhuma, recusa e mantém o registro.
+- `noclip`, `noclip on` / `off`, `noclip speed <1–50>` (padrão 10 m/s). Em voo, WASD segue a vista, Space sobe, Ctrl desce e Shift multiplica por 4. Física, timer, puzzles, massa, portas e elevador ficam congelados; itens, agarre, pulo e interação ficam bloqueados. Pausa, mochila e console interrompem o voo e voltam a ele com o timer parado. `noclip off` desliga onde você estiver, como no CS/Half-Life: no ar, fora do mapa ou dentro de parede. Não há teleporte nem recusa; a física normal volta daquele ponto (você pode cair, ficar preso ou morrer) e o console avisa o risco da posição (sem apoio, dentro de geometria, massa, pás). Os gatilhos continuam protegidos até você sair e reentrar.
+- Marcos, salas, tela do Arquivo e o limiar da massa não disparam por teleporte nem voo. Depois do salto, eles ficam protegidos até você sair e reentrar na região andando, escalando ou pulando normalmente. `status` lista cada gatilho protegido e o que falta para rearmá-lo. Ficar parado, o vento, o elevador ou a gravidade não rearmam.
+- **Vida:** `health` mostra a vida (não marca); `health set <1–100>` define; `damage <1–100>` machuca; `heal <1–100>` cura. Só inteiros; `health set 0` é recusado (use `damage` para testar a morte). Se `damage` zerar a vida, a morte acontece ao fechar o console e o resultado mostra “Ferimentos (debug)”. Mudar a vida marca a run como assistida (motivo `health`).
+- Qualquer `goto`, `back` ou `noclip on` marca a run como **assistida** até a próxima run: o HUD mostra RUN ASSISTIDA (e NOCLIP quando ligado), o resultado avisa “pontuação não competitiva” e a pontuação nunca entra no ranking, nem pelo desktop nem pelo VR. Ajustar a velocidade, consultar e errar comandos não marcam.
+- O Quest não foi testado com esses comandos; eles são recusados em VR.
 
 **Ajuste da escalada.** Os trechos de subida depois da passarela ficam em `js/world/Climbs.js` (`_subida1` … `_subida4`), escritos em coordenadas polares (ângulo na parede, altura); lá também estão as peças (rachadura, corda, cano, escada, saliência, andaime, passarela, tubo, chapa, luminária). As linhas de tijolos usam `CLIMB` em `js/world/levelData.js` (distância entre tijolos e tijolos que desmoronam). Os ventiladores ficam em `EXHAUST.fan` e `INSUF.fan`. Depois de mexer numa subida, rode `node tools/test_ritmo.js`.
 
@@ -124,6 +194,16 @@ node tools/test_espectador.js
 node tools/test_final.js        # os quatro finais
 node tools/test_scripts.js      # ordem dos scripts no index.html
 node tools/test_setores.js      # janela de renderização com o Three.js real: colisão e raycast intactos, estados, histerese, liberação
+node tools/test_developer_navigation.js  # goto/back atômicos, cancelamento nas duas mãos, console real
+node tools/test_items_ownership.js      # item em uma mão só (troca sem duplicar), esgotados somem da mochila
+node tools/test_debug_simulation.js      # noclip: voo, congelamento real, porta por dt, bloqueio de ações/overlays/XR
+node tools/test_navigation_progression.js # gatilhos protegidos e rearme só por locomoção normal
+node tools/test_debug_ranking.js         # run assistida fora do ranking (Game + Ranking), aviso no resultado e HUD; health/damage/heal
+node tools/test_player_health.js         # vida: 100 HP, faixas, curva de dano, morte única, reset
+node tools/test_impact_damage.js         # dano de queda e de batida lateral com a colisão real; contato sem dano
+node tools/test_hand_wear.js             # mãos: 4 estados num programa só, tween, emissivo da stamina, tremor só nos dedos
+node tools/test_health_hud.js            # barra sob o retículo, rastro, borda de dano, relógio VR e háptico
+node tools/test_health_integration.js    # Game real: queda, pausas, retry/menu, letais, goto/back, noclip, pílulas
 ```
 
 ### Desempenho, distância de renderização e VR

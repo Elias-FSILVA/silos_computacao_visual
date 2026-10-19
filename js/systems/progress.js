@@ -45,17 +45,22 @@ class ScoreSystem{
 class CheckpointSystem{
   constructor(world){ this.world=world; this.reset(); }
   reset(){ this.collected=new Set(); this.current=null; this.justCollected=null; this.finishReached=false; }
+  presenceAt(cp,p){
+    if(cp.bounds){const b=cp.bounds;return {at:Math.abs(p.y-b.top)<.2&&solidInXZ(b,p.x,p.z,RAD)};}
+    return {at:cp.position.distanceTo(p)<=cp.radius};
+  }
+  finishPresenceAt(p){const f=this.world.finish;return {at:!!f&&Math.abs(p.y-f.position.y)<.25&&Math.hypot(p.x-f.position.x,p.z-f.position.z)<=f.radius};}
   update(player){
     this.justCollected=null; const p=player.position;
     for(const cp of this.world.checkpoints){
       if(this.collected.has(cp.id)) continue;
-      let inside;
-      if(cp.bounds){ const b=cp.bounds; inside=player.grounded&&Math.abs(p.y-b.top)<.2&&solidInXZ(b,p.x,p.z,RAD); }   // borda reta, girada ou curva
-      else inside=cp.position.distanceTo(p)<=cp.radius;
+      const seen=(this.presence&&this.presence.read('checkpoint:'+cp.id))||this.presenceAt(cp,p);
+      const inside=!seen.$protected&&seen.at&&(!cp.bounds||player.grounded);
       if(inside){ this.collected.add(cp.id); if(!cp.optional) this.current=cp; this.justCollected=cp; break; }
     }
     const f=this.world.finish;
-    if(!this.finishReached&&f&&player.grounded&&Math.abs(p.y-f.position.y)<.25&&Math.hypot(p.x-f.position.x,p.z-f.position.z)<=f.radius) this.finishReached=true;
+    const seen=(this.presence&&this.presence.read('finish'))||this.finishPresenceAt(p);
+    if(!this.finishReached&&f&&player.grounded&&!seen.$protected&&seen.at) this.finishReached=true;
     return {justCollected:this.justCollected,finished:this.finishReached};
   }
 }

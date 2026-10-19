@@ -90,7 +90,7 @@ for(const [nome,pace] of [['cuidadoso',1],['lento (ritmo humano)',2.2]]){
   const P=T.makePlayer(); P.position.copy(world.spawnPoint); P._prev.copy(P.position);
   world.sockets.forEach(s=>{ s.sk.used=false; });
   const st=percorrer({world,P,grab:T.grab,step:T.step,Gr,path,sector,pace});
-  chk(`ritmo ${nome}: chão → porta da superfície, sem quedas`,st.ok&&!P.dead&&Math.abs(P.position.y-TOP)<.05&&st.falls===0,st.stuck||`${(st.frames/3600).toFixed(1)} min · ${st.pills} pílulas · ${st.nails} pregos`);
+  chk(`ritmo ${nome}: chão → porta da superfície, sem quedas`,st.ok&&!P.dead&&Math.abs(P.position.y-TOP)<.05&&st.falls===0,st.stuck||`${(st.frames/3600).toFixed(1)} min · ${st.pills} pílulas · ${st.nails} pregos · ${P.health.value} HP`);
   const by=Object.entries(st.minBy).filter(([s])=>s!=='Início');
   chk(`  estamina mínima pendurado ≥ 35% em todas as subidas depois da passarela`,by.every(([,v])=>v>=35),by.map(([s,v])=>`${s.replace('Subida ','')}: ${v.toFixed(0)}`).join(' · '));
   if(pace===1){

@@ -1,0 +1,14 @@
+Climbing Axe (Low Poly)
+Autor: Tiko (tikoavp) — https://sketchfab.com/tikoavp
+Obra: https://sketchfab.com/3d-models/climbing-axe-low-poly-d74bb6a3aad146b5892a28ec5001a5f8
+Licença: CC BY 4.0 (Creative Commons Atribuição 4.0 Internacional) — https://creativecommons.org/licenses/by/4.0/
+
+Arquivo distribuído: climbing_axe_low_poly.glb
+SHA-256: f7bc04657843194aed6b702de0101b6c64238d6dc2be6911d300b0e5be8dde53 (50.980 bytes)
+O arquivo é uma cópia byte a byte do original baixado: sem alterar malhas, materiais (Knife, Material.003,
+Dark_Metal, Metal.001), triângulos (774) ou cores.
+
+Ajustes feitos só em tempo de execução pelo jogo (js/items/climbingAxeAsset.js), sem modificar o arquivo:
+- normalização: escala uniforme e rotação para o cabo/cabeça casarem com a empunhadura da mão;
+- espelhamento: o modelo é simétrico, então a mão esquerda usa a mesma malha e só as referências (ponta, empunhadura, eixos) são refletidas; a malha só seria espelhada se o modelo não fosse simétrico;
+- montagem: posição na mão e encaixe da ponta na superfície onde a picareta está cravada.

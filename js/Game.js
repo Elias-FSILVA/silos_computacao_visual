@@ -25,6 +25,7 @@ class Game{
     this.mass=new MassSystem(this.scene);
     this.fx=new FxSystem(this.scene);
     this.items=new ItemSystem(this);
+    this.stations=new PerkStations(this.player.attributes); this.stationOpen=null;   // estações de melhoria (estado da partida)
     this.interaction=new InteractionSystem(this);
     this.puzzles=new PuzzleSystem(this);
     this.timer=new TimerSystem(); this.score=new ScoreSystem(); this.checkpoints=new CheckpointSystem(this.world); this.ranking=new Ranking();
@@ -36,7 +37,9 @@ class Game{
     this.perf=new PerfOverlay(this);
     this.ui=new UIManager();
     this.vr=new VRPlayer(this);
-    this.puzzles.reset(); this._zones();
+    this.puzzles.reset();
+    this.debugNavigation=new DeveloperNavigation(this);
+    this.sixSeven=new SixSeven(this);
     this.cinematic=new IntroCinematic(this);
     this.spectator=new SpectatorMode(this);
     this.state='menu'; this.keys={}; this.playerName=''; this.result=null; this.saved=false; this.savedIndex=-1;
@@ -78,16 +81,18 @@ class Game{
   openDevConsole(){
     if(!this.settings.data.devConsoleEnabled||this.vr.active||this.ui.$('devConsole').hidden===false) return;
     if(!['play','paused','menu'].includes(this.state)) return;
+    if(this.sixSeven) this.sixSeven.clear();
     this.devConsoleReturnState=this.state; this._devConsoleWasPlaying=this.state==='play';
-    if(this._devConsoleWasPlaying){ this.state='console'; this.timer.pause(); this._lockGuard=performance.now()+500; this.unlock(); }
+    if(this._devConsoleWasPlaying){ this.state='console'; this.timer.pause(); this.items.releaseUse(); this.gameBtn={}; this._lockGuard=performance.now()+500; this.unlock(); }
     this.keys={}; this.ui.$('devConsole').hidden=false; this.ui.$('devConsoleInput').focus();
   }
   closeDevConsole(){
     const panel=this.ui.$('devConsole'); if(panel.hidden) return;
     panel.hidden=true;
-    if(this._devConsoleWasPlaying){ this.state='play'; this.timer.resume(); this._lockGuard=performance.now()+500; this.lock(); }
+    if(this._devConsoleWasPlaying){ this.state='play'; this._syncTimer(); this._lockGuard=performance.now()+500; this.lock(); }
     else this.state=this.devConsoleReturnState||this.state;
     this.devConsoleReturnState=null; this._devConsoleWasPlaying=false;
+    if(this.sixSeven) this.sixSeven.closeConsole();
   }
   toggleDevConsole(){ if(this.ui.$('devConsole').hidden) this.openDevConsole(); else this.closeDevConsole(); }
   clearDevConsoleOutput(){ this.ui.$('devConsoleOutput').textContent=''; }
@@ -104,9 +109,11 @@ class Game{
     this.cinematic.play(()=>this.beginPlay());
   }
   resetRun(){
+    if(this.sixSeven) this.sixSeven.clear();
     this.world.reset(); this.player.reset(); this.items.reset(); this.mass.reset(); this.timer.reset(); this.score.reset();
-    this.fx.clear(); this.puzzles.reset(); this._zones(); this.audio.silence();
-    this.checkpoints.reset(); this.atmosphere.reset(); this.result=null; this.saved=false; this.savedIndex=-1; this.vt=0;
+    this.fx.clear(); this.puzzles.reset(); this.audio.silence();
+    this.stations.reset(); this.stationOpen=null; this._syncStations();
+    this.checkpoints.reset(); if(this.debugNavigation)this.debugNavigation.reset(); else if(this.presence)this.presence.reset(); this.atmosphere.reset(); this.result=null; this.saved=false; this.savedIndex=-1; this.vt=0;
     this.ui.hideNote(); this.ui.resetPack(); this.keys={}; this.gameBtn={};   // resetPack: fecha a mochila e esquece as posições dos itens
     this.flashOn=null; this.flashAuto=false; this.flashlight.intensity=0;
   }
@@ -119,7 +126,6 @@ class Game{
     const L=this.flashlight, tgt=(this.flashOn??this.flashAuto)?2.4:0;
     L.intensity+=clamp(tgt-L.intensity,-dt*12,dt*12);
   }
-  _zones(){ this.mass.safeZones=Object.values(this.world.puzzleRooms).flatMap(r=>[r.zoneRoom,r.zoneDuct,...(r.zones||[])].filter(Boolean)); }
   beginPlay(){
     this.state='play'; this.timer.start(); this.ui.hideScreens(); this.ui.setHUD(true); this.vr.closeMenu();
     this.audio.setHum(1); this.lock();
@@ -134,7 +140,7 @@ class Game{
   returnFromSpectator(previousState){
     if(previousState==='play'){
       this.state='play'; this.ui.hideScreens(); this.ui.setHUD(true); this.player.viewmodelVisible=true; this.player.updateViewmodel();
-      this.timer.resume(); this.lock(); return;
+      this._syncTimer(); this.lock(); return;
     }
     if(previousState==='paused'){
       this.state='paused'; this.ui.setHUD(true); this.ui.show('pause'); return;
@@ -144,9 +150,12 @@ class Game{
     }
     this.toMenu();
   }
+  // fechar um overlay nunca retoma o timer por conta própria: o voo de debug (noclip) o mantém parado
+  _syncTimer(){ if(this.debugNavigation) this.debugNavigation.syncTimer(); else this.timer.resume(); }
   pause(){
     if(this.state!=='play') return;
-    this.state='paused'; this._resuming=false; this.timer.pause(); this.player.releaseAll(); this.items.use(false); this.keys={};
+    if(this.sixSeven) this.sixSeven.clear();
+    this.state='paused'; this._resuming=false; this.timer.pause(); this.player.releaseAll(); this.items.releaseUse(); this.keys={};
     this.ui.setPack(false);
     this.unlock(); this.ui.clearMsg(); this.ui.$('pauseErr').textContent=''; this.ui.show('pause'); this.audio.setRumble(.02); this.pausedAt=performance.now();
     if(this.vr.active) this.vr.showPause();
@@ -160,7 +169,7 @@ class Game{
     this._resuming=true; this.lock();
   }
   _resumeNow(){
-    this._resuming=false; this.ui.hideScreens(); this.vr.closeMenu(); this.state='play'; this.timer.resume();
+    this._resuming=false; this.ui.hideScreens(); this.vr.closeMenu(); this.state='play'; this._syncTimer();
     if(this.timer.time<1&&this._startTip) this.ui.msg(this._startTip,5);   // a captura falhou logo no início: a dica de como agarrar volta
   }
   // ---------- inventário (mochila circular) ----------
@@ -168,15 +177,16 @@ class Game{
   // e NÃO solta as mãos: a escalada continua exatamente como estava ao fechar.
   openInventory(){
     if(this.state!=='play'||this.player.dead) return;
+    if(this.sixSeven) this.sixSeven.clear();
     this.state='inventory'; this._lockGuard=performance.now()+400;   // o estado muda antes do unlock: o pointerlockchange não vira pausa
-    this.timer.pause(); this.items.use(false); this.gameBtn={};      // soltar botões durante a mochila não mexe nas mãos
+    this.timer.pause(); this.items.releaseUse(); this.gameBtn={}; this.keys={};      // soltar botões durante a mochila não mexe nas mãos; teclas não ficam presas
     this.ui.hideNote(); this.audio.setRumble(.02);
     this.ui.setPack(true,this.items,this.player);
     this.unlock();
   }
   closeInventory(){
     if(this.state!=='inventory') return;
-    this.ui.setPack(false); this.state='play'; this.timer.resume();
+    this.ui.setPack(false); this.state='play'; this._syncTimer();
     this._lockGuard=performance.now()+400; this.lock();
   }
   _inventoryKey(e){
@@ -187,22 +197,79 @@ class Game{
     }
     this.ui.packKey(e);
   }
+  // ---------- estações de melhoria ----------
+  // abrir congela a partida como a mochila (timer parado, botões soltos, mouse solto); limite/sem opções só avisam
+  openStation(id){
+    if(this.state!=='play'||this.player.dead) return;
+    const c=this.stations.canChoose(id);
+    if(!c.ok){
+      if(c.reason==='used') this.ui.msg('Estação esgotada',1.4);
+      else if(c.reason==='limit') this.ui.msg(`Limite de ${this.stations.max} melhorias por subida atingido.`,2);
+      else this.ui.msg('Nenhuma melhoria disponível aqui.',1.6);
+      if(this.audio.deny) this.audio.deny(); return;
+    }
+    if(this.sixSeven) this.sixSeven.clear();
+    this.state='station'; this.stationOpen={id,sel:-1}; this._lockGuard=performance.now()+400;
+    this.timer.pause(); this.items.releaseUse(); this.gameBtn={}; this.keys={};
+    const v=this.stationView(id); this.ui.hideNote(); this.ui.showStation(v); if(this.vr.active&&this.vr.showStation) this.vr.showStation(v);
+    this.unlock();
+  }
+  // o que o painel mostra (só leitura: PERK_DEFS, atributos efetivos e a prévia de PlayerAttributes)
+  stationView(id){
+    const d=this.stations.defs[id], a=this.player.attributes;
+    return {station:d,sel:this.stationOpen?this.stationOpen.sel:-1,
+      offers:this.stations.offers(id).map(p=>({id:p,name:PERK_DEFS[p].name,benefit:PERK_DEFS[p].benefit,tradeoff:PERK_DEFS[p].tradeoff,preview:a.preview(p)})),
+      active:a.activePerks,count:a.activePerks.length,max:this.stations.max};
+  }
+  selectStationOffer(i){ const o=this.stationOpen; if(!o) return; const n=this.stations.offers(o.id).length; if(i<0||i>=n) return; o.sel=i;
+    const v=this.stationView(o.id); this.ui.showStation(v); if(this.vr.active&&this.vr.showStation) this.vr.showStation(v); }
+  // mouse: 1º clique seleciona; clicar de novo no cartão já selecionado escolhe (teclado continua 1/2 + Enter)
+  clickStationOffer(i){ const o=this.stationOpen; if(!o) return; if(o.sel===i) this.confirmStation(); else this.selectStationOffer(i); }
+  confirmStation(){ const o=this.stationOpen; if(!o||o.sel<0) return; const p=this.stations.offers(o.id)[o.sel]; if(p) this.chooseStation(p); }
+  chooseStation(perkId){
+    const o=this.stationOpen; if(!o) return;
+    const r=this.stations.choose(o.id,perkId);
+    if(!r.ok){ if(this.audio.deny) this.audio.deny(); return; }
+    if(this.audio.stationConfirm) this.audio.stationConfirm();
+    this._syncStations(); this.closeStation();
+    this.ui.msg(`${PERK_DEFS[perkId].name}: ${PERK_DEFS[perkId].benefit} · ${PERK_DEFS[perkId].tradeoff}`,3);
+    if(this.ui.flashPerk) this.ui.flashPerk(perkId);
+  }
+  // Ignorar / Esc: fecha sem consumir
+  closeStation(){
+    if(this.state!=='station') return;
+    this.ui.hideStation(); if(this.vr.active&&this.vr.closeMenu) this.vr.closeMenu(); this.stationOpen=null; this.state='play'; this._syncTimer();
+    this._lockGuard=performance.now()+400; this.lock();
+  }
+  // painel aberto: 1/2 selecionam, Enter confirma (dois passos), Esc ignora
+  _stationKey(e){
+    if(['Digit1','Digit2','Enter','NumpadEnter','Escape'].includes(e.code)&&e.preventDefault) e.preventDefault();
+    if(e.repeat) return;
+    if(e.code==='Digit1') this.selectStationOffer(0); else if(e.code==='Digit2') this.selectStationOffer(1);
+    else if(e.code==='Enter'||e.code==='NumpadEnter') this.confirmStation(); else if(e.code==='Escape') this.closeStation();
+  }
+  _syncStations(){ for(const st of ((this.world&&this.world.stations)||[])) st.setUsed(this.stations.isUsed(st.id)); }
   endRun(result){
     if(this.state!=='play') return;
+    if(this.sixSeven) this.sixSeven.clear();
     this.state='ending'; this.result=result; this.timer.finish();
     const breakdown=this.score.finalize(result,this.timer.time,this.player);
-    this.player.attributes.clearPerks();
+    this.player.attributes.clearPerks(); this.stations.reset(); this._syncStations();
     this.player.releaseAll(); this.unlock(); this.ui.hideNote(); this.ui.setPack(false); this.ui.clearMsg();
     this.audio.siren(false);
     if(result==='finish') this.audio.chime(); else this.audio.boom();
-    this.lastRun={name:this.playerName,score:breakdown.total,time:this.timer.time,result,height:this.player.maxHeightReached,breakdown,ending:result==='finish'?(this.route||'escape'):null};
+    const elig=this.debugNavigation?this.debugNavigation.eligibility():{assisted:false,competitiveEligible:true,debugReasons:[]};   // goto/back/noclip: fora do ranking
+    this.lastRun={name:this.playerName,score:breakdown.total,time:this.timer.time,result,height:this.player.maxHeightReached,breakdown,ending:result==='finish'?(this.route||'escape'):null,...elig};
     setTimeout(()=>{ if(this.state!=='ending') return; this.state='result'; this.ui.setHUD(false); this.ui.showResult(this.lastRun);
       if(this.vr.active) this.vr.showResult(); },result==='finish'?1400:900);
   }
   saveScore(){
     if(this.saved||!this.lastRun) return;
     const r=this.lastRun;
-    const entry={name:r.name,score:r.score,time:Math.round(r.time*100)/100,result:r.result,height:Math.floor(r.height),ending:r.ending||null,date:new Date().toISOString().slice(0,10)};
+    if(r.assisted||r.competitiveEligible===false){   // primeira barreira: o Ranking nem é chamado
+      this.savedIndex=-1; const b=this.ui.$('btnSave'); b.disabled=true; b.textContent='Não competitiva'; this.ui.$('resSaved').textContent=ASSISTED_RUN_MSG; return;
+    }
+    const entry={name:r.name,score:r.score,time:Math.round(r.time*100)/100,result:r.result,height:Math.floor(r.height),ending:r.ending||null,date:new Date().toISOString().slice(0,10),assisted:false,competitiveEligible:true};
     this.savedIndex=this.ranking.save(entry); this.saved=true;
     const b=this.ui.$('btnSave'); b.disabled=true; b.textContent='Pontuação salva';
     this.ui.$('resSaved').textContent=this.savedIndex>=0?`Posição ${this.savedIndex+1} no ranking.`:'Fora do top 20.';
@@ -233,7 +300,7 @@ class Game{
   // saiu do headset no meio da corrida: fica pausado na tela 2D (com "Continuar em VR")
   onVRExit(){ this.applySettings(); if(this.state==='play') this.pause(); }
   // ---------- interação ----------
-  interact(hand){ this.interaction.interact(hand); }
+  interact(hand){ if(this.sixSeven) this.sixSeven.clear(); this.interaction.interact(hand); }
   // ---------- estado para UI e atmosfera ----------
   getUIState(){
     const cp=this.checkpoints.justCollected, pz=this.puzzles.current;
@@ -243,7 +310,9 @@ class Game{
       currentCheckpoint:this.checkpoints.current?this.checkpoints.current.label:null,
       checkpointJustCollected:cp?{id:cp.id,label:cp.label,bonus:cp.bonus,optional:cp.optional}:null,
       finished:this.timer.finished, result:this.result,
-      massDistance:this.mass.active?this.mass.gap(this.player):null, playerName:this.playerName
+      debug:{assisted:!!(this.debugNavigation&&this.debugNavigation.assisted),noclip:!!(this.debugNavigation&&this.debugNavigation.noclipActive)},
+      massDistance:this.mass.active?this.mass.gap(this.player):null, playerName:this.playerName,
+      health:this.player.health?this.player.health.snapshot():null
     };
   }
   // ---------- entrada ----------
@@ -259,6 +328,9 @@ class Game{
     $('btnPauseSettings').onclick=()=>{ this.settingsReturn='pause'; this.ui.show('settings'); };
     $('btnSetBack').onclick=()=>this.ui.show(this.settingsReturn);
     $('btnRanking').onclick=()=>this.showRanking('menu');
+    // painel da estação: clique seleciona o cartão; Escolher confirma; Ignorar fecha sem consumir
+    $('stationPanel').addEventListener('click',e=>{ const b=e.target&&e.target.closest&&e.target.closest('button'); if(!b||this.state!=='station') return;
+      if(b.dataset.i!==undefined) this.clickStationOffer(+b.dataset.i); else if(b.dataset.act==='confirm') this.confirmStation(); else if(b.dataset.act==='ignore') this.closeStation(); });
     const devInput=$('devConsoleInput'),devOutput=$('devConsoleOutput');
     const runDevCommand=()=>{
       const raw=devInput.value.trim(); if(!raw) return;
@@ -296,7 +368,7 @@ class Game{
     addEventListener('resize',()=>this.applySettings());
     addEventListener('contextmenu',e=>{ if(this.state==='play'||this.state==='inventory') e.preventDefault(); });
     // em VR a janela perde o foco e o ponteiro ao entrar no headset: isso não é pausa
-    addEventListener('blur',()=>{ this.keys={}; if(this.state==='play'&&!this.vr.busy) this.pause(); });
+    addEventListener('blur',()=>this._onBlur());
     document.addEventListener('pointerlockchange',()=>{
       const locked=this.locked(); if(locked) this._lockReq=0;
       if(locked&&this.state==='paused'&&this._resuming) this._resumeNow();          // retomada: só agora, com a captura confirmada
@@ -307,60 +379,15 @@ class Game{
       this.wasLocked=locked;
     });
     document.addEventListener('pointerlockerror',()=>this._lockFailed());
-    // a câmera só segue o mouse capturado: com o cursor solto (captura pendente) o movimento é do cursor, não da vista
-    addEventListener('mousemove',e=>{
-      if(this.state==='play'){ if(this.locked()||this.vr.busy||!this.canLock()) this.player.look(e.movementX||0,e.movementY||0,this.settings.data); }
-      else if(this.state==='spectate'&&this.locked()) this.spectator.look(e.movementX||0,e.movementY||0);
-    });
-    this.renderer.domElement.addEventListener('mousedown',e=>{
-      if(this.state==='spectate'){ if(!this.locked()) this.lock(); return; }
-      if(this.state!=='play') return;
-      if(!this.locked()&&this.canLock()&&!this.vr.busy){ this.lock(); return; }   // clique com o cursor solto só recaptura: não agarra nem usa item
-      if(e.button===0&&this.interaction.keypadAimed()){ this.interact(0); return; }   // painel de senha: clique aperta o número
-      this.gameBtn[e.button]=true;
-      if(e.button===0){ if(this.items.equippedFor('left')) this.items.useHand('left',true); else this.player.setGrab(0,true); }
-      else if(e.button===2){ if(this.items.equippedFor('right')) this.items.useHand('right',true); else this.player.setGrab(1,true); }
-    });
-    addEventListener('mouseup',e=>{
-      // só solta o que um clique de partida segurou: cliques e arrastos na mochila não soltam as mãos
-      if(!this.gameBtn[e.button]) return;
-      this.gameBtn[e.button]=false;
-      if(e.button===0){ if(this.items.equippedFor('left')) this.items.useHand('left',false); else this.player.setGrab(0,false); }
-      else if(e.button===2){ if(this.items.equippedFor('right')) this.items.useHand('right',false); else this.player.setGrab(1,false); }
-    });
-    addEventListener('wheel',e=>{ if(this.state==='play'&&Math.abs(e.deltaY)>4) this.items.cycle(e.deltaY>0?1:-1); else if(this.state==='spectate'&&Math.abs(e.deltaY)>4) this.spectator.wheel(e.deltaY); },{passive:true});
-    addEventListener('keydown',e=>{
-      if(e.code==='Backquote'&&this.settings.data.devConsoleEnabled&&!this.vr.active){ e.preventDefault(); this.toggleDevConsole(); return; }
-      if(!this.ui.$('devConsole').hidden){
-        if(e.code==='Escape'){ e.preventDefault(); this.closeDevConsole(); }
-        return;
-      }
-      if(e.code==='F2'&&this.state==='menu'&&!this.ui.$('menu').hidden){ e.preventDefault(); this.spectator.enter(); return; }   // atalho do modo espectador
-      if(e.code==='F3'){ e.preventDefault(); if(!e.repeat) this.perf.toggle(); return; }                                         // diagnóstico de desempenho
-      const typing=e.target&&e.target.tagName==='INPUT'&&e.target.type==='text';
-      if(typing) return;
-      if(this.state==='intro'){ if(['Space','Escape','Enter'].includes(e.code)){ e.preventDefault(); this.cinematic.skip(); } return; }
-      if(this.state==='inventory'){ this._inventoryKey(e); return; }
-      // Esc/P retomam (Esc não conta como gesto para o navegador: se ele recusar a captura, a pausa avisa); repetição do teclado não alterna
-      if(this.state==='paused'&&(e.code==='Escape'||e.code==='KeyP')&&!this.ui.$('pause').hidden){ if(!e.repeat&&performance.now()-(this.pausedAt||0)>350) this.resume(); return; }
-      if(this.state==='spectate'){ this.keys[e.code]=true; this.spectator.key(e); return; }
-      if(this.state!=='play') return;
-      this.keys[e.code]=true;
-      const qk=QUICK_KEYS.findIndex(q=>q.code===e.code);   // 1–4 → atalhos de equipamento (seguem o vínculo, não o índice do slot)
-      if(qk>=0||['Space','KeyW','KeyA','KeyS','KeyD','KeyF','KeyQ','KeyX','Tab'].includes(e.code)) e.preventDefault();
-      if(e.repeat) return;
-      if(qk>=0){ this.items.selectQuick(qk); return; }
-      switch(e.code){
-        case 'Space': this.player.jump({x:(this.keys.KeyD?1:0)-(this.keys.KeyA?1:0),y:(this.keys.KeyW?1:0)-(this.keys.KeyS?1:0)}); break;
-        case 'KeyF': this.interact(); break;
-        case 'KeyQ': this.items.quick('pills'); break;
-        case 'KeyL': this.toggleFlashlight(); break;
-        case 'KeyX': this.items.holsterAll(); break;
-        case 'Tab': this.openInventory(); break;   // alterna: a mochila é interativa e precisa do mouse solto
-        case 'Escape': case 'KeyP': this.pause(); break;
-      }
-    });
+    addEventListener('mousemove',e=>this._onMouseMove(e));
+    this.renderer.domElement.addEventListener('mousedown',e=>this._onMouseDown(e));
+    addEventListener('mouseup',e=>this._onMouseUp(e));
+    addEventListener('wheel',e=>this._onWheel(e),{passive:true});
+    addEventListener('keydown',e=>this._onKeyDown(e));
     addEventListener('keyup',e=>{ this.keys[e.code]=false; });
+    this._bindPlayerEvents();
+  }
+  _bindPlayerEvents(){
     // eventos do player → áudio/UI
     const p=this.player, a=this.audio, ui=this.ui;
     const handName=h=>h.side<0?'esquerda':'direita';
@@ -375,20 +402,94 @@ class Game{
     p.on('walljump',()=>a.noise(.08,900,.18));
     p.on('mantle',()=>a.noise(.15,500,.28));
     p.on('land',v=>a.land(v));
+    // dano: desktop pisca a borda e mostra a barra; VR só vibra os dois controles (sem efeito de tela)
+    p.on('damage',d=>{ if(this.vr.active){ if(this.vr.hurtFeedback) this.vr.hurtFeedback(d); } else if(ui.flashDamage) ui.flashDamage(d); });
     p.on('nailPop',()=>{ ui.msg('O prego solto escapou da parede.',1.8); a.noise(.1,2600,.15); });
     p.on('windTear',()=>{ ui.msg('O vento arrancou suas mãos da parede.',2); a.whoosh(); });
     this.world.onCrumble=o=>{ if(o.userData.type==='nail') this.player.emit('nailPop'); else a.crack(); };
     this.world.onSecretRevealed=()=>{ this.score.onSecret(300); };
     this.world.onMazeEvent=ev=>{ if(ev==='countdown'){ ui.msg('A tela começou a falhar. Memorize a rota.',3); a.buzz(); } else if(ev==='dark'){ ui.msg('A tela apagou. Agora é de memória.',3); a.buzz(); } };
   }
+  // ---------- handlers de entrada (métodos para teste; o voo de debug só deixa passar voo, olhar e overlays) ----------
+  _gameplayAllowed(){ const n=this.debugNavigation; return !n||n.allowsGameplayAction(); }
+  _onBlur(){ if(this.sixSeven) this.sixSeven.clear(); this.keys={}; if(this.state==='play'&&!this.vr.busy) this.pause(); }
+  // a câmera só segue o mouse capturado: com o cursor solto (captura pendente) o movimento é do cursor, não da vista
+  _onMouseMove(e){
+    if(this.state==='play'){ if(this.locked()||this.vr.busy||!this.canLock()){
+      if(!this._gameplayAllowed()) this.debugNavigation.look(e.movementX||0,e.movementY||0,this.settings.data);   // voo: olhar sem puxada
+      else this.player.look(e.movementX||0,e.movementY||0,this.settings.data); } }
+    else if(this.state==='spectate'&&this.locked()) this.spectator.look(e.movementX||0,e.movementY||0);
+  }
+  _onMouseDown(e){
+    if(this.state==='spectate'){ if(!this.locked()) this.lock(); return; }
+    if(this.state!=='play') return;
+    if(!this.locked()&&this.canLock()&&!this.vr.busy){ this.lock(); return; }   // clique com o cursor solto só recaptura: não agarra nem usa item
+    if(!this._gameplayAllowed()) return;                                         // voo de debug: clique não agarra, não usa item nem aperta painel
+    if(this.sixSeven&&(e.button===0||e.button===2)) this.sixSeven.clear();
+    if(e.button===0&&this.interaction.keypadAimed()){ this.interact(0); return; }   // painel de senha: clique aperta o número
+    this.gameBtn[e.button]=true;
+    if(e.button===0){ if(this.items.equippedFor('left')) this.items.useHand('left',true); else this.player.setGrab(0,true); }
+    else if(e.button===2){ if(this.items.equippedFor('right')) this.items.useHand('right',true); else this.player.setGrab(1,true); }
+  }
+  _onMouseUp(e){
+    // só solta o que um clique de partida segurou: cliques e arrastos na mochila não soltam as mãos
+    if(!this.gameBtn[e.button]) return;
+    if(!this._gameplayAllowed()){ this.gameBtn={}; return; }   // voo noclip: nada a soltar, só limpa
+    this.gameBtn[e.button]=false;
+    if(e.button===0){ if(this.items.equippedFor('left')) this.items.useHand('left',false); else this.player.setGrab(0,false); }
+    else if(e.button===2){ if(this.items.equippedFor('right')) this.items.useHand('right',false); else this.player.setGrab(1,false); }
+  }
+  _onWheel(e){
+    if(this.state==='play'&&Math.abs(e.deltaY)>4){ if(this._gameplayAllowed()) this.items.cycle(e.deltaY>0?1:-1); }
+    else if(this.state==='spectate'&&Math.abs(e.deltaY)>4) this.spectator.wheel(e.deltaY);
+  }
+  _onKeyDown(e){
+    if(this.sixSeven) this.sixSeven.key(e);
+    if(e.code==='Backquote'&&this.settings.data.devConsoleEnabled&&!this.vr.active){ e.preventDefault(); this.toggleDevConsole(); return; }
+    if(!this.ui.$('devConsole').hidden){
+      if(e.code==='Escape'){ e.preventDefault(); this.closeDevConsole(); }
+      return;
+    }
+    if(e.code==='F2'&&this.state==='menu'&&!this.ui.$('menu').hidden){ e.preventDefault(); this.spectator.enter(); return; }   // atalho do modo espectador
+    if(e.code==='F3'){ e.preventDefault(); if(!e.repeat) this.perf.toggle(); return; }                                         // diagnóstico de desempenho
+    const target=e.target, typing=target&&(/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)||target.isContentEditable||target.closest&&target.closest('[contenteditable]:not([contenteditable="false"])'));
+    if(typing) return;
+    if(this.state==='intro'){ if(['Space','Escape','Enter'].includes(e.code)){ e.preventDefault(); this.cinematic.skip(); } return; }
+    if(this.state==='inventory'){ this._inventoryKey(e); return; }
+    if(this.state==='station'){ this._stationKey(e); return; }
+    // Esc/P retomam (Esc não conta como gesto para o navegador: se ele recusar a captura, a pausa avisa); repetição do teclado não alterna
+    if(this.state==='paused'&&(e.code==='Escape'||e.code==='KeyP')&&!this.ui.$('pause').hidden){ if(!e.repeat&&performance.now()-(this.pausedAt||0)>350) this.resume(); return; }
+    if(this.state==='spectate'){ this.keys[e.code]=true; this.spectator.key(e); return; }
+    if(this.state!=='play') return;
+    this.keys[e.code]=true;
+    const qk=QUICK_KEYS.findIndex(q=>q.code===e.code);   // 1–4 → atalhos de equipamento (seguem o vínculo, não o índice do slot)
+    if(qk>=0||['Space','KeyW','KeyA','KeyS','KeyD','KeyF','KeyQ','KeyX','Tab'].includes(e.code)) e.preventDefault();
+    if(e.repeat) return;
+    if(!this._gameplayAllowed()){   // voo de debug: WASD/Space/Ctrl ficam em keys para o voo; só lanterna, mochila e pausa
+      if(e.code==='KeyL') this.toggleFlashlight(); else if(e.code==='Tab') this.openInventory(); else if(e.code==='Escape'||e.code==='KeyP') this.pause();
+      return;
+    }
+    if(qk>=0){ this.items.selectQuick(qk); return; }
+    switch(e.code){
+      case 'Space': this.player.jump({x:(this.keys.KeyD?1:0)-(this.keys.KeyA?1:0),y:(this.keys.KeyW?1:0)-(this.keys.KeyS?1:0)}); break;
+      case 'KeyF': this.interact(); break;
+      case 'KeyQ': this.items.quick('pills'); break;
+      case 'KeyL': this.toggleFlashlight(); break;
+      case 'KeyX': this.items.holsterAll(); break;
+      case 'Tab': this.openInventory(); break;   // alterna: a mochila é interativa e precisa do mouse solto
+      case 'Escape': case 'KeyP': this.pause(); break;
+    }
+  }
   // ---------- loop ----------
   _loop(now){
     const dt=Math.min(.05,(now-this.last)/1000), t0=performance.now(); this.last=now; this.vt+=dt;
     try{
+      if(this.sixSeven&&this.state!=='play') this.sixSeven.update(0);
       if(this.state==='play') this._play(dt);
       else if(this.state==='intro'){ this.cinematic.update(dt); this._ambient(dt,false); }
       else if(this.state==='menu'){ this._menuCam(dt); this._ambient(dt,false); }
       else if(this.state==='inventory'){ this._ambient(dt,false); this.ui.renderPack(this.items,this.player); }
+      else if(this.state==='station') this._ambient(dt,false);
       else if(this.state==='spectate'){ this.spectator.update(dt); this.fx.update(dt); }
       else this._ambient(dt,false);
       this.mass.visual(this.vt);
@@ -414,18 +515,29 @@ class Game{
     c.position.set(sp.x,sp.y+EYE,sp.z); c.rotation.set(.85+Math.sin(this.menuT*.15)*.08,this.world.spawnYaw+this.menuT*.04,0); c.updateMatrixWorld();
     this.player.viewmodelVisible=false; this.player.updateViewmodel();
   }
+  _debugPlay(dt){
+    if(this.sixSeven) this.sixSeven.clear();
+    const nav=this.debugNavigation;nav.syncTimer();nav.updateFlight(dt,this.keys);
+    this.player.applyCamera();this.player.updateViewmodel();
+    this._ambient(dt,false);
+    this.ui.updateHUD(this.getUIState(),this.player,{reticle:'dot',prompt:''},this.items);
+    if(this.player.dead) this.endRun(this.player.deathReason);   // `damage` letal em noclip segue o fluxo normal (R-final I1)
+  }
   _play(dt){
+    if(this.debugNavigation&&this.debugNavigation.noclipActive){this._debugPlay(dt);return;}
     const k=this.keys;
     let input={x:(k.KeyD?1:0)-(k.KeyA?1:0),y:(k.KeyW?1:0)-(k.KeyS?1:0)};
     if(this.vr.active){ this.vr.update(dt); if(this.state!=='play') return; input=this.vr.input; }
     this.world.update(dt,this.player);
     this.player.update(dt,input);
+    if(this.presence)this.presence.update(this.player.consumeNormalMotion());
     this._windFx(dt);
     this.items.update(dt); this.fx.update(dt);
     this.timer.update(dt);
     this.puzzles.update(dt); this._flashlight(dt);
     if(this.mass.update(dt,this.timer.elapsedTime,this.player)==='activated') this.ui.msg('O piso vibra. Algo lá embaixo começou a subir.',4);
     if(this.mass.caught&&!this.player.dead) this.player.die('mass');
+    if(this.sixSeven) this.sixSeven.update(dt);
     this.player.applyCamera(); this.player.updateViewmodel();
     const cp=this.checkpoints.update(this.player);
     if(cp.justCollected){ this.score.onCheckpoint(cp.justCollected); this.audio.chime(); }

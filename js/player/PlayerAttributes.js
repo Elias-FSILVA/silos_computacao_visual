@@ -41,14 +41,24 @@ class PlayerAttributes{
     const next=new Set(this.#active); next.delete(id); return this.#publish(next);
   }
   clearPerks(){ if(this.#active.size) this.#publish(new Set()); }
-  #publish(next){
+  // prévia somente leitura: atributos efetivos antes → depois de somar `id` aos ativos (null se inválido ou já ativo)
+  preview(id){
+    if(typeof id!=='string'||!Object.prototype.hasOwnProperty.call(this.#catalog,id)||this.#active.has(id)) return null;
+    const after=this.#compose(new Set([...this.#active,id])); if(!after) return null;
+    return {before:this.#effective,after:Object.freeze(after)};
+  }
+  #compose(next){
     const values={...PLAYER_BASE_ATTRIBUTES};
     for(const id of [...next].sort()){
       for(const [key,factor] of Object.entries(this.#catalog[id].multipliers)){
         values[key]*=factor;
-        if(!Number.isFinite(values[key])||values[key]<=0) return false;
+        if(!Number.isFinite(values[key])||values[key]<=0) return null;
       }
     }
+    return values;
+  }
+  #publish(next){
+    const values=this.#compose(next); if(!values) return false;
     this.#active=next; this.#effective=Object.freeze(values);
     if(this.#onChange) this.#onChange(this.#effective);
     return true;

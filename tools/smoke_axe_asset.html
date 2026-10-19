@@ -1,0 +1,69 @@
+<!doctype html>
+<!--
+  tools/smoke_axe_asset.html — smoke de PRODUÇÃO da picareta GLB (Tiko, CC BY 4.0). Ferramenta local de teste: não vai para dist/.
+  Uso: servir dist/ por HTTP e abrir esta página na MESMA origem, informando a base do build:
+       ...smoke_axe_asset.html?base=/            (scripts, Three e modelo vêm só de <base>)
+       ...smoke_axe_asset.html?base=/&glb=items/nao_existe.glb   (falha de rede: tem de dar ok:false)
+  Resultado em window.__axeSmoke = {done, ok, errors, source, hash, bytes, credit, meshes, materials, instances, fallbackWarnings}.
+  A reserva procedural ([climbing_axe:fallback]) NUNCA conta como sucesso.
+-->
+<html lang="pt-BR"><head><meta charset="utf-8"><title>smoke · climbing axe</title>
+<style>body{font:14px/1.4 ui-monospace,monospace;background:#111;color:#ddd;padding:16px}pre{white-space:pre-wrap}.ok{color:#7c7}.bad{color:#e66}</style>
+</head><body><h1 id="h">smoke · climbing axe …</h1><pre id="out"></pre>
+<script>
+'use strict';
+(async()=>{
+  const q=new URLSearchParams(location.search);
+  const base=new URL(q.get('base')||'/',location.href).href;           // tudo é resolvido a partir daqui
+  const glbOverride=q.get('glb');                                       // só para forçar falha de rede
+  const EXPECTED={hash:'f7bc04657843194aed6b702de0101b6c64238d6dc2be6911d300b0e5be8dde53',bytes:50980,meshes:4,
+    materials:['Dark_Metal','Knife','Material.003','Metal.001']};
+  const report={done:false,ok:false,errors:[],source:null,hash:null,bytes:null,credit:null,meshes:[],materials:[],instances:[],fallbackWarnings:0,base};
+  const err=m=>report.errors.push(String(m));
+  const warn=console.warn.bind(console);
+  console.warn=(...a)=>{ if(String(a[0]).includes('[climbing_axe:fallback]')) report.fallbackWarnings++; warn(...a); };
+  const script=src=>new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=new URL(src,base).href; s.onload=res; s.onerror=()=>rej(new Error('script não carregou: '+s.src)); document.head.appendChild(s); });
+  const hex=buf=>[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+  try{
+    // mesma ordem do index.html do build (só o necessário para carregar e montar a picareta)
+    for(const f of ['vendor/three/build/three.min.js','vendor/three/examples/js/loaders/GLTFLoader.js','vendor/three/examples/js/utils/SkeletonUtils.js',
+      'js/core/utils.js','js/core/models.js','js/core/modelDefs.js','js/player/Handedness.js','js/items/climbingAxeAsset.js']) await script(f);
+    Models.BASE=new URL('assets/models/',base).href;
+    const def=Object.assign({},MODEL_DEFS.climbing_axe); if(glbOverride) def.file=glbOverride;
+    // bytes servidos: tamanho e SHA-256 (o mesmo arquivo que o GLTFLoader vai ler)
+    const r=await fetch(Models.BASE+def.file);
+    if(!r.ok) err(`GLB HTTP ${r.status}: ${Models.BASE+def.file}`);
+    else { const b=await r.arrayBuffer(); report.bytes=b.byteLength; report.hash=hex(await crypto.subtle.digest('SHA-256',b));
+      if(report.hash!==EXPECTED.hash) err('hash diferente do original: '+report.hash); if(report.bytes!==EXPECTED.bytes) err('tamanho diferente: '+report.bytes); }
+    // crédito distribuído ao lado do modelo
+    const c=await fetch(Models.BASE+'items/climbing_axe_low_poly.CREDITS.txt');
+    if(!c.ok) err('crédito HTTP '+c.status);
+    else { const t=await c.text(); report.credit={tiko:t.includes('Tiko'),license:t.includes('CC BY 4.0'),hash:t.includes(EXPECTED.hash)};
+      if(!report.credit.tiko||!report.credit.license||!report.credit.hash) err('crédito incompleto'); }
+    // parse real pelo Models do jogo; depois duas instâncias de mão (direita e esquerda)
+    await Models.preload({climbing_axe:def});
+    const scene=new THREE.Scene();
+    for(const side of [1,-1]){
+      const inst=ClimbingAxeAsset.create({side,usage:'hand',fallback:()=>new THREE.Group()});
+      const holder=new THREE.Group(); holder.position.set(side*.3,1.4,-.5); holder.add(inst.canonical); scene.add(holder); scene.updateMatrixWorld(true);
+      const ms=[]; inst.canonical.traverse(o=>{ if(o.isMesh) ms.push(o); });
+      const positive=[inst.canonical,...ms].every(o=>o.matrixWorld.determinant()>0);
+      report.instances.push({side,source:inst.source,meshes:ms.length,positive,tip:inst.refs.tip.toArray().map(v=>+v.toFixed(5))});
+      if(side===1){ report.source=inst.source; report.meshes=ms.map(m=>m.name); report.materials=[...new Set(ms.map(m=>m.material.name))].sort();
+        report.tris=ms.reduce((n,m)=>n+(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count)/3,0); }
+      if(inst.source!=='glb') err(`instância ${side>0?'direita':'esquerda'} usou a reserva procedural`);
+      if(ms.length!==EXPECTED.meshes&&inst.source==='glb') err(`instância ${side}: ${ms.length} malhas`);
+      if(!positive) err(`instância ${side}: matriz com determinante não positivo`);
+    }
+    if(report.instances.length===2&&report.instances[0].tip[0]!==-report.instances[1].tip[0]) err('ponta da esquerda não é o reflexo da direita');
+    if(report.source==='glb'&&JSON.stringify(report.materials)!==JSON.stringify(EXPECTED.materials)) err('materiais: '+report.materials.join(','));
+    if(report.fallbackWarnings) err('aviso [climbing_axe:fallback] emitido');
+  }catch(e){ err(e&&e.message||e); }
+  report.ok=report.errors.length===0&&report.source==='glb';
+  report.done=true;
+  window.__axeSmoke=report;
+  document.getElementById('h').textContent='smoke · climbing axe · '+(report.ok?'OK':'FALHOU');
+  document.getElementById('h').className=report.ok?'ok':'bad';
+  document.getElementById('out').textContent=JSON.stringify(report,null,2);
+})();
+</script></body></html>

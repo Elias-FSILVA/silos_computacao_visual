@@ -24,6 +24,24 @@ const ITEM_HINT={
 const PACK_GEO={ R:40, itemD:13, quickD:16 };
 const iconSvg=id=>`<svg viewBox="0 0 32 32" aria-hidden="true"><g fill="currentColor">${ICONS[id]}</g></svg>`;
 
+// rótulos dos atributos que aparecem na prévia da estação
+const PERK_ATTR_LABELS={gravity:'Gravidade',maxStamina:'Stamina máx.',jumpSpeed:'Salto',wallJumpSpeed:'Salto agarrado',wallJumpStaminaCost:'Custo do salto agarrado',
+  reach:'Alcance',tiredReach:'Alcance cansado',gripDrainMultiplier:'Gasto da pegada (×)',groundRecovery:'Recuperação no chão',freeHandRecovery:'Recuperação da mão livre',
+  fatigueGainMultiplier:'Fadiga (×)',fatigueRecoveryMultiplier:'Recuperação da fadiga (×)'};
+// ícones dos perks (SVG por código, currentColor)
+const PERK_ICONS={
+  economical_grip:'<path d="M7 20c0-5 2-8 5-8s5 3 5 8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 12V7M12 12V5M15 12V7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  quick_recovery:'<path d="M12 4v8l5 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 4v4h4" fill="none" stroke="currentColor" stroke-width="2"/>',
+  powerful_launch:'<path d="M12 3l6 7h-4v6h-4v-6H6z" fill="currentColor"/><path d="M8 20h8" stroke="currentColor" stroke-width="2"/>',
+  light_body:'<path d="M12 4c3 3 5 6 5 9a5 5 0 0 1-10 0c0-3 2-6 5-9z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 9v8" stroke="currentColor" stroke-width="1.6"/>',
+  long_arms:'<path d="M4 20L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M13 5h6v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="5" cy="19" r="1.6" fill="currentColor"/>',
+  calloused_hands:'<path d="M6 20v-7a2 2 0 0 1 4 0V6a2 2 0 0 1 4 0v7a2 2 0 0 1 4 0v7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 17h6" stroke="currentColor" stroke-width="2"/>',
+  short_breath:'<path d="M3 9h11a3 3 0 1 0-3-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M3 15h15a3 3 0 1 1-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  economical_launch:'<path d="M12 4l5 6h-3v5h-4v-5H7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M7 20h10" stroke="currentColor" stroke-width="2" stroke-dasharray="2 2"/>',
+  anchor:'<circle cx="12" cy="5" r="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v13M8 11h8M5 14a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  deep_breath:'<path d="M12 4v7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M11 11c-2-4-7-4-7 2 0 4 2 7 6 7l1-1zM13 11c2-4 7-4 7 2 0 4-2 7-6 7l-1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
+};
+function perkIcon(id){ return `<svg class="perk-svg" viewBox="0 0 24 24" aria-hidden="true">${PERK_ICONS[id]||''}</svg>`; }
 class UIManager{
   constructor(){
     this.$=id=>document.getElementById(id);
@@ -87,7 +105,7 @@ class UIManager{
     [['#','n'],['Jogador',''],['Pontos','n'],['Tempo','n'],['Resultado','']].forEach(([s,c])=>{ const th=document.createElement('th'); th.textContent=s; if(c) th.className=c; head.appendChild(th); });
     list.forEach((e,i)=>{
       const r=t.insertRow(); if(i===highlight) r.className='me';
-      [[String(i+1),'n'],[e.name,''],[fmtInt(e.score),'n'],[fmtTime(e.time),'n'],[e.result==='finish'?('Saiu'+(e.ending&&ENDINGS[e.ending]?` · ${ENDINGS[e.ending].name}`:'')):e.result==='mass'?'Alcançado':e.result==='fan'?'Sugado':'Caiu','']]
+      [[String(i+1),'n'],[e.name,''],[fmtInt(e.score),'n'],[fmtTime(e.time),'n'],[e.result==='finish'?('Saiu'+(e.ending&&ENDINGS[e.ending]?` · ${ENDINGS[e.ending].name}`:'')):e.result==='mass'?'Alcançado':e.result==='fan'?'Sugado':e.result==='debug'?'Ferimentos':'Caiu','']]
         .forEach(([s,c])=>{ const td=r.insertCell(); td.textContent=s; if(c) td.className=c; });
     });
     body.appendChild(t);
@@ -96,7 +114,7 @@ class UIManager{
   showResult(r){
     const t=this.$('resT');
     const E=r.result==='finish'&&ENDINGS[r.ending||'escape'];
-    t.textContent=r.result==='finish'?(E?E.name:'Subida completa'):r.result==='mass'?'A massa te alcançou':r.result==='fan'?'O exaustor te puxou':'Você caiu';
+    t.textContent=r.result==='finish'?(E?E.name:'Subida completa'):r.result==='mass'?'A massa te alcançou':r.result==='fan'?'O exaustor te puxou':r.result==='debug'?'Ferimentos (debug)':'Você caiu';
     const et=this.$('resEnd'); et.textContent=E?`FINAL · ${E.tag}\n\n${E.text}`:''; et.hidden=!E;
     t.className=r.result==='finish'?'win':'danger';
     this.$('resName').textContent=r.name; this.$('resTime').textContent=fmtTime(r.time);
@@ -105,12 +123,35 @@ class UIManager{
     [['Altura',r.breakdown.height],['Marcos',r.breakdown.checkpoints],['Destinos',r.breakdown.puzzle||0],['Segredos',r.breakdown.secrets||0],['Velocidade',r.breakdown.speed],['Desempenho',r.breakdown.performance],['Penalidades',-r.breakdown.penalties]]
       .forEach(([k,v])=>{ const dt=document.createElement('dt'); dt.textContent=k; const dd=document.createElement('dd'); dd.textContent=(v<0?'−':'')+fmtInt(Math.abs(v)); br.append(dt,dd); });
     this.$('resSaved').textContent=''; const b=this.$('btnSave'); b.disabled=false; b.textContent='Salvar pontuação';
+    if(r.assisted||r.competitiveEligible===false){ b.disabled=true; b.textContent='Não competitiva'; this.$('resSaved').textContent=ASSISTED_RUN_MSG; }   // debug: score só diagnóstico
     this.show('result');
   }
   // ---------- cinematic ----------
   showCine(v){ this.$('cine').hidden=!v; }
   cine(fade,text,op){ this.$('cineFade').style.opacity=fade; const t=this.$('cineText'); if(t.textContent!==text) t.textContent=text; t.style.opacity=op; }
   // ---------- retícula contextual ----------
+  // retículo reage a uma recusa (picareta em superfície errada): reinicia a animação mesmo em toques seguidos
+  // vida (spec Health §4.4): só escreve no DOM quando valor, estado ou "dano recente" mudam
+  setHealth(h){
+    if(!h) return;
+    const recent=performance.now()<(this._hpRecentUntil||0), st=h.state==='dead'?'critical':h.state;
+    const k=h.value+'|'+st+'|'+recent; if(k===this._hpKey) return; this._hpKey=k;
+    const el=this.$('hp'), prev=this._hpVal, max=h.max||100;
+    if(prev!==h.value){ this._hpVal=h.value;
+      const pct=Math.max(0,Math.min(100,Math.round(100*h.value/max)))+'%';
+      el.classList.toggle('up',prev!=null&&h.value>prev);   // cura: o rastro acompanha na hora; perda: encolhe em 0,4 s
+      this.$('hpFill').style.width=pct; this.$('hpTrail').style.width=pct;
+      this.$('hpN').textContent=String(h.value); el.setAttribute('aria-label',`Vida ${h.value} de ${max}`); }
+    for(const s of ['hurt','injured','critical']) el.classList.toggle(s,st===s);
+    el.classList.toggle('recent',recent);
+    const w=this.$('hpWord'), crit=st==='critical'; if(w.hidden===crit){ if(crit) w.textContent='crítico'; w.hidden=!crit; }
+  }
+  // ao sofrer dano: barra plena por 2 s e borda vermelha curta (máx. .25, 300 ms); nada de tela cheia
+  flashDamage(){
+    this._hpRecentUntil=performance.now()+2000; this._hpKey=null; this.$('hp').classList.add('recent');
+    const e=this.$('hurtEdge'); e.classList.remove('on'); void e.offsetWidth; e.classList.add('on');
+  }
+  pulseReticle(){ const el=this.$('ring'); if(!el) return; el.classList.remove('deny'); void el.offsetWidth; el.classList.add('deny'); }
   setReticle(mode){
     if(this._ret===mode) return; this._ret=mode;
     // interação disponível (F, ou clique no painel de senha): mão petrificada com a ponta do indicador no centro da mira (css/cursor.css)
@@ -123,21 +164,61 @@ class UIManager{
       'nail-bad':`<path d="M12 5v14M5 12h14" stroke="${NO}" stroke-width="1.4" opacity=".7"/><path d="M8 8l8 8" stroke="${NO}" stroke-width="1.6"/>`,
       impact:`<path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4" stroke="${B}" stroke-width="1.5"/><circle cx="12" cy="12" r="1.5" fill="${B}"/>`,
       fragile:`<path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4M6.3 6.3l2.4 2.4M17.7 17.7l-2.4-2.4M17.7 6.3l-2.4 2.4M6.3 17.7l2.4-2.4" stroke="${B}" stroke-width="1.5"/><circle cx="12" cy="12" r="1.5" fill="${B}"/>`,
+      axe:`<path d="M7 17l7.5-7.5M10.5 6.5c2.6-1.6 5.6-1.4 7.5.4" stroke="${OK}" stroke-width="1.7" fill="none" stroke-linecap="round"/><circle cx="12" cy="12" r="1.6" fill="${OK}"/>`,
+      'axe-shallow':`<path d="M7 17l7.5-7.5" stroke="${S}" stroke-width="1.7" stroke-linecap="round"/><path d="M10.5 6.5c2.6-1.6 5.6-1.4 7.5.4" stroke="${S}" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-dasharray="2 2"/><circle cx="12" cy="12" r="1.6" fill="${S}"/>`,   // concreto: fincada rasa
+      'axe-bad':`<path d="M8 8l8 8M16 8l-8 8" stroke="${NO}" stroke-width="1.4" opacity=".75"/>`,
       'hammer-nail':`<circle cx="12" cy="12" r="7" fill="none" stroke="${S}" stroke-width="1.6"/><path d="M12 8.5v7M8.5 12h7" stroke="${S}" stroke-width="1.6"/>`
     }[mode]||'';
     this.$('ring').innerHTML=`<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">${svg}</svg>`;
   }
+  // ---------- estações de melhoria e perks ativos (só leitura: view do Game, PERK_DEFS, attributes) ----------
+  showStation(v){
+    const P=this.$('stationPanel'), fmt=n=>(Math.round(n*100)/100).toLocaleString('pt-BR');
+    const lines=pv=>pv?Object.keys(pv.after).filter(k=>Math.abs(pv.after[k]-pv.before[k])>1e-9).map(k=>
+      `<li><span>${PERK_ATTR_LABELS[k]||k}</span> <b>${fmt(pv.before[k])} → ${fmt(pv.after[k])}</b></li>`).join(''):'';
+    const cards=v.offers.map((o,i)=>`<button type="button" class="pcard${v.sel===i?' sel':''}" data-i="${i}" aria-pressed="${v.sel===i}">`+
+      `<span class="pk">${i+1}</span>${perkIcon(o.id)}<span class="pn">${o.name}</span>`+
+      `<span class="pb">+ ${o.benefit}</span><span class="pt">− ${o.tradeoff}</span><ul class="pp">${lines(o.preview)}</ul></button>`).join('');
+    const act=v.active.length?v.active.map(id=>`${perkIcon(id)}<span>${PERK_DEFS[id].name}</span>`).join(' · '):'nenhuma';
+    P.innerHTML=`<div class="sp-head"><span class="sp-kicker">Estação de melhoria</span><h2>${v.station.label}</h2><p class="sp-ahead">${STATION_RULE}</p></div>`+
+      `<div class="sp-cards">${cards}</div>`+
+      `<div class="sp-foot"><span class="sp-active">Ativas: ${act} <b>${v.count}/${v.max}</b></span>`+
+      `<button type="button" class="mbtn" data-act="confirm"${v.sel<0?' disabled':''}>Escolher <kbd>Enter</kbd></button>`+
+      `<button type="button" class="mbtn ghost" data-act="ignore">Ignorar <kbd>Esc</kbd></button></div>`+
+      `<p class="sp-legend">Clique num cartão ou use <kbd>1</kbd> <kbd>2</kbd> · clique de novo ou <kbd>Enter</kbd> para escolher · <kbd>Esc</kbd> ignora</p>`;
+    P.hidden=false; if(typeof document!=='undefined'&&document.body) document.body.classList.add('station-open');
+  }
+  hideStation(){ const P=this.$('stationPanel'); P.hidden=true; P.innerHTML=''; if(typeof document!=='undefined'&&document.body) document.body.classList.remove('station-open'); }
+  // HUD: um ícone por perk ativo, sem texto; o novo pisca uma vez (flashPerk)
+  renderPerkHud(player){
+    const ids=player.attributes.activePerks, k=ids.join(','); if(this._perkKey===k) return; this._perkKey=k;
+    this.$('perkHud').innerHTML=ids.map(id=>`<span class="perk-ic${this._flashId===id?' flash':''}" title="${PERK_DEFS[id].name}">${perkIcon(id)}</span>`).join('');
+  }
+  flashPerk(id){ this._flashId=id; this._perkKey=null; setTimeout(()=>{ if(this._flashId===id){ this._flashId=null; this._perkKey=null; } },1200); }
+  // mochila: área "Melhorias" com nome, benefício e contrapartida de cada perk ativo
+  renderPackPerks(player){
+    const ids=player.attributes.activePerks, E=this.$('packPerks'), k=ids.join(',');
+    if(this._packPerkKey===k) return; this._packPerkKey=k;
+    if(!ids.length){ E.hidden=true; E.innerHTML=''; return; }
+    E.hidden=false;
+    E.innerHTML='<span class="hn">Melhorias</span>'+ids.map(id=>{ const d=PERK_DEFS[id];
+      return `<div class="perk-row">${perkIcon(id)}<span class="pn">${d.name}</span><span class="pb">+ ${d.benefit}</span><span class="pt">− ${d.tradeoff}</span></div>`; }).join('');
+  }
   // ---------- inventário: estado dos slots ----------
   // derivado só de Inventory/ItemSystem/Player (nada é guardado aqui)
   //  empty · eq (na mão) · out (pilha esgotada) · lock (mão direita agarrada: select() recusaria) · ready
-  slotInfo(items,player,i){
+  // k (atalho) diz a mão; sem k, a mão sai do vínculo (perHand: a mão que o tiver equipado)
+  slotInfo(items,player,i,k=-1){
     const s=items.inv.slots[i]; if(!s) return {k:'empty',label:'Vazio'};
-    if(items.isSelected(i)){
-      const k=items.inv.bindingOf(s.id), side=k>=0&&k<2?'left':'right', ph=items.phaseFor(side);
+    const kSide=k>=0?(k<2?'left':'right'):null;
+    if(kSide?items.isSelected(i,kSide):items.isSelected(i)){
+      const side=kSide||(items.isSelected(i,'left')&&items.isSelected(i,'right')?'both':items.isSelected(i,'left')?'left':items.isSelected(i,'right')?'right':items.sideOf(i));
+      if(side==='both') return {k:'eq',label:'Nas duas mãos'};
+      const ph=items.phaseFor(side);
       return {k:'eq',label:ph==='equipping'?'Pegando':ph==='holstering'?'Guardando':`Na mão ${side==='left'?'esquerda':'direita'}`};
     }
     if(ITEM_DEFS[s.id].stack&&s.count<=0) return {k:'out',label:'Esgotado'};
-    const k=items.inv.bindingOf(s.id), hand=k>=0&&k<2?player.leftHand:player.rightHand;
+    const hand=(kSide||items.sideOf(i))==='left'?player.leftHand:player.rightHand;
     if(hand.inContact) return {k:'lock',label:'Mão ocupada'};
     return {k:'ready',label:'Guardado'};
   }
@@ -152,7 +233,7 @@ class UIManager{
     if(this._invKey===key) return; this._invKey=key;
     const bar=this.$('slots'); bar.textContent='';
     for(let k=0;k<inv.quick;k++){
-      const i=inv.boundSlot(k), s=i>=0?inv.slots[i]:null, st=s?this.slotInfo(items,player,i):{k:'empty',label:'Vazio'}, L=QUICK_KEYS[k].label;
+      const i=inv.boundSlot(k), s=i>=0?inv.slots[i]:null, st=s?this.slotInfo(items,player,i,k):{k:'empty',label:'Vazio'}, L=QUICK_KEYS[k].label;
       const d=document.createElement('div');
       d.className='slot'+(s?'':' empty')+(st.k==='eq'?' sel':'')+(st.k==='out'?' out':'')+(st.k==='lock'?' lock':'');
       d.dataset.k=k; d.dataset.hand=k<2?'left':'right'; d.classList.add(k<2?'left-hand':'right-hand'); d.setAttribute('role','listitem');
@@ -161,8 +242,11 @@ class UIManager{
         const def=ITEM_DEFS[s.id];
         d.insertAdjacentHTML('beforeend',iconSvg(s.id));
         if(def.stack){ const c=document.createElement('span'); c.className='c'+(s.count<=0?' zero':''); c.textContent='×'+s.count; d.appendChild(c); }
+        // desgaste (picareta): barra da unidade que esta mão segura ou pegaria
+        const du=items.durabilityFor&&items.durabilityFor(k<2?'left':'right',s.id);
+        if(du){ const b=document.createElement('span'), f=du.left/du.max; b.className='dur'+(du.left<=3?' low':''); b.style.setProperty('--d',f.toFixed(3)); b.title=`${du.left}/${du.max} fincadas no concreto`; d.appendChild(b); }
         d.title=def.name;
-        d.setAttribute('aria-label',`Atalho ${L}, mão ${k<2?'esquerda':'direita'}: ${def.name}${def.stack?`, ${s.count}`:''}, ${st.label}`);
+        d.setAttribute('aria-label',`Atalho ${L}, mão ${k<2?'esquerda':'direita'}: ${def.name}${def.stack?`, ${s.count}`:''}${du?`, desgaste ${du.left} de ${du.max}`:''}, ${st.label}`);
       } else d.setAttribute('aria-label',`Atalho ${L}, mão ${k<2?'esquerda':'direita'}: vazio`);
       bar.appendChild(d);
     }
@@ -317,6 +401,7 @@ class UIManager{
   }
   renderPack(items,player){
     const pk=this.pk; if(!pk||!this.packOpen) return;
+    this.renderPackPerks(player);
     const inv=items.inv, key=this._slotKey(items,player)+'|'+pk.sel+'|'+(items.equipped||'')+'|'+(player.rightHand.occupied?1:0);
     if(this._packKey===key) return; this._packKey=key;
     if(pk.sel>=0&&!inv.slots[pk.sel]) pk.sel=-1;
@@ -533,6 +618,9 @@ class UIManager{
     this.$('timeN').textContent=fmtTime(gs.time);
     this.$('scoreN').textContent=`${fmtInt(gs.score)} pts`;
     this.$('cpN').textContent=gs.currentCheckpoint?`Último marco: ${gs.currentCheckpoint}`:'';
+    const db=this.$('debugBadge'), dbg=gs.debug, on=!!(dbg&&dbg.assisted), dt=on?(dbg.noclip?'RUN ASSISTIDA · NOCLIP':'RUN ASSISTIDA'):'';   // run de debug: aviso fixo, não só um toast
+    if(db.hidden===on) db.hidden=!on; if(db.textContent!==dt) db.textContent=dt;
+    this.setHealth(gs.health);
     if(gs.checkpointJustCollected){ const c=gs.checkpointJustCollected; this.toast(c.optional?'Rota arriscada':'Marco alcançado',`${c.label}  +${c.bonus}`); }
     this.setReticle(look.reticle);
     player.hands.forEach((h,i)=>{
@@ -540,13 +628,14 @@ class UIManager{
       rect.setAttribute('y',String(48*(1-s))); rect.setAttribute('height',String(48*s));
       el.style.color=staminaColor(h.stamina);
       el.classList.toggle('closed',h.isGrabbing||!!h.occupied); el.classList.toggle('contact',h.inContact);
-      el.classList.toggle('busy',!!h.occupied);
+      el.classList.toggle('busy',!!h.occupied&&h.anchor!=='axe'); el.classList.toggle('axe',h.anchor==='axe');   // picareta cravada: mão de escalada, com ícone
       el.classList.toggle('critical',h.stamina<15&&(h.inContact||h.exhausted));
     });
     const pr=this.$('prompt');
     if(pr.dataset.k!==look.prompt){ pr.dataset.k=look.prompt||''; pr.textContent='';
       if(look.prompt){ const [k,txt]=look.prompt.split('|'); const kb=document.createElement('kbd'); kb.textContent=k; pr.append(kb,txt); } }
     this.renderInventory(items,player);
+    this.renderPerkHud(player);
     this._announce(items);
     this.$('vig').style.opacity=gs.massDistance!=null?clamp((14-gs.massDistance)/12,0,.85):0;
     // fadiga da puxada: pulsa de leve com o "batimento" quando está crítica

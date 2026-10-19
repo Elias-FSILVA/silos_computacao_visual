@@ -11,6 +11,7 @@
 //   stack     true = empilhável · false/ausente = item único (1 unidade por entrada, sem duplicata)
 //   maxStack  limite da pilha (inteiro ≥ 1); só vale para itens com stack:true
 //   weight    peso por unidade, em unidades de carga (número ≥ 0)
+//   durability  usos que cada unidade aguenta (picareta: fincadas no concreto); a entrada guarda `wear` por unidade
 //
 // PESO: totalWeight / getTotalWeight() é DERIVADO de `slots` a cada consulta (10 entradas: custo desprezível),
 // logo não existe cache nem cópia para ficar desatualizada. Os atalhos (`binds`) guardam só IDs e nunca entram na soma.
@@ -20,6 +21,7 @@ const INVENTORY_CONFIG={ slots:10, defaultStackLimit:10, defaultWeight:1 };
 
 // Teclas dos atalhos. Fonte única: Game.js (entrada) e UIManager.js (rótulos e layout) leem esta tabela.
 // Slots 1–2 pertencem à mão esquerda; 3–4 à direita. Cada mão pode ter até dois itens vinculados.
+// Item perHand (picareta): pode ter UM vínculo em cada grupo; os demais itens têm um vínculo só.
 const QUICK_KEYS=[
   {code:'Digit1',label:'1',place:'superior esquerda'},
   {code:'Digit2',label:'2',place:'inferior esquerda'},
@@ -65,13 +67,13 @@ class Inventory{
       if(!d.stack) return {accepted:0,remaining:want,index:i,reason:'duplicate'};
       const room=Math.max(0,limit-this.slots[i].count);
       if(room<=0) return {accepted:0,remaining:want,index:i,reason:'limit'};
-      const n=Math.min(want,room); this.slots[i].count+=n; this.version++;
+      const n=Math.min(want,room); this.slots[i].count+=n; if(this.slots[i].wear) for(let k=0;k<n;k++) this.slots[i].wear.push(0); this.version++;
       return {accepted:n,remaining:want-n,index:i,reason:n<want?'limit':null};
     }
     i=this.slots.findIndex(s=>!s);
     if(i<0) return {accepted:0,remaining:want,index:-1,reason:'full'};
     const n=Math.min(want,limit);
-    this.slots[i]={id,count:n}; this.version++;
+    this.slots[i]={id,count:n}; if(d.durability) this.slots[i].wear=new Array(n).fill(0); this.version++;
     return {accepted:n,remaining:want-n,index:i,reason:n<want?'limit':null};
   }
   // compatível com o contrato antigo: índice da entrada se algo foi guardado, -1 se nada coube
@@ -79,7 +81,25 @@ class Inventory{
   slotOf(id){ return this.slots.findIndex(s=>s&&s.id===id); }
   count(id){ const s=this.slots.find(s=>s&&s.id===id); return s?s.count:0; }
   has(id){ return this.slotOf(id)>=0; }
-  take(id,n=1){ const s=this.slots.find(s=>s&&s.id===id); if(!s||s.count<n) return false; s.count-=n; this.version++; return true; }
+  // tira n unidades; a última unidade libera a entrada e os atalhos do item (nada de pilha "×0" na mochila)
+  take(id,n=1){
+    const i=this.slotOf(id), s=i>=0?this.slots[i]:null; if(!s||s.count<n) return false;
+    s.count-=n; if(s.wear) s.wear.length=Math.max(0,s.count);
+    if(s.count<=0){ this.slots[i]=null; this.binds=this.binds.map(b=>b===id?null:b); }
+    this.version++; return true;
+  }
+  // ---- desgaste (itens com `durability`; u = índice da unidade na entrada) ----
+  durabilityOf(id){ const d=ITEM_DEFS[id]; return d&&d.durability||0; }
+  durabilityLeft(id,u){ const s=this.slots[this.slotOf(id)]; if(!s||!s.wear||!(u>=0&&u<s.wear.length)) return 0; return Math.max(0,this.durabilityOf(id)-s.wear[u]); }
+  // gasta n da unidade u; devolve o que sobra
+  addWear(id,u,n=1){ const s=this.slots[this.slotOf(id)]; if(!s||!s.wear||!(u>=0&&u<s.wear.length)) return 0; s.wear[u]+=n; this.version++; return this.durabilityLeft(id,u); }
+  // a unidade u quebrou: sai da entrada (as de índice maior descem uma posição); a última libera a entrada e os atalhos
+  breakUnit(id,u){
+    const i=this.slotOf(id), s=i>=0?this.slots[i]:null; if(!s||!s.wear||!(u>=0&&u<s.wear.length)) return false;
+    s.wear.splice(u,1); s.count--;
+    if(s.count<=0){ this.slots[i]=null; this.binds=this.binds.map(b=>b===id?null:b); }
+    this.version++; return true;
+  }
   // ---- capacidade ----
   get usedSlots(){ return this.slots.reduce((n,s)=>n+(s?1:0),0); }
   get freeSlots(){ return this.size-this.usedSlots; }
@@ -93,14 +113,17 @@ class Inventory{
   // ---- atalhos ----
   // Vincula o item `id` ao atalho k. Um item ocupa um atalho só: se já estava em outro (j), o vínculo é transferido
   // e o item que ocupava k (se houver) passa a ocupar j. Nunca consome nem duplica unidades.
+  // perHand: a transferência só acontece dentro do grupo de k (0–1 ou 2–3); o vínculo do outro grupo fica.
   bind(k,id){
     if(!(k>=0&&k<this.quick)||!this.has(id)) return false;
-    const j=this.binds.indexOf(id), old=this.binds[k];
+    const per=!!(ITEM_DEFS[id]&&ITEM_DEFS[id].perHand), j=per?this.bindingOf(id,k<2?0:1):this.binds.indexOf(id), old=this.binds[k];
     if(j>=0&&j!==k) this.binds[j]=old;
     this.binds[k]=id; this.version++; return true;
   }
   unbind(k){ if(k>=0&&k<this.quick&&this.binds[k]){ this.binds[k]=null; this.version++; return true; } return false; }
-  bindingOf(id){ return this.binds.indexOf(id); }
+  // atalho do item (o primeiro); com group (0 = esquerda 1–2, 1 = direita 3–4), só naquele grupo
+  bindingOf(id,group){ if(group==null) return this.binds.indexOf(id); const a=group?2:0; for(let k=a;k<Math.min(a+2,this.quick);k++) if(this.binds[k]===id) return k; return -1; }
+  bindingsOf(id){ const out=[]; this.binds.forEach((b,k)=>{ if(b===id) out.push(k); }); return out; }
   // índice do slot real apontado pelo atalho k, ou -1 (vazio ou item que deixou de existir: o vínculo é limpo)
   boundSlot(k){
     const id=this.binds[k]; if(!id) return -1;

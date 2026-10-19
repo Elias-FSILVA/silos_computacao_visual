@@ -58,13 +58,14 @@ class VRHud{
     if(!this.inv.visible||!this.wrist.visible) return -1;
     this.inv.updateWorldMatrix(true,false); const l=this.inv.worldToLocal(tip.clone());
     if(Math.abs(l.z)>.04||Math.abs(l.y)>.0325||Math.abs(l.x)>=.1) return -1;
-    return Math.floor((l.x+.1)/.05);
+    return Math.min((this.invN||4)-1,Math.floor((l.x+.1)/(.2/(this.invN||4))));
   }
   updateInventory(items,hover){
     if(!this.inv.visible) return;
     const inv=items.inv, key=inv.version+'|'+items.left.sel+'|'+items.sel+'|'+hover+'|'+Object.keys(this.icons).length;
     if(key===this.invKey) return; this.invKey=key;
-    const x=this.invCanvas.getContext('2d'), W=512, H=160, sw=W/4;
+    this.invN=inv.slots.length;   // uma caixa por entrada da mochila
+    const x=this.invCanvas.getContext('2d'), W=512, H=160, sw=W/this.invN;
     x.clearRect(0,0,W,H);
     inv.slots.forEach((s,i)=>{
       const bx=i*sw+6, sel=items.isSelected(i), hov=hover===i;
@@ -72,8 +73,8 @@ class VRHud{
       x.strokeStyle=sel||hov?'#f0c870':'rgba(216,207,184,.35)'; x.lineWidth=sel?5:3; x.strokeRect(bx,6,sw-12,H-12);
       x.fillStyle='#7d7566'; x.font='500 24px "Barlow Condensed", sans-serif'; x.textAlign='left'; x.textBaseline='top'; x.fillText(String(i+1),bx+8,10);
       if(!s) return;
-      const img=this._icon(s.id); if(img) x.drawImage(img,bx+(sw-12)/2-36,22,72,72);
-      x.textAlign='center'; x.fillStyle='#e8dfc8'; x.font='500 26px "Barlow Condensed", sans-serif';
+      const ic=Math.min(72,sw-36), img=this._icon(s.id); if(img) x.drawImage(img,bx+(sw-12)/2-ic/2,22+(72-ic)/2,ic,ic);
+      x.textAlign='center'; x.fillStyle='#e8dfc8'; x.font=`500 ${this.invN>4?21:26}px "Barlow Condensed", sans-serif`;
       x.fillText(ITEM_DEFS[s.id].stack?`${ITEM_DEFS[s.id].name} ×${s.count}`:ITEM_DEFS[s.id].name,bx+(sw-12)/2,104);
     });
     this.invTex.needsUpdate=true;
@@ -87,6 +88,13 @@ class VRHud{
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="96" height="96" style="color:#e8dfc8"><g fill="#e8dfc8">${ICONS[id]}</g></svg>`);
     return null;
   }
+  _perkIcon(id){
+    const k='perk:'+id, c=this.icons[k]; if(c) return c.ready?c.img:null;
+    const img=new Image(), e={img,ready:false}; this.icons[k]=e;
+    img.onload=()=>{ e.ready=true; this.key=''; };
+    img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="72" height="72" style="color:#e8dfc8">${(typeof PERK_ICONS!=='undefined'&&PERK_ICONS[id])||''}</svg>`);
+    return null;
+  }
   update(dt,ui,player,look){
     if(!this.wrist.visible) return;
     this.drawT-=dt; if(this.drawT>0) return; this.drawT=.15;
@@ -94,8 +102,9 @@ class VRHud{
     let prompt='';
     if(look&&look.prompt){ const [k,t]=look.prompt.split('|'); prompt=`${VR_PROMPT_KEYS[k]||k} · ${t}`; }
     const L=[`${$('altN').textContent} m`,$('timeN').textContent,$('massN').textContent,$('slotName').textContent,prompt];
-    const hot=$('massN').classList.contains('hot');
-    const key=L.join('|')+st.join(',')+hot;
+    const hot=$('massN').classList.contains('hot'), perks=player.attributes?player.attributes.activePerks:[];
+    const hp=player.health?player.health.snapshot():null;
+    const key=L.join('|')+st.join(',')+hot+'|'+perks.join(',')+'|'+Object.keys(this.icons).length+(hp?`|hp${hp.value}${hp.state}`:'');
     if(key===this.key) return; this.key=key;
     const x=this.canvas.getContext('2d'), W=512, H=320;
     x.clearRect(0,0,W,H); x.fillStyle='rgba(8,7,5,.82)'; x.fillRect(0,0,W,H);
@@ -104,14 +113,25 @@ class VRHud{
     x.font='800 64px "Big Shoulders Stencil Display", sans-serif'; x.fillText(L[0],24,18);
     x.textAlign='right'; x.font='500 40px "Barlow Condensed", sans-serif'; x.fillText(L[1],W-24,30);
     x.textAlign='left'; x.fillStyle=hot?'#ff6a4a':'#bfb6a2'; x.font='500 34px "Barlow Condensed", sans-serif'; x.fillText(L[2],24,100);
+    // melhorias ativas: ícones pequenos abaixo do tempo
+    perks.forEach((id,k)=>{ const img=this._perkIcon(id); if(img) x.drawImage(img,W-24-40*(perks.length-k),82,34,34); });
+    // vida (spec Health §4.4): "vida" + barra + número, acima da estamina; crítico só aqui, sem efeito de tela
+    if(hp){ const crit=hp.state==='critical'||hp.state==='dead', col=crit?'#ff2a1a':hp.state==='injured'?'#e3b341':'#d8cfb8';
+      const bx=104, bw=W-24-64-bx-(crit?112:0);
+      x.textAlign='left'; x.fillStyle='#7d7566'; x.font='400 28px "Barlow Condensed", sans-serif'; x.fillText('vida',24,140);
+      x.fillStyle='rgba(216,207,184,.15)'; x.fillRect(bx,148,bw,16); x.fillStyle=col; x.fillRect(bx,148,bw*clamp(hp.value/(hp.max||100),0,1),16);
+      x.font='600 30px "Barlow Condensed", sans-serif';
+      if(crit) x.fillText('crítico',bx+bw+14,138);
+      x.textAlign='right'; x.fillText(String(hp.value),W-24,138); x.textAlign='left'; }
     // estamina: esquerda | direita
-    st.forEach((s,i)=>{ const bx=24+i*236, by=150, bw=216;
+    st.forEach((s,i)=>{ const bx=24+i*236, by=hp?186:150, bw=216;
       x.fillStyle='rgba(216,207,184,.15)'; x.fillRect(bx,by,bw,22);
       x.fillStyle=staminaColor(s); x.fillRect(bx,by,bw*clamp(s/100,0,1),22);
       x.fillStyle='#7d7566'; x.font='400 24px "Barlow Condensed", sans-serif'; x.fillText(i?'mão dir.':'mão esq.',bx,by+26); });
     x.fillStyle='#e8dfc8'; x.font='500 32px "Barlow Condensed", sans-serif';
-    if(L[3]) x.fillText(L[3],24,214);
-    if(L[4]){ x.fillStyle='#f0c870'; x.fillText(L[4],24,260); }
+    const ty=hp?242:214;
+    if(L[3]) x.fillText(L[3],24,ty);
+    if(L[4]){ x.fillStyle='#f0c870'; x.fillText(L[4],24,ty+40); }
     this.tex.needsUpdate=true;
   }
 }

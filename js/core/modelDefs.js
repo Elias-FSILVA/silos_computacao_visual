@@ -11,6 +11,9 @@
 const MODEL_DEFS={
   // mesmo eixo do makeHammer(): cabo ao longo de +y (base em y≈-.07, cabeça em y≈.29), orelha voltada para +z
   hammer:{file:'items/martelo.glb',scale:1,rotation:[0,Math.PI,0],offset:[0,.2,0]},
+  // picareta de Tiko (CC BY 4.0, crédito em items/climbing_axe_low_poly.CREDITS.txt). Catálogo SEM ajuste: a normalização
+  // (escala/rotação/empunhadura) mora em js/items/climbingAxeAsset.js, para não ser aplicada duas vezes
+  climbing_axe:{file:'items/climbing_axe_low_poly.glb',scale:1},
   // mãos com esqueleto: pulso na origem, dedos para +y, palma para +z (o HandModel gira para o seu espaço)
   // ossos esperados: <Index|Middle|Ring|Pinky>_<Proximal|Intermediate|Distal>, Thumb_<Metacarpal|Proximal|Distal>
   handR:{file:'player/hand_lowpoly_rigged.glb',skinned:true,scale:1},

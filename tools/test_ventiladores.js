@@ -23,6 +23,41 @@ log('— Exaustor (169 m) —');
   chk('  ao lado da marquise, sem abrigo, pega (fraco)',!!air(polar(R-.9,E.entryA+.6,E.H)),air(polar(R-.9,E.entryA+.6,E.H))?air(polar(R-.9,E.entryA+.6,E.H)).length().toFixed(1)+' m/s':'');
   const w=world.wind(new V3(0,E.fan.y-1-1.0,0)); chk('zona das pás (a < 1,4 m do rotor) é letal',!!(w&&w.kill));
 }
+// Regressão: contato do CORPO nas pás não depende da amostra de ar no peito.
+log('— Contato com o rotor —');
+{ const y=E.fan.y, rotor=world.platforms.find(b=>b.fan&&b.fan.name==='exaustor'&&b.arc&&b.arc.r0===0), radius=rotor.arc.r1;
+  const P=T.makePlayer(); place(P,new V3(2,y+.15,0)); P.grounded=true; P.jump(); T.step(P,180);
+  chk('pular sobre as pás não transforma o rotor em piso seguro',P.dead&&P.deathReason==='fan'&&P.health.value===0,`${P.health.value} HP · ${P.deathReason||'vivo'}`);
+  const Q=T.makePlayer(); place(Q,new V3(2,y+2,0)); T.step(Q,180);
+  chk('queda curta por cima: contato dos pés com as pás é letal',Q.dead&&Q.deathReason==='fan'&&Q.health.value===0,`${Q.health.value} HP · ${Q.deathReason||'vivo'}`);
+  const landing=T.makePlayer(); place(landing,new V3(2,y+.17,0),new V3(0,-1,0)); T.step(landing,1);
+  chk('o pouso nas pás mata no mesmo quadro, antes de poder saltar de novo',landing.dead&&landing.deathReason==='fan'&&landing.health.value===0);
+  const side=world.wind(new V3(radius+RAD-.02,y+.1,0));
+  chk('borda das pás considera o raio do corpo, não só o centro',!!(side&&side.kill));
+  const clear=world.wind(new V3(radius+RAD+.02,y+.1,0));
+  chk('ao lado do rotor, sem sobreposição do corpo, não há contato letal',!(clear&&clear.kill));
+  const above=world.wind(new V3(2,y+.4,0));
+  chk('acima das pás, ainda sem contato, não há aura letal',!(above&&above.kill));
+  const C=T.makePlayer(); place(C,new V3(R-RAD,y+1.6,0)); T.step(C,180);
+  chk('carcaça acima do rotor continua sólida, mas não letal',!C.dead&&C.health.value===100&&C.grounded,`${C.health.value} HP · pés ${C.position.y.toFixed(2)} m`);
+  // Varredura contínua: recorta o segmento ao intervalo vertical onde o corpo alcança as pás.
+  const hit=(a,b)=>world.fanContact?world.fanContact(b,a):null;
+  chk('cruzar o rotor entre dois quadros também detecta contato',!!hit(new V3(2,y+3,0),new V3(2,y-4,0)));
+  chk('cruzar horizontalmente entre dois quadros detecta a borda das pás',!!hit(new V3(-8,y,0),new V3(8,y,0)));
+  chk('a varredura não junta alturas e raios de momentos diferentes',!hit(new V3(2,y+10,0),new V3(20,y,0)));
+  chk('passar por cima, com folga para os pés, não toca as pás',!hit(new V3(-8,y+.4,0),new V3(8,y+.4,0)));
+}
+// Ajuste de pressão: perceptível antes, sem virar um elevador na entrada nem mudar o pico.
+{ const accel=y=>{ const w=world.wind(new V3(0,y,0)); return w&&!w.kill?w.air.y*WIND_K:0; };
+  const early=accel(E.H), mid=accel(E.H+5);
+  chk('na entrada descoberta, sucção já é perceptível sem vencer a gravidade',early>=10&&early<G,`${early.toFixed(2)} m/s² (gravidade ${G})`);
+  chk('cinco metros acima, o corpo solto já começa a ser levado',mid>G,`${mid.toFixed(2)} m/s²`);
+  const P=T.makePlayer(); place(P,new V3(0,E.H+5,0)); const start=P.position.y; T.step(P,120);
+  chk('solto a 155 m, sobe pelo menos 1 m em 2 s sem morrer',!P.dead&&P.position.y>start+1,`${P.position.y.toFixed(2)} m · ${P.deathReason||'vivo'}`);
+  const fan=world.fans.find(f=>f.name==='exaustor');
+  chk('pico do fluxo e alcance não aumentam',fan.speed===19&&fan.range===24);
+}
+
 // ---------- 2) a rota antiga: pendurado, a sucção gasta a pegada; solto, o jogador é sugado ----------
 { const old=world.grabbables.filter(m=>m.userData.type==='hold'&&!m.userData.extra&&Math.abs(Math.atan2(m.position.z,m.position.x)-(E.oldRoute.a0+E.oldRoute.a1)/2)<.25&&m.position.y>E.oldRoute.y0-.2&&m.position.y<E.oldRoute.y1+.2).sort((a,b)=>b.position.y-a.position.y);
   const top=old[0], low=world.grabbables.find(m=>m.userData.type==='hold'&&Math.abs(m.position.y-125)<2&&!m.userData.extra);
@@ -56,7 +91,7 @@ log('— Insuflador (245 m) —');
   // sair da coluna para o lado errado: cai na grade sem morrer
   const Q=T.makePlayer(); place(Q,new V3(c.x,I.grateTop,c.z)); Q.grounded=true; T.step(Q,360);
   const away=new V3(-c.x,0,-c.z); T.face(Q,away.x,away.z); T.step(Q,420,{x:0,y:1});
-  chk('saindo da coluna para o centro do poço: cai na grade e sobrevive',!Q.dead&&Q.grounded&&Math.abs(Q.position.y-I.grateTop)<.02,`pés ${Q.position.y.toFixed(2)} m · ${Q.deathReason||'vivo'}`);
+  chk('saindo da coluna para o centro do poço: cai na grade e sobrevive',!Q.dead&&Q.grounded&&Math.abs(Q.position.y-I.grateTop)<.02,`pés ${Q.position.y.toFixed(2)} m · ${Q.deathReason||'vivo'} · ${Q.health.value} HP`);
 }
 // ---------- 5) o vento nunca empurra através da parede curva ----------
 { let esc=0, n=0, viaOpening=0; const rnd=T.vm.runInThisContext('mulberry')(77);
